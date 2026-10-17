@@ -127,3 +127,41 @@ test('G7 time range changes results; the query stays the same', () => {
 test('G8 bounded input: oversize query is refused before parsing', () => {
   fails('principal.hostname = "' + 'a'.repeat(9000) + '"', 'QUERY_TOO_LONG');
 });
+
+test('G9 an unfilled starter gap is named as such, before any other diagnostic', () => {
+  fails('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "___"', 'STARTER_GAP', 'invalid');
+  fails('metadata.event_type = "USER_LOGIN"\noutcome:\n  $n = ___(principal.user.userid)', 'STARTER_GAP', 'invalid');
+  fails('metadata.event_type = "USER_LOGIN"\nmatch:\n  ___\noutcome:\n  $n = count(metadata.id)', 'STARTER_GAP', 'invalid');
+  // should-fail: without the gap the same shapes get their ordinary diagnostics, and a lone underscore is not a gap
+  fails('metadata.event_type = "USER_LOGIN"\noutcome:\n  $n = array_distinct(principal.user.userid)', 'UNSUPPORTED_AGGREGATE', 'unsupported');
+  assert.equal(run('principal.user.userid = "a_b"').count, 0);
+});
+
+test('G10 comparison failures carry up to three example record IDs from the dataset side, never from the learner', () => {
+  const ref = runQuery('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"', mini).result;
+  const narrow = compareResults(runQuery('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"\nprincipal.user.userid = "ana"', mini).result, ref);
+  assert.deepEqual(narrow.missingIds, ['e3', 'e4']); assert.deepEqual(narrow.extraIds, []);
+  const wide = compareResults(runQuery('metadata.id != "ZZZ-NOT-A-RECORD"', mini).result, ref);
+  assert.equal(wide.extraIds.length, 3, 'capped at three');            // e1, e5, e6, e7 are extra; only three are shown
+  assert.deepEqual(wide.extraIds, ['e1', 'e5', 'e6']);                 // time order, so the learner can find them
+  assert.ok(!JSON.stringify(wide).includes('ZZZ'), 'learner text is never echoed');
+  for (const id of [...wide.extraIds, ...narrow.missingIds]) assert.ok(mini.some(e => e['metadata.id'] === id), id + ' is a real record');
+  // should-fail: a correct query carries no examples at all
+  const same = compareResults(runQuery('security_result.action = "FAIL" AND metadata.event_type = "USER_LOGIN"', mini).result, ref);
+  assert.equal(same.correct, true); assert.equal(same.missingIds, undefined);
+});
+
+test('G10 stats comparison separates missing rows, extra rows and same-key rows whose numbers differ', () => {
+  const ref = runQuery('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"\nmatch:\n  principal.user.userid\noutcome:\n  $c = count(metadata.id)', mini).result;
+  const changed = compareResults(runQuery('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.user.userid\noutcome:\n  $c = count(metadata.id)', mini).result, ref);
+  assert.equal(changed.reason, 'DIFFERENT_STATS');
+  assert.equal(changed.changed, 1); assert.equal(changed.missing, 0); assert.equal(changed.extra, 0);   // ana: 2 logins vs 1 failure
+  assert.deepEqual(changed.changedIds, ['e2']);                                                           // the reference side of the changed row
+  const narrow = compareResults(runQuery('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"\nprincipal.user.userid != ""\nmatch:\n  principal.user.userid\noutcome:\n  $c = count(metadata.id)', mini).result, ref);
+  assert.equal(narrow.missing, 1); assert.deepEqual(narrow.missingIds, ['e4']); assert.equal(narrow.changed, 0);
+  const wide = compareResults(runQuery('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"\nmatch:\n  principal.user.userid, principal.hostname\noutcome:\n  $c = count(metadata.id)', mini).result, ref);
+  assert.equal(wide.reason, 'DIFFERENT_GROUPING');                                                       // grouping mismatch is still named first
+  // should-fail: the members behind a row are not a column and do not reach the table or JSON
+  assert.deepEqual(Object.keys(ref.rows[0]), ['principal.user.userid', '$c']);
+  assert.ok(!JSON.stringify(ref.rows).includes('e2'));
+});

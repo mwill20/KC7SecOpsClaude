@@ -25,18 +25,31 @@ const rangeFor = id => { const r = CASE.ranges.find(x => x.id === id) ?? CASE.ra
 
 const app = document.getElementById('main');
 const topscore = document.getElementById('topscore');
+const chapterprog = document.getElementById('chapterprog');
+const chapterDone = ch => ch.missions.filter(mm => isDone(BY_ID.get(mm.id))).length;
+const allDone = () => MISSIONS.every(isDone);
+const currentChapterId = () => { const hash = location.hash.replace(/^#\/?/, ''); return BY_ID.get(hash)?.chapterId ?? (CHAPTERS.some(c => c.id === hash) ? hash : null); };
 const SITE_TITLE = 'Static on Pier Nine · YARA-L Search practice';
 // The skip link must move focus without touching the hash, or the router would send the learner home.
 document.querySelector('.skip')?.addEventListener('click', e => { e.preventDefault(); app.focus(); app.scrollIntoView(); });
 // Anchor styled as a button: one tab stop, Enter follows the link. Never nest a <button> inside an <a>.
 const linkBtn = (href, text, primary = false) => el('a', { class: 'btn' + (primary ? ' primary' : ''), href, text });
-function paintScore() { topscore.textContent = `${fmtNum(store.total())} / ${fmtNum(COURSE_MAX)} pts`; }
+function paintScore() {
+  topscore.textContent = `${fmtNum(store.total())} / ${fmtNum(COURSE_MAX)} pts`;
+  // One segment per chapter: number, a thin bar, and a full description for assistive tech. The current chapter is marked.
+  clear(chapterprog); const cur = currentChapterId();
+  chapterprog.append(...CHAPTERS.map((ch, i) => { const d = chapterDone(ch), n = ch.missions.length;
+    return el('li', {}, el('a', { class: 'chap' + (d === n ? ' done' : d ? ' partial' : '') + (ch.id === cur ? ' current' : ''), href: '#' + ch.id, 'aria-current': ch.id === cur ? 'page' : null,
+      'aria-label': `Chapter ${i + 1}, ${ch.title}: ${d} of ${n} missions complete` },
+      el('span', { class: 'n', 'aria-hidden': 'true', text: String(i + 1) }), el('span', { class: 'bar', 'aria-hidden': 'true' }, el('span', { style: `width:${Math.round(100 * d / n)}%` })))); }));
+}
 
 function route() {
   const hash = location.hash.replace(/^#\/?/, '');
   clear(app);
   let title = CASE.title;
   if (hash === 'about') { app.append(aboutPage()); title = 'What this is'; }
+  else if (hash === 'closed') { app.append(closedPage()); title = 'Case closed'; }
   else if (BY_ID.has(hash)) { const m = BY_ID.get(hash); app.append(missionPage(m)); title = m.title; }
   else if (CHAPTERS.some(c => c.id === hash)) { const ch = CHAPTERS.find(c => c.id === hash); app.append(chapterPage(ch)); title = ch.title; }
   else app.append(homePage());
@@ -57,7 +70,7 @@ function homePage() {
       ...CASE.opening.map(p => el('p', { text: p })),
       el('p', {}, el('strong', { text: 'Your role. ' }), CASE.role),
       el('div', { class: 'row', style: 'margin-top:14px' },
-        linkBtn('#' + (MISSIONS.find(m => !isDone(m)) ?? MISSIONS[0]).id, done ? 'Continue the case →' : 'Open the case →', true),
+        allDone() ? linkBtn('#closed', 'Read the case-closed handoff →', true) : linkBtn('#' + (MISSIONS.find(m => !isDone(m)) ?? MISSIONS[0]).id, done ? 'Continue the case →' : 'Open the case →', true),
         el('span', { class: 'muted small', text: `${done} of ${MISSIONS.length} missions complete · ${fmtNum(store.total())} of ${fmtNum(COURSE_MAX)} points` })),
     ),
     el('section', { class: 'card' },
@@ -97,7 +110,52 @@ function chapterPage(ch) {
       el('ul', { class: 'list' }, ch.missions.map((mm, i) => { const m = BY_ID.get(mm.id); return el('li', {},
         el('a', { href: '#' + m.id }, `${i + 1}. ${m.title}`),
         el('span', { class: 'row' }, el('span', { class: 'pill ' + m.kind, text: KIND_LABEL[m.kind] }), el('span', { class: 'pill' + (isDone(m) ? ' done' : ''), text: `${earned(m)} / ${missionMax(m)}` }))); }))),
-    el('div', { class: 'navrow' }, idx > 0 ? linkBtn('#' + CHAPTERS[idx - 1].id, '← Previous chapter') : el('span'), idx < CHAPTERS.length - 1 ? linkBtn('#' + CHAPTERS[idx + 1].id, 'Next chapter →') : el('span')));
+    recapCard(ch),
+    el('div', { class: 'navrow' }, idx > 0 ? linkBtn('#' + CHAPTERS[idx - 1].id, '← Previous chapter') : el('span'), idx < CHAPTERS.length - 1 ? linkBtn('#' + CHAPTERS[idx + 1].id, 'Next chapter →') : allDone() ? linkBtn('#closed', 'Case closed →', true) : el('span')));
+}
+
+// Chapter-end recap: what the learner can now do, in plain language. Before the chapter is complete it reads as a
+// promise; once every mission is done it reads as a record, and the card turns green.
+function recapCard(ch) {
+  const d = chapterDone(ch), n = ch.missions.length, complete = d === n;
+  return el('section', { class: 'card recap' + (complete ? ' complete' : ''), 'aria-label': 'Chapter recap' },
+    el('div', { class: 'eyebrow', text: complete ? 'Chapter complete · you can now' : 'By the end of this chapter you will be able to' }),
+    el('ul', {}, ch.recap.map(r => el('li', { text: r }))),
+    el('p', { class: 'small muted', text: complete ? 'Every mission in this chapter is complete.' : `${d} of ${n} missions complete so far.` }));
+}
+
+// Case closed: the handoff from the last mission, laid out as the three columns it teaches, shown once every mission
+// is complete. Until then the page says what is left.
+function closedPage() {
+  const handoff = BY_ID.get('C06-M04');
+  const column = part => { const x = handoff.explain.find(e => e.part === part); return x ? x.meaning.split(/\.\s+(?=[A-Z0-9])/).map(t => t.replace(/\.$/, '')) : []; };
+  const remaining = MISSIONS.filter(m => !isDone(m));
+  const head = el('section', { class: 'card story' },
+    el('div', { class: 'crumbs' }, el('a', { href: '#', text: 'Case file' }), ' › Case closed'),
+    el('div', { class: 'eyebrow', text: allDone() ? 'Case closed · 06:30' : 'Case still open' }),
+    el('h1', { text: allDone() ? 'The handoff' : 'The handoff is not written yet' }),
+    el('p', { text: allDone() ? handoff.clue : `${remaining.length} of ${MISSIONS.length} missions are still open. The handoff is written once every mission is complete; what is below is what you can already do.` }));
+  if (!allDone()) {
+    return el('div', {}, head,
+      el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Still to do' }),
+        el('ul', { class: 'list' }, remaining.map(m => el('li', {}, el('a', { href: '#' + m.id, text: `${m.chapterTitle} › ${m.title}` }), el('span', { class: 'pill ' + m.kind, text: KIND_LABEL[m.kind] }))))),
+      skillsCard(),
+      el('div', { class: 'navrow' }, linkBtn('#', '← Back to the case file'), linkBtn('#' + remaining[0].id, 'Next open mission →', true)));
+  }
+  return el('div', {}, head,
+    el('div', { class: 'columns' },
+      ['Facts', 'Hypotheses', 'Gaps'].map(part => el('section', { class: 'card closed ' + part.toLowerCase(), 'aria-label': part },
+        el('div', { class: 'eyebrow', text: part }),
+        el('p', { class: 'small muted', text: part === 'Facts' ? 'A second analyst could reproduce each of these from the same queries.' : part === 'Hypotheses' ? 'The story that explains the facts, labelled as a story.' : 'What the logs could not show. Each one is a task for daylight.' }),
+        el('ul', {}, column(part).map(t => el('li', { text: t })))))),
+    skillsCard(),
+    el('section', { class: 'card notice' }, el('strong', { text: 'What this proves. ' }), 'You can read and write the taught subset of YARA-L 2.0 Search against this fictional data. It does not prove tenant execution; run each shape once in your own tenant before relying on it.'),
+    el('div', { class: 'navrow' }, linkBtn('#', '← Back to the case file'), linkBtn('#C06-M04', 'Reread the handoff mission')));
+}
+function skillsCard() {
+  return el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'What you can now do' }),
+    el('div', { class: 'grid skills' }, CHAPTERS.map((ch, i) => { const complete = chapterDone(ch) === ch.missions.length;
+      return el('div', { class: 'skill' + (complete ? ' complete' : '') }, el('div', { class: 'small muted', text: `Chapter ${i + 1} · ${ch.title}` + (complete ? '' : ' · in progress') }), el('ul', {}, ch.recap.map(r => el('li', { text: r })))); })));
 }
 
 // ---------- Mission ----------
@@ -139,12 +197,12 @@ function missionPage(m) {
     m.hints.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Stuck?' }), hintsBox) : null,
     clueBox,
     m.caveat ? el('div', { class: 'caveat' }, el('strong', { text: 'In a real tenant: ' }), m.caveat) : null,
-    el('div', { class: 'navrow' }, prev ? linkBtn('#' + prev.id, '← ' + prev.title) : el('span'), next ? linkBtn('#' + next.id, next.title + ' →', isDone(m)) : linkBtn('#', 'Back to the case file', true)),
+    el('div', { class: 'navrow' }, prev ? linkBtn('#' + prev.id, '← ' + prev.title) : el('span'), next ? linkBtn('#' + next.id, next.title + ' →', isDone(m)) : linkBtn(isDone(m) && allDone() ? '#closed' : '#', isDone(m) && allDone() ? 'Case closed →' : 'Back to the case file', true)),
   );
 
   // ----- Desk -----
   const feedback = el('div', { class: 'feedback', hidden: true, role: 'status', 'aria-live': 'polite' });
-  const say = (cls, title, fix) => { clear(feedback); feedback.hidden = false; feedback.className = 'feedback ' + cls; feedback.append(el('div', { class: 'title', text: title })); if (fix) feedback.append(el('div', { class: 'fix', text: fix })); };
+  const say = (cls, title, fix, examples) => { clear(feedback); feedback.hidden = false; feedback.className = 'feedback ' + cls; feedback.append(el('div', { class: 'title', text: title })); if (fix) feedback.append(el('div', { class: 'fix', text: fix })); if (examples) feedback.append(el('div', { class: 'fix examples', text: examples })); };
   const results = el('div', { class: 'results' });
   const scorebox = el('div', { class: 'scorebox' });
   const paintScoreBox = () => {
@@ -177,7 +235,8 @@ function missionPage(m) {
   const editor = el('textarea', { class: 'editor', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', 'aria-label': 'Training query', 'aria-describedby': 'editor-help-' + m.id, disabled: m.kind === 'read' });
   editor.value = s.text;
   editor.addEventListener('input', () => { s.text = editor.value; s.query = null; });
-  editor.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); doRun(); } });
+  // Ctrl+Enter runs; Ctrl+Shift+Enter checks on missions that have a check. Tab is left alone so focus can leave the editor.
+  editor.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (e.shiftKey && m.kind !== 'watch') doCheck(); else doRun(); } });
 
   const rangeSel = el('select', { 'aria-label': 'Time range', onchange: e => { s.rangeId = e.target.value; s.run = null; s.query = null; paintResults(); feedback.hidden = true; } }, CASE.ranges.map(r => el('option', { value: r.id, selected: r.id === s.rangeId, text: r.label })));
 
@@ -191,7 +250,7 @@ function missionPage(m) {
   const doCheck = () => {
     const g = gradeQuery(editor.value, m, EVENTS, rangeFor(s.rangeId)); s.query = g;
     if (g.status === 'correct') { store.record(m.id, 'q', POINTS.query); say('ok', 'Query correct: it returns the same evidence as the reference.', 'Now read your results and answer the question below.'); }
-    else if (g.status === 'incorrect') { const d = describe(g.comparison.reason, g.comparison); const extra = g.comparison.missing !== undefined ? ` You have ${fmtNum(g.comparison.studentCount)} ${g.result.kind === 'events' ? 'events' : 'rows'}; the reference has ${fmtNum(g.comparison.referenceCount)}.` : ''; say('bad', d.title + extra, d.fix); }
+    else if (g.status === 'incorrect') { const d = describe(g.comparison.reason, g.comparison); const extra = g.comparison.missing !== undefined ? ` You have ${fmtNum(g.comparison.studentCount)} ${g.result.kind === 'events' ? 'events' : 'rows'}; the reference has ${fmtNum(g.comparison.referenceCount)}.` : ''; say('bad', d.title + extra, d.fix, d.examples); }
     else { const d = describe(g.code, g.detail); say(g.status === 'unsupported' ? 'warn' : 'bad', (g.status === 'unsupported' ? 'Not run here: ' : 'Will not run: ') + d.title, d.fix); }
     if (!s.run || s.run.text !== editor.value) { s.run = runQuery(editor.value, EVENTS, rangeFor(s.rangeId)); paintResults(); }
     paintScoreBox();
@@ -202,7 +261,8 @@ function missionPage(m) {
     deskButtons.append(el('button', { class: 'primary', text: 'Run query', onclick: doRun }));
     if (m.kind !== 'watch') deskButtons.append(el('button', { text: 'Check query', onclick: doCheck }));
     deskButtons.append(el('button', { class: 'ghost', text: 'Reset', onclick: () => { editor.value = s.text = m.starter ?? ''; s.run = null; s.query = null; paintResults(); feedback.hidden = true; } }));
-    deskButtons.append(el('span', { class: 'small muted', id: 'editor-help-' + m.id }, el('kbd', { text: 'Ctrl' }), ' + ', el('kbd', { text: 'Enter' }), ' runs'));
+    const keys = (...ks) => ks.flatMap((k, i) => (i ? [' + ', el('kbd', { text: k })] : [el('kbd', { text: k })]));
+    deskButtons.append(el('span', { class: 'small muted keys', id: 'editor-help-' + m.id }, ...keys('Ctrl', 'Enter'), ' runs', m.kind !== 'watch' ? [' · ', ...keys('Ctrl', 'Shift', 'Enter'), ' checks'] : [], ' · ', el('kbd', { text: 'Tab' }), ' leaves the editor'));
   }
 
   const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))));
@@ -216,7 +276,7 @@ function missionPage(m) {
       el('div', { class: 'row' }, input, el('button', { text: 'Check answer', onclick: () => {
         const g = gradeAnswer(input.value, m); s.answer = g;
         if (g.correct) { store.record(m.id, 'a', POINTS.answer); ansFeedback.textContent = 'Correct.'; ansFeedback.style.color = 'var(--ok)'; }
-        else { ansFeedback.style.color = 'var(--bad)'; ansFeedback.textContent = 'Not what the whole night shows.' + (s.rangeId !== 'all' ? ' Answers assume the whole night; your time range is narrower.' : ' Run the query and read the value from the results.'); }
+        else { ansFeedback.style.color = 'var(--bad)'; ansFeedback.textContent = 'Not what the whole night shows.' + (s.rangeId !== 'all' ? ' Answers assume the whole night; your time range is narrower.' : ' ' + whereToRead(m.answer.check) + (s.run?.ok ? '' : ' Run the query first.')); }
         paintScoreBox();
       } })), ansFeedback);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); answerPart.querySelector('button').click(); } });
@@ -243,6 +303,17 @@ function missionPage(m) {
   );
   paintResults(); paintScoreBox();
   return el('div', { class: 'mission' }, lesson, desk);
+}
+
+// Tells the learner where in their own results the answer is read from, without giving the value.
+function whereToRead(check) {
+  const named = row => Object.entries(row).map(([k, v]) => `${k} is ${v}`).join(' and ');
+  if (check.type === 'count') return 'The answer is the count in the results bar above the table, not a value inside it.';
+  if (check.type === 'distinct') return `Count the different ${check.field} values in your results, not the number of rows.`;
+  if (check.type === 'time') return 'Read the time column of the first row and give it as HH:MM, UTC.';
+  if (check.type === 'field') return check.where ? `Find the first row where ${named(check.where)}, open it, and read ${check.field}.` : `Open the first row's record and read ${check.field}.`;
+  if (check.type === 'cell') { const col = typeof check.column === 'number' ? 'the first calculated column' : `the ${check.column} column`; return typeof check.row === 'number' ? `Read ${col} of row ${check.row + 1} of the table.` : `Find the row where ${named(check.row)} and read ${col}.`; }
+  return 'Run the query and read the value from the results.';
 }
 
 // ---------- About ----------

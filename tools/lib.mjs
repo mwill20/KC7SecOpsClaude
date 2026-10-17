@@ -40,6 +40,8 @@ export function validate({ case: caseFile, chapters }, data) {
   const ids = new Set();
   for (const ch of chapters) {
     if (!ch.id || !ch.title || !Array.isArray(ch.missions)) problems.push(`${ch.id}: chapter shape`);
+    // The chapter-end recap card needs three to six plain-language "you can now" lines.
+    if (!Array.isArray(ch.recap) || ch.recap.length < 3 || ch.recap.length > 6 || ch.recap.some(r => typeof r !== 'string' || r.length < 12)) problems.push(`${ch.id}: recap needs 3 to 6 lines`);
     for (const m of ch.missions) {
       const where = `${m.id}`;
       if (ids.has(m.id)) problems.push(`${where}: duplicate id`); ids.add(m.id);

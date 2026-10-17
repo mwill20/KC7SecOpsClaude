@@ -1,5 +1,5 @@
 import { parseSearch, QueryError } from './parser.js';
-import { execute } from './executor.js';
+import { execute, MEMBERS } from './executor.js';
 
 // Grades by running both queries against the same fictional data and comparing what comes back.
 // Two different-looking queries that return the same evidence both pass; a plausible query that
@@ -17,15 +17,18 @@ export function runQuery(text, events, range) {
 }
 
 const idSet = rows => new Set(rows.map(r => r['metadata.id']));
-const rowKey = (row, columns) => JSON.stringify(columns.map(c => row[c]));
+// Up to three example record IDs, always taken from the dataset side of the comparison (never from learner text),
+// in time order because executor rows are time-sorted. The learner can open one with metadata.id = "...".
+export const EXAMPLE_IDS = 3;
+const examples = ids => [...new Set(ids)].slice(0, EXAMPLE_IDS);
 
 export function compareResults(student, reference) {
   if (student.kind !== reference.kind) return { correct: false, reason: reference.kind === 'stats' ? 'EXPECTED_STATS' : 'EXPECTED_EVENTS' };
   if (student.kind === 'events') {
     const s = idSet(student.rows), r = idSet(reference.rows);
-    const missing = [...r].filter(id => !s.has(id)).length, extra = [...s].filter(id => !r.has(id)).length;
-    if (!missing && !extra) return { correct: true, reason: 'SAME_EVENTS' };
-    return { correct: false, reason: 'DIFFERENT_EVENTS', missing, extra, studentCount: s.size, referenceCount: r.size };
+    const missingIds = [...r].filter(id => !s.has(id)), extraIds = [...s].filter(id => !r.has(id));
+    if (!missingIds.length && !extraIds.length) return { correct: true, reason: 'SAME_EVENTS' };
+    return { correct: false, reason: 'DIFFERENT_EVENTS', missing: missingIds.length, extra: extraIds.length, missingIds: examples(missingIds), extraIds: examples(extraIds), studentCount: s.size, referenceCount: r.size };
   }
   // Stats: outcome names are the learner's choice, so compare by position of outcome columns.
   const sKeys = student.columns.filter(c => !c.startsWith('$')), rKeys = reference.columns.filter(c => !c.startsWith('$'));
@@ -39,7 +42,20 @@ export function compareResults(student, reference) {
     if (JSON.stringify([...sRows].sort()) === JSON.stringify([...rRows].sort())) return { correct: false, reason: 'DIFFERENT_ORDER' };
   } else if (JSON.stringify([...sRows].sort()) === JSON.stringify([...rRows].sort())) return { correct: true, reason: 'SAME_STATS' };
   const rs = new Set(rRows), ss = new Set(sRows);
-  return { correct: false, reason: 'DIFFERENT_STATS', missing: rRows.filter(r => !ss.has(r)).length, extra: sRows.filter(r => !rs.has(r)).length, studentCount: sRows.length, referenceCount: rRows.length };
+  // Differing rows are described by the events behind them. A row is matched by its grouping keys: a key only in the
+  // reference is a missing row, a key only in the student table is an extra row, and a key in both whose calculated
+  // values differ is a changed row (same grouping, different aggregate).
+  const keyOf = (row, keys) => JSON.stringify(keys.map(k => row[k]));
+  const rKeyed = new Map(reference.rows.map((row, i) => [keyOf(row, rKeys), { row, full: rRows[i] }]));
+  const sKeyed = new Map(student.rows.map((row, i) => [keyOf(row, sKeys), { row, full: sRows[i] }]));
+  const missingIds = [], extraIds = [], changedIds = [];
+  let missingRows = 0, extraRows = 0, changedRows = 0;
+  for (const [k, { row, full }] of rKeyed) {
+    if (ss.has(full)) continue;
+    if (sKeyed.has(k)) { changedRows++; changedIds.push(...(row[MEMBERS] ?? [])); } else { missingRows++; missingIds.push(...(row[MEMBERS] ?? [])); }
+  }
+  for (const [k, { row, full }] of sKeyed) { if (!rs.has(full) && !rKeyed.has(k)) { extraRows++; extraIds.push(...(row[MEMBERS] ?? [])); } }
+  return { correct: false, reason: 'DIFFERENT_STATS', missing: missingRows, extra: extraRows, changed: changedRows, missingIds: examples(missingIds), extraIds: examples(extraIds), changedIds: examples(changedIds), studentCount: sRows.length, referenceCount: rRows.length };
 }
 
 export const POINTS = Object.freeze({ query: 60, answer: 25, call: 15 });

@@ -4,12 +4,19 @@
   "subtitle": "Logins, outcomes, and the difference between an account and a person",
   "intro": "Hal's theory is simple: Marco still has a login, Marco is angry, Marco did it. Odalys's instruction is simpler: start with who could sign in tonight, and what happened when they tried. Every login attempt on the pier lands in SecOps as a USER_LOGIN event. That is where you begin.",
   "concepts": ["An event is one record of one thing happening", "USER_LOGIN includes attempts that failed", "Count accounts, not repeated logins", "Blank fields are zero values, not errors"],
+  "recap": [
+    "Filter one event type and one action with two stacked conditions",
+    "Count distinct account IDs and say why that is not a head count",
+    "Group by a field, count per group and sort the biggest first",
+    "Read a blank field as the source saying 'I do not know', not as an error",
+    "Read Google's $e. spelling as the same single-event filter"
+  ],
   "missions": [
     {
       "id": "C01-M01",
       "kind": "watch",
       "title": "Open the login log",
-      "beat": "Odalys hands you a sticky note: 'Everyone who touched a keyboard tonight.' The playout PC, the pledge desks, the VPN. Start wide. Do not count anything yet; look at what a login event actually contains.",
+      "beat": "Odalys hands you a sticky note: 'Everyone who touched a keyboard tonight.' The playout PC, the pledge desks, the VPN. Start wide. Do not sort or summarise anything yet; count what comes back and look at what a login event actually contains.",
       "question": "What login activity does SecOps hold for Pledge Night?",
       "concept": { "title": "An event is one record of one thing happening", "text": "A log line is not an incident. It is one normalized record with a type, a time and some fields. metadata.event_type is the 'what happened' label. USER_LOGIN is the label Google gives to every sign-in attempt, successful or not." },
       "explain": [
@@ -28,11 +35,11 @@
       "call": {
         "prompt": "Which of these does USER_LOGIN include?",
         "options": [
-          { "id": "A", "label": "Every sign-in attempt, whether it succeeded or failed" },
-          { "id": "B", "label": "Only successful sign-ins" },
-          { "id": "C", "label": "Only failed sign-ins" }
+          { "id": "A", "label": "Only sign-ins that succeeded; failed attempts are logged under a different event type entirely" },
+          { "id": "B", "label": "Only sign-ins that failed; a successful login is routine and is not recorded as a security event" },
+          { "id": "C", "label": "Every sign-in attempt, whether it succeeded or failed; the outcome is a separate field" }
         ],
-        "correct": "A",
+        "correct": "C",
         "why": "The event type says what kind of thing happened. Whether it worked is a separate field, security_result.action, which you use next."
       },
       "clue": "Forty attempts from a station with eleven staff on shift. Several names repeat. One account, pledge-desk, appears more than any person does. Keep that in mind; it is shared by the whole pledge desk.",
@@ -61,9 +68,9 @@
       "call": {
         "prompt": "If you delete the first line and keep only security_result.action = \"FAIL\", what changes?",
         "options": [
-          { "id": "A", "label": "Nothing; FAIL only exists on login events" },
-          { "id": "B", "label": "The query can now match failures of any event type, not just logins" },
-          { "id": "C", "label": "The query becomes invalid without an event type" }
+          { "id": "A", "label": "Nothing changes; FAIL is an action only login events carry, so the result set is the same" },
+          { "id": "B", "label": "The query can now match a FAIL action on any event type, not just logins" },
+          { "id": "C", "label": "The query no longer runs; Search needs an event type before any other condition" }
         ],
         "correct": "B",
         "why": "Each condition controls part of the scope. Removing the event type widens the search to any event with a FAIL action."
@@ -92,14 +99,14 @@
       ],
       "answer": { "prompt": "What is the value of $accounts?", "value": "9", "check": { "type": "cell", "row": 0, "column": 0 } },
       "call": {
-        "prompt": "Nine distinct accounts signed in. What can you tell Odalys?",
+        "prompt": "Your distinct-account count is on the table. What can you tell Odalys?",
         "options": [
-          { "id": "A", "label": "Nine people were in the building tonight" },
-          { "id": "B", "label": "Nine account IDs had at least one successful sign-in; some may be shared or automated" },
-          { "id": "C", "label": "Nine is wrong because Marco's account is disabled" }
+          { "id": "A", "label": "That many account IDs had at least one successful sign-in; some may be shared or automated" },
+          { "id": "B", "label": "That many people were in the building tonight, since every sign-in needs a person at a keyboard" },
+          { "id": "C", "label": "The count is one too high, because Marco's disabled account should not be part of it" }
         ],
-        "correct": "B",
-        "why": "The count describes account IDs in the records. pledge-desk is shared by the whole desk, and service accounts sign in without a human present."
+        "correct": "A",
+        "why": "The count describes account IDs in the records. pledge-desk is shared by the whole desk, and service accounts sign in without a human present. Marco's account never succeeded, so it is not in this count at all."
       },
       "clue": "Nine accounts, and one of them is pledge-desk, which Hal, Priya and whoever covers the phones all use. If that account did something tonight, the log will not say which hand was on the keyboard.",
       "caveat": "Try removing the != \"\" line and run again. If a source ever leaves the user ID blank, the blank becomes a tenth 'account'."
@@ -125,13 +132,13 @@
       ],
       "answer": { "prompt": "Which account is at the top of the table?", "value": "pledge-desk", "check": { "type": "cell", "row": 0, "column": "principal.user.userid" } },
       "call": {
-        "prompt": "pledge-desk has 7 failures and marco.vela has 3. What is the right reading?",
+        "prompt": "The top row has seven failures; marco.vela has three. What is the right reading?",
         "options": [
-          { "id": "A", "label": "Marco is cleared; the count is too small" },
-          { "id": "B", "label": "The shared account's failures are the stronger lead and need a time and source check next" },
-          { "id": "C", "label": "Seven failures proves a brute-force attack on pledge-desk" }
+          { "id": "A", "label": "Seven failures on one account is a brute-force attack, and the brief can say so in those words tonight" },
+          { "id": "B", "label": "Marco is cleared, because three failures are too few to mean anything on a busy pledge night" },
+          { "id": "C", "label": "The top account's failures are the stronger lead and need a time and source check next" }
         ],
-        "correct": "B",
+        "correct": "C",
         "why": "A count is a lead, not a verdict. Seven failures could be one tired volunteer or an attacker; when and from where they happened decides which."
       },
       "clue": "pledge-desk: seven failures. marco.vela: three, all 'Account disabled', all from Studio B, the room he used to work in. Hal will like that. Look harder at the shared account before you let him.",
@@ -154,11 +161,11 @@
       ],
       "answer": { "prompt": "What principal.ip is on the first ALLOW event for pledge-desk?", "value": "198.51.100.23", "check": { "type": "field", "field": "principal.ip", "where": { "security_result.action": "ALLOW" }, "index": 0 } },
       "call": {
-        "prompt": "The seven failures and the first success all come from 198.51.100.23 through VPN-GW-01, with a blank hostname. What does the blank hostname mean?",
+        "prompt": "The seven failures and the first success all come from the same outside address through VPN-GW-01, and principal.hostname is blank on every one. What does the blank hostname mean?",
         "options": [
-          { "id": "A", "label": "The record is corrupt and should be ignored" },
+          { "id": "A", "label": "The records are incomplete, and the gateway's logging should be fixed before you rely on them" },
           { "id": "B", "label": "The gateway did not learn the remote device's name; the attempts came from outside the pier" },
-          { "id": "C", "label": "The login was local to the gateway itself" }
+          { "id": "C", "label": "The login happened on the gateway itself, so VPN-GW-01 is the machine to examine next" }
         ],
         "correct": "B",
         "why": "A zero value is the source saying 'I do not know'. For a VPN login it is expected, and the external IP carries the real information."
@@ -185,11 +192,11 @@
       "call": {
         "prompt": "A colleague pastes a docs example with $e. prefixes into Search and it runs. Which statement is true?",
         "options": [
-          { "id": "A", "label": "It is the same single-event filter; the prefix names the event variable" },
-          { "id": "B", "label": "It will only work inside a detection rule" },
-          { "id": "C", "label": "The $e makes it match two events at once" }
+          { "id": "A", "label": "It only works inside a detection rule; Search tolerates the prefix but ignores the filter" },
+          { "id": "B", "label": "The $e makes the query match two events at once, one for each condition" },
+          { "id": "C", "label": "It is the same single-event filter; the prefix names the one event variable" }
         ],
-        "correct": "A",
+        "correct": "C",
         "why": "One event variable means one event. Two different variables, such as $e1 and $e2, would be a multi-event query, which this trainer does not run."
       },
       "clue": "Chapter 1 gave you a lead: an outside address signing into a shared account, then landing on the playout PC. Chapter 2 asks how that address got a password in the first place.",

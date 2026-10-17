@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { root, loadContent, loadData, validate, deriveAnswer } from '../../tools/lib.mjs';
 import { runQuery, compareResults, gradeQuery, gradeAnswer, gradeCall } from '../../site/engine/grader.js';
-import { MESSAGES } from '../../site/ui/messages.js';
+import { MESSAGES, describe } from '../../site/ui/messages.js';
 
 const content = loadContent(); const data = loadData();
 const missions = content.chapters.flatMap(c => c.missions);
@@ -67,4 +67,54 @@ test('C5 the dataset is fictional by construction: documentation IP ranges and .
   const domains = new Set(text.match(/[a-z0-9.-]+\.(?:com|org|net|io|example)\b/g));
   for (const d of domains) assert.ok(d.endsWith('.example'), 'unexpected domain ' + d);
   assert.equal(data.events.length, 1010);
+});
+
+test('C6 feedback text names the one-sided case and lists example IDs without echoing anything typed', () => {
+  const m = missions.find(x => x.id === 'C01-M05');
+  const g = gradeQuery('metadata.event_type = "USER_LOGIN"\nprincipal.user.userid = "pledge-desk"\nsecurity_result.action = "FAIL" // NOTE-FROM-LEARNER', m, data.events);
+  const d = describe(g.comparison.reason, g.comparison);
+  assert.match(d.title, /misses events/);
+  assert.match(d.fix, /too narrow/);
+  assert.match(d.examples, /"evt-00094", "evt-00127", "evt-00128"/);
+  assert.match(d.examples, /metadata\.id = "evt-00094"/);
+  assert.ok(!d.fix.includes('NOTE-FROM-LEARNER'));
+  const stats = missions.find(x => x.id === 'C01-M03');
+  const g2 = gradeQuery(stats.reference.replace('count_distinct', 'count'), stats, data.events);
+  assert.match(describe(g2.comparison.reason, g2.comparison).title, /Same rows, different numbers/);
+  // should-fail: a two-sided difference keeps the general title, and a code with no detail carries no examples
+  const g3 = gradeQuery('metadata.event_type = "USER_LOGIN"\nprincipal.user.userid = "marco.vela"', m, data.events);
+  assert.equal(describe(g3.comparison.reason, g3.comparison).title, MESSAGES.DIFFERENT_EVENTS[0]);
+  assert.equal(describe('DIFFERENT_EVENTS', null).examples, '');
+  assert.equal(describe('STARTER_GAP', 3).title, MESSAGES.STARTER_GAP[0]);
+});
+
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const leaks = (prompt, value) => {
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const forms = [value]; if (/^\d+$/.test(value) && Number(value) <= 20) forms.push(NUMBER_WORDS[Number(value)]);
+  return forms.some(f => new RegExp(`(^|[^\\w.:$-])${esc(f)}(?=$|[^\\w.:-])`, 'i').test(prompt));
+};
+test('C7 analyst calls cannot be guessed from length or position, and call prompts do not restate the answer', () => {
+  const longest = missions.filter(m => { const lens = m.call.options.map(o => o.label.length); return lens[m.call.options.findIndex(o => o.id === m.call.correct)] === Math.max(...lens); });
+  assert.ok(longest.length <= missions.length * 0.4, `longest option is correct in ${longest.map(m => m.id).join(', ')}`);
+  const byPos = { A: 0, B: 0, C: 0 }; for (const m of missions) byPos[m.call.correct]++;
+  for (const [pos, n] of Object.entries(byPos)) assert.ok(n >= 6, `position ${pos} is correct only ${n} times`);
+  for (const m of missions) {
+    const lens = m.call.options.map(o => o.label.length);
+    assert.ok(Math.max(...lens) <= 1.6 * Math.min(...lens), `${m.id}: option lengths ${lens.join('/')} give the answer away`);
+    if (m.answer) assert.ok(!leaks(m.call.prompt, m.answer.value), `${m.id}: call prompt restates the answer "${m.answer.value}"`);
+  }
+  // should-fail: the checks bite on a course whose correct option is always the longest, and on a prompt that leaks
+  const bad = JSON.parse(JSON.stringify(missions));
+  for (const m of bad) m.call.options.find(o => o.id === m.call.correct).label += ' and that is the whole story, in detail';
+  assert.ok(bad.filter(m => { const lens = m.call.options.map(o => o.label.length); return lens[m.call.options.findIndex(o => o.id === m.call.correct)] === Math.max(...lens); }).length > missions.length * 0.4);
+  assert.ok(leaks('Fourteen failures across the night. Which?', '14'));
+  assert.ok(leaks('pledge-desk has 7 failures', 'pledge-desk'));
+  assert.ok(!leaks('The time is 19:21:04', '21'));
+});
+
+test('C8 every chapter carries a recap for its chapter-end card, and the validator refuses one without', () => {
+  for (const ch of content.chapters) assert.ok(ch.recap.length >= 3 && ch.recap.length <= 6, ch.id);
+  const bad = JSON.parse(JSON.stringify(content)); delete bad.chapters[2].recap;
+  assert.ok(validate(bad, data).some(p => p.includes('C03') && p.includes('recap')));
 });

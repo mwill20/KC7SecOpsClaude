@@ -33,9 +33,9 @@ Watch 40 (answer 25 + call 15) · Build/Your turn 100 (query 60 + answer 25 + ca
 
 ## What was verified
 
-- `npm test`: 29 unit tests, including should-fail cases (parser rejects bad shapes with the right code; grader fails plausible wrong queries; content validator catches a drifted answer; progress store ignores hostile state; the contrast check rejects a low-contrast token).
+- `npm test`: 35 unit tests, including should-fail cases (parser rejects bad shapes with the right code; grader fails plausible wrong queries; content validator catches a drifted answer; progress store ignores hostile state; the contrast check rejects a low-contrast token).
 - `npm run validate:content`: every reference runs; every authored answer equals what the data returns; every Build starter fails until completed; every Watch starter equals its reference.
-- `npm run test:browser`: 8 Playwright tests in Chromium against the built `dist/`, no retries, no sleeps: a Build mission completed with the keyboard only (invalid → correct → answer → call → clue → next), a Watch mission with a time-range change and the narrower-range warning, hint reveal with focus management, record drill-down with focus return, 320 px width with no horizontal overflow, reduced motion, zero `securitypolicyviolation` events and zero non-loopback requests across every route and interaction, and structural accessibility assertions.
+- `npm run test:browser`: 11 Playwright tests in Chromium against the built `dist/`, no retries, no sleeps: a Build mission completed with the keyboard only (invalid → correct → answer → call → clue → next), a Watch mission with a time-range change and the narrower-range warning, hint reveal with focus management, record drill-down with focus return, 320 px width with no horizontal overflow, reduced motion, zero `securitypolicyviolation` events and zero non-loopback requests across every route and interaction, and structural accessibility assertions.
 - An accessibility pass (names, focus order, headings, live regions, token contrast) with sixteen fixes, each re-checked by a test. Method, findings and mutation checks: [docs/EVALUATION.md](docs/EVALUATION.md).
 - The earlier manual click-through in one desktop browser still stands; it is now superseded by the tests above for everything it covered.
 

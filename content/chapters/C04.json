@@ -4,6 +4,12 @@
   "subtitle": "DNS rhythm, address ranges, and which way the bytes went",
   "intro": "Every ten minutes since 19:40, AUTOMATION-01 has asked the same question of DNS and made the same small connection. That rhythm is a scheduled task talking to whoever owns 203.0.113.44. Network events carry direction: principal is the side that started it, target is the side that answered. Read them that way and the night's traffic tells its own story.",
   "concepts": ["Regular intervals are a signature", "CIDR notation names a range of addresses", "Parentheses decide what OR applies to", "sent_bytes is from the principal's point of view"],
+  "recap": [
+    "Recognise a fixed interval in a count as a beacon, not a person",
+    "Test an IP field against a CIDR range with net.ip_in_range_cidr",
+    "Wrap an OR in parentheses so it stays inside the event-type filter",
+    "Compare bytes as numbers and read the direction from the principal's side"
+  ],
   "missions": [
     {
       "id": "C04-M01",
@@ -11,7 +17,7 @@
       "title": "The same question every ten minutes",
       "beat": "Count DNS lookups for anything under the lookalike domain, grouped by the machine asking. One number will stand out.",
       "question": "Which machine keeps looking up the lookalike domain, and how often?",
-      "concept": { "title": "Regular intervals are a signature", "text": "People browse in bursts. Scheduled code is punctual. Sixty-two lookups in ten hours and twenty minutes is one every ten minutes, which is exactly what the PledgeSync task was told to do." },
+      "concept": { "title": "Regular intervals are a signature", "text": "People browse in bursts. Scheduled code is punctual. Divide a machine's lookup count by the hours it spans: if it comes out to one every ten minutes, you are looking at the PledgeSync task's /mo 10 interval, not a person refreshing a page." },
       "explain": [
         { "part": "/pier9-partners\\.example$/", "meaning": "Anchored to the end, so cdn-sync.pier9-partners.example and the bare domain both match." },
         { "part": "match:\n  principal.hostname", "meaning": "One row per asking machine." },
@@ -26,13 +32,13 @@
       ],
       "answer": { "prompt": "How many lookups did AUTOMATION-01 make?", "value": "62", "check": { "type": "cell", "row": { "principal.hostname": "AUTOMATION-01" }, "column": "$lookups" } },
       "call": {
-        "prompt": "Sixty-two lookups at ten-minute spacing. What is the strongest reading?",
+        "prompt": "Open the AUTOMATION-01 row's lookups: they are spaced ten minutes apart from 19:40 until nearly 06:00. What is the strongest reading?",
         "options": [
-          { "id": "A", "label": "A user kept refreshing the sponsor page all night" },
-          { "id": "B", "label": "Automated check-ins from the scheduled task: a beacon" },
-          { "id": "C", "label": "A DNS misconfiguration" }
+          { "id": "A", "label": "A user kept refreshing the sponsor page all night from the playout PC, which has a browser like any other" },
+          { "id": "B", "label": "A DNS misconfiguration on the playout PC is retrying a name it cannot resolve, once per cache expiry" },
+          { "id": "C", "label": "Automated check-ins from the scheduled task: a beacon that outlived every human on shift" }
         ],
-        "correct": "B",
+        "correct": "C",
         "why": "The spacing matches the task's /mo 10 interval exactly, and the lookups continue long after every human went home."
       },
       "clue": "AUTOMATION-01 called home 62 times. PLEDGE-DESK-02 called once, at 18:52, when Hal followed the link. Two different stories from the same domain: one click, then one machine on a leash.",
@@ -58,13 +64,13 @@
       ],
       "answer": { "prompt": "How many connection events match?", "value": "65", "check": { "type": "count" } },
       "call": {
-        "prompt": "All 65 connections used port 443. Does HTTPS make them safer?",
+        "prompt": "Every connection in your result used port 443. Does HTTPS make them safer?",
         "options": [
-          { "id": "A", "label": "Yes; encrypted traffic cannot carry stolen data" },
-          { "id": "B", "label": "No; encryption hides the content from you too, so destination, timing and volume are your evidence" },
-          { "id": "C", "label": "Yes; port 443 is allowed by the firewall, so it is approved" }
+          { "id": "A", "label": "No; encryption hides the content from you too, so destination, timing and volume are your evidence" },
+          { "id": "B", "label": "Yes; encrypted traffic cannot carry stolen data out without breaking the TLS session, which the gateway would log" },
+          { "id": "C", "label": "Yes; port 443 is allowed by the firewall, so whatever used it was approved traffic and is out of scope" }
         ],
-        "correct": "B",
+        "correct": "A",
         "why": "Attackers use 443 because it is allowed everywhere and inspected nowhere. The metadata around the connection is what you can still read."
       },
       "clue": "Sixty-five connections into the range: 63 from AUTOMATION-01, two from PLEDGE-DESK-02 at 18:52 and 18:53. The two from Hal's desk are the page load and the form post. Everything after that is the playout PC.",
@@ -92,11 +98,11 @@
       "call": {
         "prompt": "You drop the parentheses and the count jumps to hundreds. What happened?",
         "options": [
-          { "id": "A", "label": "The query became (type AND principal) OR target, so every event with target.ip 10.9.4.22 of any type was added" },
-          { "id": "B", "label": "Search ignored the OR" },
-          { "id": "C", "label": "The grouped field ip was triggered" }
+          { "id": "A", "label": "Search ignored the OR and treated the three conditions as one long AND, matching far more than intended" },
+          { "id": "B", "label": "The query became (type AND principal) OR target, so every event with that target IP, of any type, was added" },
+          { "id": "C", "label": "The grouped field ip was triggered by the repeated address and matched both roles at once across every event type" }
         ],
-        "correct": "A",
+        "correct": "B",
         "why": "Operator precedence silently changed the question. The results looked plausible, which is the dangerous part."
       },
       "clue": "Twenty-one connections. Nineteen are the evening's ordinary browsing and mail. Two are the 18:52 and 18:53 connections to 203.0.113.44 that followed the phishing link. Hal's machine is a victim's machine, not the attacker's.",
@@ -119,13 +125,13 @@
       ],
       "answer": { "prompt": "What is the target.ip of the large transfer?", "value": "203.0.113.44", "check": { "type": "field", "field": "target.ip", "index": 0 } },
       "call": {
-        "prompt": "48,230,112 bytes sent from AUTOMATION-01 to 203.0.113.44 at 02:10, five minutes after donors_export.zip was written. What can you state, and what remains inference?",
+        "prompt": "One connection: 48,230,112 bytes sent from AUTOMATION-01 to the attacker address at 02:10, five minutes after donors_export.zip was written. What can you state, and what remains inference?",
         "options": [
-          { "id": "A", "label": "State: a 48 MB upload to the attacker address followed the zip. Inference: the zip's contents were the payload" },
-          { "id": "B", "label": "State: the donor list was stolen" },
-          { "id": "C", "label": "State: nothing, since the connection was encrypted" }
+          { "id": "A", "label": "State: the donor list was stolen at 02:10. The size, the timing and the file name together prove what the stream contained" },
+          { "id": "B", "label": "State: nothing, since the connection was encrypted and the bytes cannot be read back from the log or the sensor" },
+          { "id": "C", "label": "State: a 48 MB upload to the attacker address followed the zip. Inference: the zip's contents were the payload" }
         ],
-        "correct": "A",
+        "correct": "C",
         "why": "You can prove the size, the direction, the destination and the timing. Proving what was inside the stream needs the file itself or the attacker's server, neither of which you have."
       },
       "clue": "One connection over ten megabytes all night: 48 MB from the playout PC to 203.0.113.44 at 02:10:33. The pirate segment at 03:10 read donor names on air. The donor list left the building an hour before that. The broadcast was the announcement, not the theft.",

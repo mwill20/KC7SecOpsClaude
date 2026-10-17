@@ -4,6 +4,11 @@
   "subtitle": "Statistics queries that turn a night of traffic into a shortlist",
   "intro": "Odalys needs a one-page brief for the board at 07:00, not a thousand rows. Statistics queries are how you compress a night into a table: group by something, calculate per group, sort, cut. You have used each piece; this chapter is about composing them on purpose.",
   "concepts": ["limit cuts the output, not the search", "Two outcomes in one query", "count versus count_distinct"],
+  "recap": [
+    "Sum a numeric field per group, sort it and cut the list with limit",
+    "Calculate two outcomes per row and group by two keys",
+    "Choose count or count_distinct from the question you were asked"
+  ],
   "missions": [
     {
       "id": "C05-M01",
@@ -26,13 +31,13 @@
       ],
       "answer": { "prompt": "Which hostname is in the first row?", "value": "AUTOMATION-01", "check": { "type": "cell", "row": 0, "column": "principal.hostname" } },
       "call": {
-        "prompt": "AUTOMATION-01's total is roughly 27 times the next machine's. What should the brief say?",
+        "prompt": "The first row's total is roughly 27 times the second row's. What should the brief say?",
         "options": [
-          { "id": "A", "label": "The playout PC is the outlier: one connection at 02:10 accounts for almost all of it" },
-          { "id": "B", "label": "The playout PC streams audio, so a large total is expected" },
-          { "id": "C", "label": "All machines should be reimaged" }
+          { "id": "A", "label": "The playout PC streams audio all night, so a large outbound total from it is expected and not worth a line" },
+          { "id": "B", "label": "The playout PC is the outlier: one connection at 02:10 accounts for almost all of it" },
+          { "id": "C", "label": "Every machine in the top five should be reimaged before the morning news, since all of them sent data out" }
         ],
-        "correct": "A",
+        "correct": "B",
         "why": "The playout PC's normal streaming is inbound (received bytes). Outbound volume on that scale from that machine is new tonight, and you already know the connection that caused it."
       },
       "clue": "AUTOMATION-01, 48,345,375 bytes out. Studio A, in second place, is under two million and that is a night of normal use. One machine, one connection, one spreadsheet.",
@@ -58,14 +63,14 @@
       ],
       "answer": { "prompt": "How many connections to 203.0.113.44:443?", "value": "63", "check": { "type": "cell", "row": { "target.ip": "203.0.113.44" }, "column": "$connections" } },
       "call": {
-        "prompt": "The row for 192.0.2.120:443 shows 40 connections and about 60 KB sent. The row for 203.0.113.44:443 shows 63 connections and 48 MB. Which comparison matters more?",
+        "prompt": "Compare the two rows: the streaming CDN at 192.0.2.120 with about 60 KB sent, and the attacker address with 48 MB sent, at similar connection counts. Which comparison matters more?",
         "options": [
-          { "id": "A", "label": "Connection count; 63 is more than 40" },
-          { "id": "B", "label": "Bytes per destination; the streaming CDN sends almost nothing out while the attacker address received 48 MB" },
-          { "id": "C", "label": "Neither; both are port 443" }
+          { "id": "A", "label": "Connection count; the attacker row has more connections, so it is the busier of the two and the one to lead with" },
+          { "id": "B", "label": "Neither; both rows are port 443, so both are ordinary web traffic for a playout PC that streams all night" },
+          { "id": "C", "label": "Bytes per destination; the CDN sends almost nothing out while the attacker address received 48 MB" }
         ],
-        "correct": "B",
-        "why": "Counts describe rhythm; bytes describe payload. Both rows beacon-like in count, but only one carried a file."
+        "correct": "C",
+        "why": "Counts describe rhythm; bytes describe payload. Both rows look beacon-like by count, but only one carried a file."
       },
       "clue": "Two destinations all night. The streaming CDN: 40 connections, 59 KB out, which is a player saying hello. The attacker address: 63 connections, 48 MB out. Sixty-two were heartbeats. One was the donor list.",
       "caveat": "Try removing order and see the rows come back in key order. The data is the same; only the reading changes."
@@ -82,16 +87,16 @@
       "reference": "network.email.from = \"sponsorships@pier9-partners.example\"\noutcome:\n  $recipients = count_distinct(network.email.to)",
       "hints": [
         "Filter on the exact sender address, then use an outcome that counts distinct recipient addresses. No match section is needed for one overall number.",
-        "outcome:\\n  $recipients = count_distinct(network.email.to)",
+        "Under the sender filter, add an outcome section with $recipients = count_distinct(network.email.to).",
         "network.email.from = \"sponsorships@pier9-partners.example\"\noutcome:\n  $recipients = count_distinct(network.email.to)"
       ],
       "answer": { "prompt": "What is the value of your distinct-recipient count?", "value": "3", "check": { "type": "cell", "row": 0, "column": 0 } },
       "call": {
-        "prompt": "Three inboxes: Hal, Odalys and the shared pledge-desk mailbox. Only Hal's machine resolved the domain. What goes in the brief?",
+        "prompt": "The lure reached Hal, Odalys and the shared pledge-desk mailbox. Only Hal's machine resolved the domain. What goes in the brief?",
         "options": [
-          { "id": "A", "label": "Three staff were targeted; one followed the link; the shared account's password is the likely loss and must be reset now" },
-          { "id": "B", "label": "Hal caused the breach" },
-          { "id": "C", "label": "Odalys and the pledge desk are cleared because they did not click" }
+          { "id": "A", "label": "Staff were targeted; one followed the link; the shared account's password is the likely loss and must be reset now" },
+          { "id": "B", "label": "Hal caused the breach by clicking the link, and the brief should say so in those words so the board knows who to hold responsible" },
+          { "id": "C", "label": "Odalys and the pledge desk are cleared because their machines never resolved the domain, so only Hal's inbox needs attention" }
         ],
         "correct": "A",
         "why": "Blame is not an action item; a password reset and a check of the other two inboxes are. Odalys and the desk did not click tonight, but the lure is still sitting there."

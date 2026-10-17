@@ -26,6 +26,13 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 .brand-text { color: var(--muted); } .brand-text strong { color: var(--text); margin-right: 6px; }
 .topnav { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; } .topnav a { color: var(--muted); text-decoration: none; } .topnav a:hover { color: var(--text); }
 .score { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+/* Per-chapter progress in the top bar: six small segments, each a link to its chapter. */
+.chapterprog { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.chapterprog .chap { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 28px; padding: 3px 0; border-radius: 6px; color: var(--muted); text-decoration: none; font: 600 11px/1 var(--mono); border: 1px solid transparent; }
+.chapterprog .chap .bar { width: 20px; height: 4px; margin: 0; background: var(--line); } .chapterprog .chap .bar > span { background: var(--muted); }
+.chapterprog .chap.partial .bar > span { background: var(--accent); } .chapterprog .chap.done { color: var(--ok); } .chapterprog .chap.done .bar > span { background: var(--ok); }
+.chapterprog .chap.current { border-color: var(--control); color: var(--text); } .chapterprog .chap:hover { color: var(--text); }
+@media (max-width: 480px) { .chapterprog { display: none; } }
 .app { max-width: 1400px; margin: 0 auto; padding: 20px; }
 .foot { max-width: 1400px; margin: 30px auto; padding: 0 20px 30px; color: var(--muted); font-size: 13px; }
 
@@ -65,6 +72,13 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 .hints .hint { outline-offset: -2px; border-left: 3px solid var(--info); padding: 8px 12px; margin-top: 8px; background: rgba(127,179,255,.06); border-radius: 0 8px 8px 0; }
 .hints .hint pre { font-size: 13px; }
 .clue { border: 1px solid var(--ok); background: rgba(88,214,141,.07); } .clue .eyebrow { color: var(--ok); }
+.recap { border-left: 3px solid var(--info); } .recap .eyebrow { color: var(--info); } .recap ul { margin: 0 0 8px; padding-left: 20px; } .recap li { margin: 4px 0; }
+.recap.complete { border-left-color: var(--ok); } .recap.complete .eyebrow { color: var(--ok); }
+.columns { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 14px; } .columns .card + .card { margin-top: 0; }
+.closed ul { margin: 0; padding-left: 20px; } .closed li { margin: 6px 0; }
+.closed.facts { border-top: 3px solid var(--ok); } .closed.hypotheses { border-top: 3px solid var(--accent); } .closed.gaps { border-top: 3px solid var(--bad); }
+.skills .skill { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; } .skills .skill.complete { border-color: var(--ok); } .skills ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; } .skills li { margin: 3px 0; }
+.keys { line-height: 2; }
 .caveat { font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); margin-top: 14px; padding-top: 10px; }
 .navrow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 14px; } .navrow .btn { max-width: 100%; }
 
@@ -77,7 +91,7 @@ textarea.editor { width: 100%; min-height: 180px; resize: vertical; background: 
 textarea.editor:disabled { opacity: .7; }
 .feedback { margin-top: 10px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); }
 .feedback.ok { border-color: var(--ok); } .feedback.bad { border-color: var(--bad); } .feedback.warn { border-color: var(--warn); } .feedback.info { border-color: var(--info); }
-.feedback .title { font-weight: 600; } .feedback .fix { color: var(--muted); font-size: 14px; }
+.feedback .title { font-weight: 600; } .feedback .fix { color: var(--muted); font-size: 14px; } .feedback .examples { margin-top: 6px; color: var(--text); font-family: var(--mono); font-size: 13px; }
 .results { margin-top: 12px; }
 .results .summary { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 13px; color: var(--muted); margin-bottom: 6px; flex-wrap: wrap; }
 .tablewrap { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
