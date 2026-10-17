@@ -67,9 +67,9 @@ Not implemented (reported as unsupported): `dedup`, arrays, joins across event v
 
 ## Verification status
 
-- `npm test`: 29 unit tests pass, including should-fail cases for the parser, grader, content, progress store and CSS contrast tokens.
-- `npm run test:browser`: 8 Playwright tests pass in Chromium against `dist/`: a keyboard-only Build mission end to end, time-range change, hint reveal, record drill-down, 320 px width without horizontal overflow, reduced motion, zero CSP violations across routing, and structural accessibility checks (names, focus order, headings, live regions, skip link).
-- An accessibility pass fixed sixteen findings; the list, the method and the mutation checks are in [docs/EVALUATION.md](docs/EVALUATION.md).
+- `npm test`: 35 unit tests pass, including should-fail cases for the parser, grader, content, progress store, CSS contrast tokens, analyst-call guessability and the example-ID feedback.
+- `npm run test:browser`: 11 Playwright tests pass in Chromium against `dist/`: a keyboard-only Build mission end to end, time-range change, hint reveal, record drill-down, 320 px width without horizontal overflow, reduced motion, zero CSP violations across routing, structural accessibility checks (names, focus order, headings, live regions, skip link), starter-gap and example-ID feedback with the keyboard check shortcut, the top-bar chapter progress and recap card, and the case-closed page in both states.
+- An accessibility pass fixed sixteen findings; the list, the method and the mutation checks are in [docs/EVALUATION.md](docs/EVALUATION.md), along with the learner play-through and its friction log.
 - **Not** compiled or executed in any Google SecOps tenant. Google's own pages disagree on `condition:` in Search; chapter 6 says so.
 - One browser engine only; no session with a real screen reader.
 

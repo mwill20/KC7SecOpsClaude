@@ -4,6 +4,12 @@
   "subtitle": "Time buckets, thresholds, and saying only what the evidence says",
   "intro": "It is 05:40. Hal still wants Marco's name in the brief. Odalys wants the timeline. You have one query shape left to learn, the one that turns 'seven failures' into 'seven failures inside five minutes', and then you have to write down what you know in a way that survives being read by someone angry.",
   "concepts": ["Time buckets group by when as well as by whom", "A threshold is a question, not a verdict", "Hand off facts, hypotheses and gaps separately"],
+  "recap": [
+    "Bucket a count by account and by five-minute window",
+    "Filter grouped rows with a condition threshold and say what the threshold means",
+    "Stack four proven conditions until one record anchors the timeline",
+    "Hand off facts, hypotheses and gaps in separate columns"
+  ],
   "missions": [
     {
       "id": "C06-M01",
@@ -28,11 +34,11 @@
       "call": {
         "prompt": "Google's documentation is inconsistent about condition in Search: one page documents it, two comparison tables say Search does not use it. What should you do before relying on this shape at work?",
         "options": [
-          { "id": "A", "label": "Run it once in your own tenant and keep the result; docs describe, tenants decide" },
-          { "id": "B", "label": "Assume it works because this trainer accepts it" },
-          { "id": "C", "label": "Never use condition anywhere" }
+          { "id": "A", "label": "Assume it works in production because this trainer accepts it and the syntax parsed" },
+          { "id": "B", "label": "Run it once in your own tenant and keep the result; docs describe, tenants decide" },
+          { "id": "C", "label": "Never use condition anywhere; read every table by eye and filter rows in a spreadsheet" }
         ],
-        "correct": "A",
+        "correct": "B",
         "why": "This trainer follows the page that documents outcome conditions in Search. Your tenant is the authority. The query also works without the condition section; you simply read the table yourself."
       },
       "clue": "pledge-desk, 19:05 to 19:10, seven failures, all from 198.51.100.23. Marco's three failures at 22:41, 22:42 and 22:44 land in one bucket too, but three is not more than three. Change the threshold and watch him appear; then ask whether that makes him a suspect or a man who forgot he was fired.",
@@ -60,11 +66,11 @@
       "call": {
         "prompt": "Marco's row: three failures, 22:41 to 22:44, Studio B, 'Account disabled', no success after. pledge-desk's row: seven failures from outside, then success, then the playout PC. What goes in the brief about Marco?",
         "options": [
-          { "id": "A", "label": "Marco attempted access to a disabled account from Studio B at 22:41; no success and no activity follows. Recommend HR follow-up, not incident attribution" },
-          { "id": "B", "label": "Marco attacked the station" },
-          { "id": "C", "label": "Omit Marco; he is irrelevant" }
+          { "id": "A", "label": "Marco attacked the station; three failures from a fired host in his old studio are enough to name him in the brief as the intruder" },
+          { "id": "B", "label": "Omit Marco entirely; failed attempts against a disabled account are not a finding, and a line about him would only inflame the board" },
+          { "id": "C", "label": "Marco tried a disabled account from Studio B at 22:41; nothing succeeded and nothing follows. Recommend HR follow-up, not attribution" }
         ],
-        "correct": "A",
+        "correct": "C",
         "why": "It is a real finding and it is not the intrusion. Writing it precisely protects the station and protects Marco from a story the evidence does not support."
       },
       "clue": "Two rows, two different nights. One is an intrusion. The other is a man who walked into his old studio at 22:40 and tried his old password three times. Both belong in the brief; only one belongs in the incident.",
@@ -76,7 +82,7 @@
       "title": "Capstone: when did they get in?",
       "beat": "Last query. The burst ended at 19:09:50. Find the first successful login for the shared account after it, from the same outside address, and read the exact time. That timestamp anchors the whole timeline.",
       "question": "At what time did pledge-desk first sign in successfully from outside?",
-      "concept": { "title": "The anchor timestamp", "text": "Every incident timeline needs one moment you can defend to the second. For Pier Nine it is the first success after the failures: everything before it is the lure, everything after it is the attacker's hands on the station." },
+      "concept": { "title": "Four conditions, one row", "text": "Every condition you add removes rows. Login, allowed, the shared account, the outside address: four facts you already proved, stacked until one record is left. When a filter lands on exactly one row, that row's timestamp is the anchor every incident timeline needs: everything before it is the lure, everything after it is the attacker's hands on the station." },
       "explain": [],
       "starter": "",
       "reference": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"ALLOW\"\nprincipal.user.userid = \"pledge-desk\"\nprincipal.ip = \"198.51.100.23\"",
@@ -90,8 +96,8 @@
         "prompt": "Odalys asks: 'So who did it?' What is the honest answer?",
         "options": [
           { "id": "A", "label": "Someone using the pledge-desk credential from 198.51.100.23, obtained via the 18:40 phishing email that Hal's workstation visited. The person is unidentified" },
-          { "id": "B", "label": "Hal did it" },
-          { "id": "C", "label": "Marco did it" }
+          { "id": "B", "label": "Hal did it: his desk resolved the domain, his inbox got the lure, the shared account is the one he uses at the pledge desk, and he was in the building all night" },
+          { "id": "C", "label": "Marco did it: he knew every password on the pier, he had a motive, he was in Studio B at 22:40, and he failed three logins the same night" }
         ],
         "correct": "A",
         "why": "The logs identify an account, an address and a sequence. They do not identify a human. Saying so is the difference between an analyst and a rumour."
@@ -118,11 +124,11 @@
       "call": {
         "prompt": "Hal asks you to add one line: 'Marco Vela is the primary suspect.' Which response is correct?",
         "options": [
-          { "id": "A", "label": "Decline: the evidence places the intrusion on a shared credential used from outside after a phishing email, and shows Marco's attempts failed against a disabled account" },
-          { "id": "B", "label": "Add it; the board wants a name" },
-          { "id": "C", "label": "Add it as a hypothesis to keep the peace" }
+          { "id": "A", "label": "Add it; the board asked for a name, the treasurer is the one who will read the brief first, and the logs do not rule Marco out of the building that night" },
+          { "id": "B", "label": "Decline: the evidence places the intrusion on a shared credential used from outside after a phishing email, and shows Marco's attempts failed against a disabled account" },
+          { "id": "C", "label": "Add it as a hypothesis, clearly labelled, so the brief keeps the peace without stating it as a fact, and let the board decide what weight to give it" }
         ],
-        "correct": "A",
+        "correct": "B",
         "why": "A hypothesis still has to explain the facts. 'Marco did it' explains none of them and contradicts several. The brief's job is to be right, not to be comfortable."
       },
       "clue": "Odalys reads the pad twice, resets the pledge-desk password, pulls the playout PC off the network, and calls the board. Hal sits down. The morning news goes out at 06:30, on time, with no static.",

@@ -181,6 +181,7 @@ test('Reduced motion: no transitions, animations or smooth scrolling anywhere on
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await context.newPage();
   await page.goto(`#${BUILD}`);
+  await page.locator('textarea.editor').fill('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"');   // the starter's ___ gap no longer runs
   await page.getByRole('button', { name: 'Run query' }).click();
   await expect(page.locator('.results .summary')).toBeVisible();
   const report = await page.evaluate(() => {
@@ -273,4 +274,128 @@ test('Accessibility: names, focus order, headings, live regions and the skip lin
   // Every mission page carries its own document title.
   await page.goto('#about');
   await expect(page).toHaveTitle(/^What this is · /);
+});
+
+// Seed a validated progress record so a test can start from a chosen state without clicking through 25 missions.
+// The store only accepts mission IDs it knows and point values from its fixed set, so this is the same data a real
+// run would have written.
+async function seedProgress(page, ids, full = true) {
+  await page.addInitScript(({ ids, full }) => {
+    const missions = {};
+    for (const [id, kind] of ids) missions[id] = { q: kind === 'build' || kind === 'solo' ? 60 : 0, a: kind === 'read' ? 0 : 25, c: 15, h: 0 };
+    if (full) localStorage.setItem('pier9.progress.v1', JSON.stringify({ v: 1, missions }));
+  }, { ids, full });
+}
+
+test('Starter gap, wrong-query feedback with example record IDs, and the keyboard check shortcut', async ({ page }) => {
+  await page.goto(`#${BUILD}`);
+  const feedback = page.locator('.feedback');
+  // 1. Running the untouched starter names the gap instead of an unknown field.
+  await page.getByRole('button', { name: 'Run query' }).click();
+  await expect(feedback).toContainText('The starter still has a ___ gap.');
+  // 2. A too-narrow query: one-sided title, up to three example IDs, a way to open one, and nothing the learner typed.
+  const editor = page.locator('textarea.editor');
+  await editor.fill('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"\nprincipal.user.userid = "marco.vela" // MY-OWN-NOTE');
+  await editor.press('Control+Shift+Enter');                                   // checks without touching the mouse
+  await expect(feedback).toHaveClass(/bad/);
+  await expect(feedback).toContainText('misses events the reference returns');
+  await expect(feedback).toContainText('You have 3 events; the reference has 14.');
+  await expect(feedback).toContainText(/Missing from yours, for example: "evt-\d{5}", "evt-\d{5}", "evt-\d{5}"\./);
+  await expect(feedback).toContainText(/Open one with metadata\.id = "evt-\d{5}"/);
+  await expect(feedback).not.toContainText('MY-OWN-NOTE');
+  // 3. A too-wide query gets the other title and extra IDs; the example is a record the learner can open.
+  await editor.fill('metadata.event_type = "USER_LOGIN"');
+  await editor.press('Control+Shift+Enter');
+  await expect(feedback).toContainText('returns events the reference does not');
+  await expect(feedback).toContainText('Extra in yours, for example:');
+  const id = (await feedback.textContent()).match(/Extra in yours, for example: "([^"]+)"/)[1];
+  await editor.fill(`metadata.id = "${id}"`);
+  await editor.press('Control+Enter');
+  await expect(page.locator('.results .summary')).toContainText('1 event');
+  await expect(page.locator('.tablewrap tbody tr')).toHaveCount(1);
+  // 4. The shortcut hint beside the editor documents all three keys and is linked to the editor.
+  const help = page.locator('#editor-help-' + BUILD);
+  await expect(help).toContainText('runs');
+  await expect(help).toContainText('checks');
+  await expect(help).toContainText('leaves the editor');
+  expect(await editor.getAttribute('aria-describedby')).toBe('editor-help-' + BUILD);
+  // 5. Wrong answers say where in the results the value is read from, without giving it.
+  await editor.fill('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"');
+  await editor.press('Control+Enter');
+  await page.getByLabel('How many failed login events are there?').fill('13');
+  await page.getByRole('button', { name: 'Check answer' }).click();
+  const ans = page.locator('.part [role="status"]').first();
+  await expect(ans).toContainText('The answer is the count in the results bar above the table');
+  await expect(ans).not.toContainText('14');
+});
+
+test('Top-bar chapter progress updates as a mission completes, and the chapter page carries a recap card', async ({ page }) => {
+  await page.goto('#C01');
+  const seg = page.locator('#chapterprog .chap');
+  await expect(seg).toHaveCount(6);
+  await expect(seg.first()).toHaveAttribute('aria-current', 'page');
+  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 0 of 6 missions complete');
+  await expect(seg.nth(1)).not.toHaveAttribute('aria-current', 'page');
+  const recap = page.getByRole('region', { name: 'Chapter recap' });
+  await expect(recap).toContainText('By the end of this chapter you will be able to');
+  await expect(recap.locator('li')).toHaveCount(5);
+  await expect(recap).toContainText('0 of 6 missions complete so far.');
+  // Complete the Watch mission C01-M01 (answer 40, option C) and watch the segment move.
+  await page.goto(`#${WATCH}`);
+  await expect(seg.first()).toHaveAttribute('aria-label', /0 of 6/);
+  await page.getByRole('button', { name: 'Run query' }).click();
+  await page.getByLabel('How many USER_LOGIN events are there for the whole night?').fill('40');
+  await page.getByRole('button', { name: 'Check answer' }).click();
+  await page.locator('input[type="radio"][value="C"]').check();
+  await page.getByRole('button', { name: 'Check call' }).click();
+  await expect(page.locator('.scorebox')).toContainText('Mission complete');
+  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 1 of 6 missions complete');
+  await expect(seg.first()).toHaveClass(/partial/);
+  await page.goto('#C01');
+  await expect(recap).toContainText('1 of 6 missions complete so far.');
+  // Chapter links in the bar are real links.
+  await seg.nth(3).click();
+  await expect(page).toHaveURL(/#C04$/);
+  await expect(seg.nth(3)).toHaveAttribute('aria-current', 'page');
+});
+
+test('Case-closed page: lists what is left while the case is open, and the three handoff columns once every mission is complete', async ({ browser }) => {
+  // Open: nothing complete.
+  const open = await (await browser.newContext()).newPage();
+  await open.goto('#closed');
+  await expect(open.locator('h1')).toHaveText('The handoff is not written yet');
+  await expect(open.locator('.list li')).toHaveCount(25);
+  await expect(open.getByRole('region', { name: 'Facts' })).toHaveCount(0);
+  await expect(open.getByRole('link', { name: 'Next open mission →' })).toHaveAttribute('href', '#C01-M01');
+  await expect(open.locator('.skills .skill')).toHaveCount(6);
+  await expect(open.locator('.skills .skill.complete')).toHaveCount(0);
+  await open.context().close();
+
+  // Closed: every mission recorded as complete through the same validated store a real run writes to.
+  const ctx = await browser.newContext(); const page = await ctx.newPage();
+  const ids = await (async () => { const p = await ctx.newPage(); await p.goto('/'); const r = await p.evaluate(async () => { const { CONTENT } = await import('./bundle.js'); return CONTENT.chapters.flatMap(c => c.missions.map(m => [m.id, m.kind])); }); await p.close(); return r; })();
+  await seedProgress(page, ids);
+  await page.goto('/');
+  await expect(page.locator('#topscore')).toHaveText('1,970 / 1,970 pts');
+  await expect(page.locator('#chapterprog .chap.done')).toHaveCount(6);
+  await page.getByRole('link', { name: 'Read the case-closed handoff →' }).click();
+  await expect(page).toHaveURL(/#closed$/);
+  await expect(page.locator('h1')).toHaveText('The handoff');
+  for (const name of ['Facts', 'Hypotheses', 'Gaps']) await expect(page.getByRole('region', { name })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Facts' })).toContainText('19:21:04 success');
+  await expect(page.getByRole('region', { name: 'Hypotheses' })).toContainText('fake portal');
+  await expect(page.getByRole('region', { name: 'Gaps' })).toContainText('Encoded command not decoded');
+  expect(await page.getByRole('region', { name: 'Facts' }).locator('li').count()).toBeGreaterThanOrEqual(8);
+  await expect(page.locator('.skills .skill.complete')).toHaveCount(6);
+  await expect(page.locator('.list')).toHaveCount(0);
+  // The last mission and the chapter page now point at the closed page, and the chapter recap turns into a record.
+  await page.goto('#C06-M04');
+  await expect(page.getByRole('link', { name: 'Case closed →' })).toHaveAttribute('href', '#closed');
+  await page.goto('#C06');
+  await expect(page.getByRole('region', { name: 'Chapter recap' })).toContainText('Chapter complete · you can now');
+  await expect(page.getByRole('link', { name: 'Case closed →' })).toHaveAttribute('href', '#closed');
+  // Still nothing but loopback and no CSP violations on the new page.
+  const csp = await page.evaluate(() => new Promise(res => { let n = 0; document.addEventListener('securitypolicyviolation', () => n++); setTimeout(() => res(n), 50); }));
+  expect(csp).toBe(0);
+  await ctx.close();
 });

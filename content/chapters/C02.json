@@ -4,6 +4,12 @@
   "subtitle": "Email, lookalike domains, and who is acting on whom",
   "intro": "An outside address knew the pledge-desk password by 19:21. Passwords leave a building by email more often than by genius. Pier Nine's mail gateway logs every message as an EMAIL_TRANSACTION. Tonight's inbox was full of sponsor reads, pledge totals and shift notes. Somewhere in it is the message that mattered.",
   "concepts": ["Regex matches part of a string unless you anchor it", "nocase is a word you add, not a setting", "A DNS lookup proves a visit, not a password", "principal acts; target is acted on"],
+  "recap": [
+    "Match part of a string with a regex and switch case off with nocase",
+    "Anchor a pattern to the end of a sender address to catch a whole domain",
+    "Pivot from an email link to the DNS lookup that followed it",
+    "Search the target role when the account was acted on rather than acting"
+  ],
   "missions": [
     {
       "id": "C02-M01",
@@ -29,8 +35,8 @@
         "prompt": "You remove nocase and the count drops. Why?",
         "options": [
           { "id": "A", "label": "Without nocase, /pledge/ no longer matches subjects that spell it 'Pledge'" },
-          { "id": "B", "label": "nocase is required for all regex; the query is invalid without it" },
-          { "id": "C", "label": "Removing nocase turns the regex into an exact match" }
+          { "id": "B", "label": "Without nocase the regex becomes an exact match, so 'Pledge Night' is no longer a hit" },
+          { "id": "C", "label": "nocase is required for every regex; without it the query silently matches nothing" }
         ],
         "correct": "A",
         "why": "nocase only changes case handling. The pattern still matches anywhere in the string; it just stops matching capital letters it was not told about."
@@ -44,7 +50,7 @@
       "title": "The domain that is almost right",
       "beat": "The sponsor's real domain is harborlightsponsors.example. The portal email came from somewhere that merely sounds like a partner. Pull every message from that sending domain.",
       "question": "How many messages came from the lookalike domain?",
-      "concept": { "title": "Lookalike domains", "text": "pier9-partners.example is not a typo of anything the station uses; it is a name chosen to feel familiar on a busy night. Matching the end of the sender address with an anchored regex catches every mailbox at that domain." },
+      "concept": { "title": "Lookalike domains", "text": "A lookalike domain is not a typo of anything the station uses; it is a name chosen to feel familiar on a busy night. Open one of the three portal messages from the last mission and read network.email.from: the part after the @ is the domain. Matching the end of the sender address with an anchored regex catches every mailbox at that domain." },
       "explain": [
         { "part": "network.email.from", "meaning": "The envelope sender the gateway saw." },
         { "part": "/pier9-partners\\.example$/", "meaning": "Backslash-dot means a literal dot. The $ anchors to the end of the string, so it matches the domain, not a mention inside a longer address." }
@@ -58,11 +64,11 @@
       ],
       "answer": { "prompt": "How many messages did the lookalike domain send?", "value": "3", "check": { "type": "count" } },
       "call": {
-        "prompt": "Three recipients, one link, sent at 18:40 with a 7 PM deadline. Which detail matters most to an analyst?",
+        "prompt": "The lookalike's messages share one link and a 7 PM deadline. Which detail matters most to an analyst?",
         "options": [
-          { "id": "A", "label": "The deadline; urgency is a classic phishing pressure" },
-          { "id": "B", "label": "The sender domain does not match the sponsor the station actually works with" },
-          { "id": "C", "label": "Both, and together they justify checking who followed the link" }
+          { "id": "A", "label": "The deadline; urgency twenty minutes before doors open is the classic phishing pressure and enough on its own" },
+          { "id": "B", "label": "The sender domain, which does not match the sponsor the station actually works with, and nothing else matters" },
+          { "id": "C", "label": "Both together; urgency plus an unfamiliar domain justifies checking who followed the link" }
         ],
         "correct": "C",
         "why": "Urgency alone is normal on a pledge night. Urgency plus a domain nobody has corresponded with is a phishing pattern worth chasing immediately."
@@ -86,18 +92,18 @@
       "reference": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = \"pier9-partners.example\"",
       "hints": [
         "Use the bare domain from the email link, without http:// or the path.",
-        "network.dns.questions.name = \"pier9-partners.example\"",
+        "Replace ___ with pier9-partners.example: no http://, no path, inside the double quotes.",
         "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = \"pier9-partners.example\""
       ],
       "answer": { "prompt": "What is the principal.hostname on the lookup?", "value": "PLEDGE-DESK-02", "check": { "type": "field", "field": "principal.hostname", "index": 0 } },
       "call": {
-        "prompt": "One lookup from PLEDGE-DESK-02 at 18:52, signed in as hal.brunner. What do you know, and what do you not?",
+        "prompt": "One lookup, at 18:52, from a desk signed in as hal.brunner. What do you know, and what do you not?",
         "options": [
-          { "id": "A", "label": "Hal's machine resolved the domain; whether a password was typed is still unproven" },
-          { "id": "B", "label": "Hal typed the pledge-desk password into the fake portal" },
-          { "id": "C", "label": "Nothing; one DNS record is noise" }
+          { "id": "A", "label": "Nothing yet; a single DNS record is noise until the same name is asked for again from the same desk" },
+          { "id": "B", "label": "Hal's machine resolved the domain; whether a password was typed is still unproven" },
+          { "id": "C", "label": "Hal typed the pledge-desk password into the fake portal; the lookup at 18:52 is proof enough of that" }
         ],
-        "correct": "A",
+        "correct": "B",
         "why": "The lookup places the visit on Hal's desk at 18:52. The two HTTPS connections that follow it, and the login from outside at 19:21, are what turn a visit into a probable credential theft."
       },
       "clue": "PLEDGE-DESK-02, 18:52, logged in as hal.brunner. Two small HTTPS connections to 203.0.113.44 follow within a minute: a page load and a form post. Thirteen minutes later, someone outside starts guessing the pledge-desk password. At 19:21 they stop guessing.",
@@ -120,14 +126,14 @@
       ],
       "answer": { "prompt": "How many different principal accounts used svc-playout?", "value": "2", "check": { "type": "distinct", "field": "principal.user.userid" } },
       "call": {
-        "prompt": "Two events: pledge-desk at 19:31 and dez.okafor at 20:15, both 'Run as different user' on AUTOMATION-01. What is the right next step?",
+        "prompt": "The run-as events on AUTOMATION-01 come from the shared account at 19:31 and from dez.okafor at 20:15. What is the right next step?",
         "options": [
-          { "id": "A", "label": "Treat both as suspicious until proven otherwise" },
-          { "id": "B", "label": "Ask Dez what he did at 20:15 and keep pledge-desk as the lead, since it followed the outside login" },
-          { "id": "C", "label": "Clear pledge-desk because Dez also did it" }
+          { "id": "A", "label": "Treat both as equally suspicious until each one is proven otherwise, and say so to Odalys before asking anyone anything" },
+          { "id": "B", "label": "Clear the shared account, because the station's own engineer did exactly the same thing on the same machine an hour later" },
+          { "id": "C", "label": "Ask Dez what he did at 20:15 and keep the shared account as the lead, since it followed the outside login" }
         ],
-        "correct": "B",
-        "why": "Context separates the two: Dez is the engineer who maintains the PC and the restart he ran is in the process log. The pledge-desk use follows an unexplained outside sign-in by ten minutes."
+        "correct": "C",
+        "why": "Context separates them: Dez is the engineer who keeps the PC alive and a restart is in character; chapter 3 checks it in the process log. The pledge-desk use follows an unexplained outside sign-in by ten minutes."
       },
       "clue": "Two actors behind one service account. Dez's restart at 20:15 is routine and he will confirm it. The pledge-desk 'run as' at 19:31 is the first thing the outside session did on the playout PC. Chapter 3 is about what it did next.",
       "caveat": "Not every product fills target.user for run-as or impersonation events. In your tenant, confirm which field your identity source uses."

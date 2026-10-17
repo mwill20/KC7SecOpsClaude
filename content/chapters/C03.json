@@ -4,6 +4,12 @@
   "subtitle": "Processes, command lines, and the difference between a tool and a crime",
   "intro": "AUTOMATION-01 airs whatever it is told to air. Dez keeps it running with PowerShell, so PowerShell on that machine is normal. What is not normal is PowerShell that hides its own window and carries its instructions in base64. Every process start on the pier is a PROCESS_LAUNCH event with the full path and the command line.",
   "concepts": ["Anchor the end of a path to match the file, not the folder", "Dual-use tools need context", "Scheduled tasks are how one bad minute becomes a bad night", "Grouped fields search several paths at once"],
+  "recap": [
+    "Match a file name at the end of a Windows path, with the backslashes escaped",
+    "Spot a dual-use flag and say what context makes it suspicious",
+    "Find a scheduled task by its own event type and read its command line",
+    "Use a grouped field to search several path fields in one condition"
+  ],
   "missions": [
     {
       "id": "C03-M01",
@@ -21,16 +27,16 @@
       "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\nprincipal.hostname = \"AUTOMATION-01\"\ntarget.process.file.full_path = /\\\\powershell\\.exe$/ nocase",
       "hints": [
         "Run it, then click each row and read target.process.command_line.",
-        "Three launches. One is Dez's restart. Two belong to the shared account.",
+        "One of the rows is Dez's restart. Read the command lines of the others and note who ran them.",
         "Three rows: 19:33 pledge-desk (-enc), 20:15 dez.okafor (Restart-Service), 01:58 pledge-desk (Compress-Archive)."
       ],
       "answer": { "prompt": "How many PowerShell launches are there on AUTOMATION-01?", "value": "3", "check": { "type": "count" } },
       "call": {
         "prompt": "Why does the pattern end with \\.exe$ rather than just exe?",
         "options": [
-          { "id": "A", "label": "So it matches the end of the path and a literal dot, not 'exe' anywhere inside a folder name" },
-          { "id": "B", "label": "Because Search requires every regex to end with $" },
-          { "id": "C", "label": "To make the match case-insensitive" }
+          { "id": "A", "label": "So it matches a literal dot and the end of the path, not 'exe' anywhere inside a folder name" },
+          { "id": "B", "label": "Because Search requires every regex literal to end with an anchor, or the query will not compile at all" },
+          { "id": "C", "label": "To make the comparison case-insensitive, since Windows paths mix upper and lower case in the same name" }
         ],
         "correct": "A",
         "why": "Unanchored, /exe/ would match C:\\Program Files\\exeter\\tool.bin. Precision in the pattern is precision in the evidence."
@@ -60,11 +66,11 @@
       "call": {
         "prompt": "An analyst wants to write a detection that alerts on every -enc. What should you tell them?",
         "options": [
-          { "id": "A", "label": "Good idea; -enc is always malicious" },
-          { "id": "B", "label": "Expect false positives from admins and installers; pair it with hidden windows, unusual parents or unusual accounts" },
-          { "id": "C", "label": "Never alert on PowerShell; it is too noisy" }
+          { "id": "A", "label": "Good idea; -enc on a command line is always malicious and administrators never need it, so every hit is a true positive" },
+          { "id": "B", "label": "Never alert on PowerShell at all; the volume of legitimate use on a station like this makes any rule far too noisy" },
+          { "id": "C", "label": "Expect false positives from admins and installers; pair it with hidden windows, unusual parents or unusual accounts" }
         ],
-        "correct": "B",
+        "correct": "C",
         "why": "A single dual-use flag is a weak signal alone. The combination you found tonight, hidden plus encoded plus a shared account that just arrived from outside, is a strong one."
       },
       "clue": "One encoded command, 19:33, pledge-desk, parent cmd.exe. Two minutes later the same session created a scheduled task. That is how a visitor becomes a resident.",
@@ -84,23 +90,23 @@
       "starter": "metadata.event_type = \"___\"",
       "reference": "metadata.event_type = \"SCHEDULED_TASK_CREATION\"",
       "hints": [
-        "The event type for a new scheduled task is in the concept card's field list: SCHEDULED_TASK_CREATION.",
-        "metadata.event_type = \"SCHEDULED_TASK_CREATION\"",
+        "Task creation has its own event type, listed in the Read the query card. It starts with SCHEDULED.",
+        "The value is SCHEDULED_TASK_CREATION, in double quotes, as the whole filter.",
         "metadata.event_type = \"SCHEDULED_TASK_CREATION\""
       ],
       "answer": { "prompt": "How many scheduled-task creation events are there?", "value": "2", "check": { "type": "count" } },
       "call": {
-        "prompt": "Two tasks: PledgeSync by pledge-desk at 19:35, and PlayoutBackup by svc-playout at 21:00. Which needs attention first and why?",
+        "prompt": "The table shows PledgeSync, created by pledge-desk at 19:35, and PlayoutBackup, created by svc-playout at 21:00. Which needs attention first and why?",
         "options": [
-          { "id": "A", "label": "PlayoutBackup, because service accounts should never create tasks" },
-          { "id": "B", "label": "PledgeSync: created by the shared account two minutes after the encoded command, pointing at a script in ProgramData" },
-          { "id": "C", "label": "Neither; task creation is routine on Windows" }
+          { "id": "A", "label": "PledgeSync: created by the shared account two minutes after the encoded command, pointing at a script in ProgramData" },
+          { "id": "B", "label": "PlayoutBackup: a service account creating a task at exactly the top of the hour is how malware hides in plain sight" },
+          { "id": "C", "label": "Neither yet; task creation is routine on Windows, and the process log should be read in full before either is judged" }
         ],
-        "correct": "B",
+        "correct": "A",
         "why": "The nightly backup is scheduled by the playout software every night. PledgeSync is new, named to look routine, and created in the middle of the suspicious sequence."
       },
       "clue": "PledgeSync. Created 19:35:22 by pledge-desk, runs C:\\ProgramData\\PledgeSync\\sync.ps1 every ten minutes as pledge-desk. The schtasks.exe launch one second earlier shows the exact command. Everything that happens on AUTOMATION-01 for the rest of the night traces back to this.",
-      "caveat": "Not every endpoint product emits SCHEDULED_TASK_CREATION. If yours does not, the schtasks.exe process launch is the fallback, and you saw it in the previous mission's data."
+      "caveat": "Not every endpoint product emits SCHEDULED_TASK_CREATION. If yours does not, the schtasks.exe process launch is the fallback: search PROCESS_LAUNCH for schtasks on AUTOMATION-01 and you will find it one second before the task event."
     },
     {
       "id": "C03-M04",
@@ -121,9 +127,9 @@
       "call": {
         "prompt": "The folder holds sync.ps1 at 19:36, donors_export.zip at 02:05 and segment.wav at 02:58. What does the zip most plausibly mean?",
         "options": [
-          { "id": "A", "label": "A backup the playout software made" },
+          { "id": "A", "label": "A backup the playout software made on its own nightly schedule, written to a working folder it already used" },
           { "id": "B", "label": "Data was staged for removal: the 01:58 command compressed the donor spreadsheet from FS-01 into it" },
-          { "id": "C", "label": "Nothing; zip files are common" }
+          { "id": "C", "label": "Nothing on its own; zip files appear on most Windows machines every night and this one is in a system folder" }
         ],
         "correct": "B",
         "why": "You saw the Compress-Archive command in mission 1. Staging, then a large outbound transfer, is the pattern chapter 4 and 5 will confirm."

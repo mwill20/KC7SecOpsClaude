@@ -2,6 +2,9 @@ import { FIELDS, zeroValue } from './catalog.js';
 import { compileRegex, testRegex, parseCidr, ipInCidr } from './safety.js';
 
 // Runs a parsed Search query against the fictional UDM dataset.
+// Statistics rows carry the metadata.id values of the events behind them under this symbol key (not a column, not
+// serialised), so the grader can point at example records when two tables differ.
+export const MEMBERS = Symbol('members');
 // Events are flat objects keyed by dotted UDM path. Missing fields read as UDM zero values.
 const get = (e, f) => (Object.hasOwn(e, f) ? e[f] : zeroValue(f));
 
@@ -58,6 +61,7 @@ export function execute(query, events, range = null) {
     keys.forEach((k, i) => { row[k] = g.kv[i]; });
     if (window) row.window_start = g.kv[keys.length];
     for (const o of query.outcomes) row[o.name] = aggregate(o.fn, g.events.map(e => get(e, o.field)));
+    Object.defineProperty(row, MEMBERS, { value: g.events.map(e => e['metadata.id']), enumerable: false });
     out.push(row);
   }
   if (query.condition) {

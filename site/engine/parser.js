@@ -24,6 +24,9 @@ const UNITS = { m: 60, minute: 60, minutes: 60, h: 3600, hour: 3600, hours: 3600
 export function lex(text) {
   if (typeof text !== 'string') invalid('EMPTY_QUERY');
   if (new TextEncoder().encode(text).length > LIMITS.bytes) invalid('QUERY_TOO_LONG');
+  // A Build starter marks its gap with ___. Name that before any other diagnostic, so the learner is told to fill
+  // the gap rather than that ___ is an unknown field or an unsupported aggregate.
+  const gap = text.indexOf('___'); if (gap !== -1) invalid('STARTER_GAP', gap);
   const out = []; let i = 0;
   const push = t => { out.push(t); if (out.length > LIMITS.tokens) invalid('QUERY_TOO_LONG'); };
   while (i < text.length) {

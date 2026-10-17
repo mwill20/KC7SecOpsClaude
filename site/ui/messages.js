@@ -1,6 +1,7 @@
 // Plain-language feedback for every parser, safety and comparison code. Tested for completeness.
 export const MESSAGES = Object.freeze({
   EMPTY_QUERY: ['Nothing to run yet.', 'Type at least one condition, such as metadata.event_type = "USER_LOGIN".'],
+  STARTER_GAP: ['The starter still has a ___ gap.', 'Replace the three underscores with the missing piece; the Read the query card and the first hint say what kind of piece it is.'],
   QUERY_TOO_LONG: ['That query is bigger than the trainer runs.', 'Keep it under 8 KB and a couple of dozen conditions.'],
   UNCLOSED_STRING: ['A quoted value was opened but never closed.', 'Every " needs a matching " on the same line.'],
   BAD_ESCAPE: ['A backslash inside quotes is escaping something unexpected.', 'Inside double quotes, write \\\\ for one backslash and \\" for a quote.'],
@@ -71,13 +72,39 @@ export const MESSAGES = Object.freeze({
   EXPECTED_STATS: ['The mission asks for a summary table, but this query returns raw events.', 'Add match: and/or outcome: sections.'],
   EXPECTED_EVENTS: ['The mission asks for events, but this query returns a summary table.', 'Remove the match and outcome sections.'],
   DIFFERENT_EVENTS: ['The query runs, but it selects different events from the reference.', 'Compare your filter with the question: is the scope too wide, too narrow, or on the wrong field?'],
+  DIFFERENT_EVENTS_NARROW: ['The query runs, but it misses events the reference returns.', 'Your filter is too narrow. Loosen one condition at a time: a value spelled differently from the record, a role (principal or target) that does not hold the value, or a condition the question never asked for.'],
+  DIFFERENT_EVENTS_WIDE: ['The query runs, but it returns events the reference does not.', 'Your filter is too wide. Add or tighten a condition until only what the question asks for is left: usually the event type, an action or an anchored pattern.'],
+  DIFFERENT_STATS_NARROW: ['The table runs, but it is missing rows the reference has.', 'Something upstream of the grouping is too narrow: a filter, or a condition threshold that cuts a row the question wants kept.'],
+  DIFFERENT_STATS_VALUES: ['Same rows, different numbers: the grouping matches the reference but a calculated value does not.', 'Check the aggregate: count counts records, count_distinct counts different values, sum adds a numeric field. Then check the field inside the parentheses.'],
+  DIFFERENT_STATS_WIDE: ['The table runs, but it has rows the reference does not.', 'Something upstream of the grouping is too wide: a filter that lets extra events in, or a threshold that keeps a row the question wants dropped.'],
   DIFFERENT_GROUPING: ['The query groups by different keys from the reference.', 'Check the fields under match:.'],
   DIFFERENT_OUTCOME_COUNT: ['The query calculates a different number of outcomes.', 'Check how many lines are under outcome:.'],
   DIFFERENT_ORDER: ['Right rows, wrong order.', 'Check the direction (asc or desc) under order:.'],
   DIFFERENT_STATS: ['The query runs, but the table differs from the reference.', 'Check the filter, the grouping key and the aggregate function.'],
 });
 
+// Example record IDs for a comparison failure. The IDs come from the dataset side of the comparison, never from the
+// learner's text, so nothing typed into the editor is ever echoed back.
+const idList = ids => ids.map(id => `"${id}"`).join(', ');
+export function exampleText(detail) {
+  if (!detail || typeof detail !== 'object') return '';
+  const parts = [];
+  if (Array.isArray(detail.missingIds) && detail.missingIds.length) parts.push(`Missing from yours, for example: ${idList(detail.missingIds)}.`);
+  if (Array.isArray(detail.extraIds) && detail.extraIds.length) parts.push(`Extra in yours, for example: ${idList(detail.extraIds)}.`);
+  if (Array.isArray(detail.changedIds) && detail.changedIds.length) parts.push(`Behind a row whose numbers differ, for example: ${idList(detail.changedIds)}.`);
+  if (!parts.length) return '';
+  const first = (detail.missingIds?.[0] ?? detail.extraIds?.[0] ?? detail.changedIds?.[0]);
+  return parts.join(' ') + ` Open one with metadata.id = "${first}" to see which of your conditions it fails or passes.`;
+}
+
 export function describe(code, detail) {
+  // Comparison codes get a sharper title when the difference is one-sided.
+  if ((code === 'DIFFERENT_EVENTS' || code === 'DIFFERENT_STATS') && detail && typeof detail === 'object') {
+    const { missing = 0, extra = 0, changed = 0 } = detail;
+    if (missing > 0 && !extra && !changed) code += '_NARROW';
+    else if (extra > 0 && !missing && !changed) code += '_WIDE';
+    else if (changed > 0 && !missing && !extra) code += '_VALUES';
+  }
   const [title, fix] = MESSAGES[code] ?? MESSAGES.UNEXPECTED;
   let extra = '';
   if (detail && typeof detail === 'object') {
@@ -88,5 +115,6 @@ export function describe(code, detail) {
     else if (detail.word) extra = ` (${detail.word})`;
     else if (detail.char) extra = ` ('${detail.char}')`;
   }
-  return { title: title + extra, fix };
+  // fix is the general advice; examples is a separate sentence the UI can set on its own line.
+  return { title: title + extra, fix, examples: exampleText(detail) };
 }
