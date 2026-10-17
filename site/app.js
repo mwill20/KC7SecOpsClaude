@@ -25,15 +25,22 @@ const rangeFor = id => { const r = CASE.ranges.find(x => x.id === id) ?? CASE.ra
 
 const app = document.getElementById('main');
 const topscore = document.getElementById('topscore');
+const SITE_TITLE = 'Static on Pier Nine · YARA-L Search practice';
+// The skip link must move focus without touching the hash, or the router would send the learner home.
+document.querySelector('.skip')?.addEventListener('click', e => { e.preventDefault(); app.focus(); app.scrollIntoView(); });
+// Anchor styled as a button: one tab stop, Enter follows the link. Never nest a <button> inside an <a>.
+const linkBtn = (href, text, primary = false) => el('a', { class: 'btn' + (primary ? ' primary' : ''), href, text });
 function paintScore() { topscore.textContent = `${fmtNum(store.total())} / ${fmtNum(COURSE_MAX)} pts`; }
 
 function route() {
   const hash = location.hash.replace(/^#\/?/, '');
   clear(app);
-  if (hash === 'about') app.append(aboutPage());
-  else if (BY_ID.has(hash)) app.append(missionPage(BY_ID.get(hash)));
-  else if (CHAPTERS.some(c => c.id === hash)) app.append(chapterPage(CHAPTERS.find(c => c.id === hash)));
+  let title = CASE.title;
+  if (hash === 'about') { app.append(aboutPage()); title = 'What this is'; }
+  else if (BY_ID.has(hash)) { const m = BY_ID.get(hash); app.append(missionPage(m)); title = m.title; }
+  else if (CHAPTERS.some(c => c.id === hash)) { const ch = CHAPTERS.find(c => c.id === hash); app.append(chapterPage(ch)); title = ch.title; }
   else app.append(homePage());
+  document.title = title === CASE.title ? SITE_TITLE : `${title} · ${SITE_TITLE}`;
   paintScore();
   app.focus({ preventScroll: true });
   window.scrollTo({ top: 0 });
@@ -50,7 +57,7 @@ function homePage() {
       ...CASE.opening.map(p => el('p', { text: p })),
       el('p', {}, el('strong', { text: 'Your role. ' }), CASE.role),
       el('div', { class: 'row', style: 'margin-top:14px' },
-        el('a', { href: '#' + (MISSIONS.find(m => !isDone(m)) ?? MISSIONS[0]).id }, el('button', { class: 'primary', text: done ? 'Continue the case →' : 'Open the case →' })),
+        linkBtn('#' + (MISSIONS.find(m => !isDone(m)) ?? MISSIONS[0]).id, done ? 'Continue the case →' : 'Open the case →', true),
         el('span', { class: 'muted small', text: `${done} of ${MISSIONS.length} missions complete · ${fmtNum(store.total())} of ${fmtNum(COURSE_MAX)} points` })),
     ),
     el('section', { class: 'card' },
@@ -59,8 +66,8 @@ function homePage() {
         const ms = ch.missions.map(m => BY_ID.get(m.id)); const d = ms.filter(isDone).length;
         return el('a', { class: 'card chapter-card', href: '#' + ch.id },
           el('div', { class: 'num', text: String(i + 1).padStart(2, '0') }),
-          el('h3', { text: ch.title }), el('p', { class: 'muted small', text: ch.subtitle }),
-          el('div', { class: 'bar' }, el('span', { style: `width:${Math.round(100 * d / ms.length)}%` })),
+          el('h2', { class: 'sub', text: ch.title }), el('p', { class: 'muted small', text: ch.subtitle }),
+          el('div', { class: 'bar', role: 'img', 'aria-label': `${d} of ${ms.length} missions complete` }, el('span', { style: `width:${Math.round(100 * d / ms.length)}%` })),
           el('div', { class: 'muted small', text: `${d} / ${ms.length} missions` }));
       }))),
     el('section', { class: 'card' },
@@ -90,7 +97,7 @@ function chapterPage(ch) {
       el('ul', { class: 'list' }, ch.missions.map((mm, i) => { const m = BY_ID.get(mm.id); return el('li', {},
         el('a', { href: '#' + m.id }, `${i + 1}. ${m.title}`),
         el('span', { class: 'row' }, el('span', { class: 'pill ' + m.kind, text: KIND_LABEL[m.kind] }), el('span', { class: 'pill' + (isDone(m) ? ' done' : ''), text: `${earned(m)} / ${missionMax(m)}` }))); }))),
-    el('div', { class: 'navrow' }, idx > 0 ? el('a', { href: '#' + CHAPTERS[idx - 1].id }, el('button', { text: '← Previous chapter' })) : el('span'), idx < CHAPTERS.length - 1 ? el('a', { href: '#' + CHAPTERS[idx + 1].id }, el('button', { text: 'Next chapter →' })) : el('span')));
+    el('div', { class: 'navrow' }, idx > 0 ? linkBtn('#' + CHAPTERS[idx - 1].id, '← Previous chapter') : el('span'), idx < CHAPTERS.length - 1 ? linkBtn('#' + CHAPTERS[idx + 1].id, 'Next chapter →') : el('span')));
 }
 
 // ---------- Mission ----------
@@ -103,7 +110,9 @@ function missionPage(m) {
   const lesson = el('aside', { class: 'lesson' });
   const desk = el('section', { class: 'card desk', 'aria-label': 'Query desk' });
 
-  const clueBox = el('section', { class: 'card clue', hidden: !isDone(m) }, el('div', { class: 'eyebrow', text: 'Case update' }), el('p', { text: m.clue }));
+  const clueBox = el('section', { class: 'card clue', hidden: !isDone(m), 'aria-label': 'Case update' }, el('div', { class: 'eyebrow', text: 'Case update' }), el('p', { text: m.clue }));
+  // Visually hidden status line for events that change the lesson pane while focus is on the desk.
+  const announcer = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
   const headerPill = el('span', { class: 'pill' });
   const paintHeaderPill = () => { headerPill.className = 'pill' + (isDone(m) ? ' done' : ''); headerPill.textContent = `${earned(m)} / ${missionMax(m)} pts`; };
   paintHeaderPill();
@@ -111,8 +120,8 @@ function missionPage(m) {
   const paintHints = () => {
     clear(hintsBox);
     if (!m.hints.length) return;
-    for (let i = 0; i < s.hint; i++) hintsBox.append(el('div', { class: 'hint' }, el('div', { class: 'small muted', text: `Hint ${i + 1} of ${m.hints.length}` }), i === 2 && m.kind !== 'watch' ? el('pre', { text: m.hints[i] }) : el('div', { text: m.hints[i] })));
-    if (s.hint < m.hints.length) hintsBox.append(el('button', { class: 'ghost', style: 'margin-top:8px', text: s.hint === 0 ? 'Show a hint' : `Show hint ${s.hint + 1} of ${m.hints.length}`, onclick: () => { s.hint++; store.hint(m.id, s.hint); paintHints(); } }));
+    for (let i = 0; i < s.hint; i++) hintsBox.append(el('div', { class: 'hint', tabindex: -1 }, el('div', { class: 'small muted', text: `Hint ${i + 1} of ${m.hints.length}` }), i === 2 && m.kind !== 'watch' ? el('pre', { text: m.hints[i] }) : el('div', { text: m.hints[i] })));
+    if (s.hint < m.hints.length) hintsBox.append(el('button', { class: 'ghost', style: 'margin-top:8px', text: s.hint === 0 ? 'Show a hint' : `Show hint ${s.hint + 1} of ${m.hints.length}`, onclick: () => { s.hint++; store.hint(m.id, s.hint); paintHints(); [...hintsBox.querySelectorAll('.hint')].at(-1)?.focus(); } }));
     else hintsBox.append(el('div', { class: 'small muted', style: 'margin-top:8px', text: 'Hints never cost points. The last one is a full answer; using it still teaches the shape.' }));
   };
   paintHints();
@@ -124,13 +133,13 @@ function missionPage(m) {
       el('h1', { text: m.title }),
       el('p', { class: 'beat', text: m.beat }),
       el('div', { class: 'question', text: m.question })),
-    el('section', { class: 'card concept' }, el('div', { class: 'eyebrow', text: 'Think like an analyst' }), el('h3', { text: m.concept.title }), el('p', { text: m.concept.text })),
+    el('section', { class: 'card concept' }, el('div', { class: 'eyebrow', text: 'Think like an analyst' }), el('h2', { class: 'sub', text: m.concept.title }), el('p', { text: m.concept.text })),
     m.explain?.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: m.kind === 'read' ? 'Side by side' : 'Read the query' }),
       el('ul', { class: 'explain' }, m.explain.map(x => el('li', {}, el('code', { text: x.part }), el('span', { text: x.meaning }))))) : null,
     m.hints.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Stuck?' }), hintsBox) : null,
     clueBox,
     m.caveat ? el('div', { class: 'caveat' }, el('strong', { text: 'In a real tenant: ' }), m.caveat) : null,
-    el('div', { class: 'navrow' }, prev ? el('a', { href: '#' + prev.id }, el('button', { text: '← ' + prev.title })) : el('span'), next ? el('a', { href: '#' + next.id }, el('button', { class: isDone(m) ? 'primary' : '', text: next.title + ' →' })) : el('a', { href: '#' }, el('button', { class: 'primary', text: 'Back to the case file' }))),
+    el('div', { class: 'navrow' }, prev ? linkBtn('#' + prev.id, '← ' + prev.title) : el('span'), next ? linkBtn('#' + next.id, next.title + ' →', isDone(m)) : linkBtn('#', 'Back to the case file', true)),
   );
 
   // ----- Desk -----
@@ -144,7 +153,9 @@ function missionPage(m) {
     if (m.kind !== 'read') scorebox.append(el('span', { class: r.a ? 'on' : '', text: `Answer ${r.a}/${POINTS.answer}` }));
     scorebox.append(el('span', { class: r.c ? 'on' : '', text: `Analyst call ${r.c}/${POINTS.call}` }));
     scorebox.append(el('span', { class: isDone(m) ? 'on' : '', text: isDone(m) ? 'Mission complete' : `${earned(m)} / ${missionMax(m)}` }));
-    clueBox.hidden = !isDone(m); paintHeaderPill(); paintScore();
+    const wasHidden = clueBox.hidden; clueBox.hidden = !isDone(m);
+    if (wasHidden && isDone(m)) announcer.textContent = 'Mission complete. A case update is now shown in the lesson pane.';
+    paintHeaderPill(); paintScore();
   };
 
   const paintResults = () => {
@@ -157,12 +168,13 @@ function missionPage(m) {
     const head = el('div', { class: 'summary' },
       el('span', { text: r.kind === 'events' ? `${fmtNum(r.count)} event${r.count === 1 ? '' : 's'}` : `${fmtNum(r.count)} row${r.count === 1 ? '' : 's'} · ${fmtNum(r.scanned)} events summarised` }),
       el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') }));
-    const raw = el('div', { hidden: true });
-    const wrap = el('div', { class: 'tablewrap' }, r.count ? resultsTable(r, rec => { clear(raw); raw.hidden = false; raw.append(el('div', { class: 'row', style: 'justify-content:space-between;margin-top:8px' }, el('strong', { class: 'small', text: 'Full record ' + rec['metadata.id'] }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; } })), rawRecord(rec)); }) : el('div', { class: 'empty', text: 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.' }));
+    const raw = el('div', { hidden: true, role: 'region', 'aria-label': 'Full record', tabindex: -1 });
+    // Opening a record moves focus into the region; closing it returns focus to the button that opened it.
+    const wrap = el('div', { class: 'tablewrap' }, r.count ? resultsTable(r, (rec, opener) => { clear(raw); raw.hidden = false; raw.append(el('div', { class: 'row', style: 'justify-content:space-between;margin-top:8px' }, el('strong', { class: 'small', text: 'Full record ' + rec['metadata.id'] }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; opener?.focus(); } })), rawRecord(rec)); raw.focus(); }) : el('div', { class: 'empty', text: 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.' }));
     results.append(head, wrap, raw);
   };
 
-  const editor = el('textarea', { class: 'editor', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', 'aria-label': 'Training query', disabled: m.kind === 'read' });
+  const editor = el('textarea', { class: 'editor', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', 'aria-label': 'Training query', 'aria-describedby': 'editor-help-' + m.id, disabled: m.kind === 'read' });
   editor.value = s.text;
   editor.addEventListener('input', () => { s.text = editor.value; s.query = null; });
   editor.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); doRun(); } });
@@ -190,7 +202,7 @@ function missionPage(m) {
     deskButtons.append(el('button', { class: 'primary', text: 'Run query', onclick: doRun }));
     if (m.kind !== 'watch') deskButtons.append(el('button', { text: 'Check query', onclick: doCheck }));
     deskButtons.append(el('button', { class: 'ghost', text: 'Reset', onclick: () => { editor.value = s.text = m.starter ?? ''; s.run = null; s.query = null; paintResults(); feedback.hidden = true; } }));
-    deskButtons.append(el('span', { class: 'small muted' }, el('kbd', { text: 'Ctrl' }), ' + ', el('kbd', { text: 'Enter' }), ' runs'));
+    deskButtons.append(el('span', { class: 'small muted', id: 'editor-help-' + m.id }, el('kbd', { text: 'Ctrl' }), ' + ', el('kbd', { text: 'Enter' }), ' runs'));
   }
 
   const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))));
@@ -199,8 +211,8 @@ function missionPage(m) {
   const answerPart = el('div', { class: 'part' });
   if (m.answer) {
     const input = el('input', { type: 'text', 'aria-label': m.answer.prompt, autocomplete: 'off', style: 'min-width:220px' });
-    const ansFeedback = el('div', { class: 'small muted', style: 'margin-top:6px' });
-    answerPart.append(el('h3', {}, 'From your results', el('span', { class: 'pts', text: POINTS.answer + ' pts' })), el('p', { text: m.answer.prompt }),
+    const ansFeedback = el('div', { class: 'small muted', style: 'margin-top:6px', role: 'status', 'aria-live': 'polite' });
+    answerPart.append(el('h2', { class: 'sub' }, 'From your results', el('span', { class: 'pts', text: POINTS.answer + ' pts' })), el('p', { text: m.answer.prompt }),
       el('div', { class: 'row' }, input, el('button', { text: 'Check answer', onclick: () => {
         const g = gradeAnswer(input.value, m); s.answer = g;
         if (g.correct) { store.record(m.id, 'a', POINTS.answer); ansFeedback.textContent = 'Correct.'; ansFeedback.style.color = 'var(--ok)'; }
@@ -212,9 +224,10 @@ function missionPage(m) {
 
   // Analyst call part
   const callPart = el('div', { class: 'part' });
-  const callFeedback = el('div', { class: 'small', style: 'margin-top:6px' });
+  const callFeedback = el('div', { class: 'small', style: 'margin-top:6px', role: 'status', 'aria-live': 'polite' });
   const radios = m.call.options.map(o => el('li', {}, el('label', {}, el('input', { type: 'radio', name: 'call-' + m.id, value: o.id, onchange: () => { s.picked = o.id; } }), el('span', { text: o.label }))));
-  callPart.append(el('h3', {}, 'Analyst call', el('span', { class: 'pts', text: POINTS.call + ' pts' })), el('p', { text: m.call.prompt }), el('ul', { class: 'options' }, radios),
+  const callPromptId = 'call-prompt-' + m.id;
+  callPart.append(el('h2', { class: 'sub' }, 'Analyst call', el('span', { class: 'pts', text: POINTS.call + ' pts' })), el('p', { id: callPromptId, text: m.call.prompt }), el('ul', { class: 'options', role: 'radiogroup', 'aria-labelledby': callPromptId }, radios),
     el('button', { text: 'Check call', onclick: () => {
       if (!s.picked) { callFeedback.style.color = 'var(--muted)'; callFeedback.textContent = 'Pick an option first.'; return; }
       const g = gradeCall(s.picked, m); s.call = g;
@@ -226,7 +239,7 @@ function missionPage(m) {
 
   desk.append(
     el('div', { class: 'deskbar' }, el('div', { class: 'eyebrow', style: 'margin:0', text: 'Query desk' }), el('label', {}, 'Time range', rangeSel)),
-    editor, deskButtons, feedback, results, fieldList, answerPart, callPart, scorebox,
+    editor, deskButtons, feedback, results, fieldList, answerPart, callPart, scorebox, announcer,
   );
   paintResults(); paintScoreBox();
   return el('div', { class: 'mission' }, lesson, desk);
@@ -252,7 +265,7 @@ function aboutPage() {
         ['https://docs.cloud.google.com/chronicle/docs/reference/udm-field-list', 'UDM field list'],
       ].map(([h, t]) => el('li', {}, link(h, t)))),
       el('p', { class: 'small muted', text: 'Links open in a new tab on click only. Google\'s pages disagree on whether Search supports the condition section; this trainer follows the page that documents it and says so in chapter 6.' })),
-    el('div', { class: 'navrow' }, el('a', { href: '#' }, el('button', { text: '← Back to the case file' }))),
+    el('div', { class: 'navrow' }, linkBtn('#', '← Back to the case file')),
   );
 }
 

@@ -29,9 +29,12 @@ export function resultsTable(result, onRow) {
     const sample = result.rows.slice(0, 200);
     const present = c => sample.some(r => r[c] !== undefined && r[c] !== '' && r[c] !== 0);
     const cols = ['time', ...BASE_COLS.filter(present), ...EXTRA_COLS.filter(present)].slice(0, 9);
-    const head = el('tr', {}, cols.map(c => el('th', { text: c === 'time' ? 'time (UTC)' : short(c) })));
-    const body = sample.map(r => el('tr', { class: 'row-btn', tabindex: 0, role: 'button', 'aria-label': 'Open record ' + r['metadata.id'], onclick: () => onRow(r), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRow(r); } } },
-      cols.map(c => el('td', { text: c === 'time' ? fmtTime(r['metadata.event_timestamp.seconds']) : cell(r[c]) }))));
+    // Each row keeps its table semantics; a real button in the first cell opens the record, so keyboard and
+    // screen-reader users get one focus stop per row with an explicit name. Mouse users can click anywhere on the row.
+    const head = el('tr', {}, el('th', { text: 'record' }), cols.map(c => el('th', { text: c === 'time' ? 'time (UTC)' : short(c) })));
+    const body = sample.map(r => { const btn = el('button', { class: 'ghost', text: 'Open', 'aria-label': 'Open record ' + r['metadata.id'], onclick: e => { e.stopPropagation(); onRow(r, btn); } });
+      return el('tr', { class: 'row-btn', onclick: () => onRow(r, btn) }, el('td', {}, btn),
+        cols.map(c => el('td', { text: c === 'time' ? fmtTime(r['metadata.event_timestamp.seconds']) : cell(r[c]) }))); });
     return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
   }
   const head = el('tr', {}, result.columns.map(c => el('th', { text: c === 'window_start' ? 'window start (UTC)' : short(c) })));

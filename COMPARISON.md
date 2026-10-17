@@ -33,15 +33,17 @@ Watch 40 (answer 25 + call 15) · Build/Your turn 100 (query 60 + answer 25 + ca
 
 ## What was verified
 
-- `npm test`: 25 unit tests, including should-fail cases (parser rejects bad shapes with the right code; grader fails plausible wrong queries; content validator catches a drifted answer; progress store ignores hostile state).
+- `npm test`: 29 unit tests, including should-fail cases (parser rejects bad shapes with the right code; grader fails plausible wrong queries; content validator catches a drifted answer; progress store ignores hostile state; the contrast check rejects a low-contrast token).
 - `npm run validate:content`: every reference runs; every authored answer equals what the data returns; every Build starter fails until completed; every Watch starter equals its reference.
-- Manual click-through in the Claude desktop browser pane at desktop width: home, chapter, a Build mission end to end (invalid → correct → answer → call → clue), a Watch mission with time-range change, record drill-down and hints, a chapter 6 bucket query, the About page, and a phone-width render. Zero CSP violations during routing after the inline-style fix.
+- `npm run test:browser`: 8 Playwright tests in Chromium against the built `dist/`, no retries, no sleeps: a Build mission completed with the keyboard only (invalid → correct → answer → call → clue → next), a Watch mission with a time-range change and the narrower-range warning, hint reveal with focus management, record drill-down with focus return, 320 px width with no horizontal overflow, reduced motion, zero `securitypolicyviolation` events and zero non-loopback requests across every route and interaction, and structural accessibility assertions.
+- An accessibility pass (names, focus order, headings, live regions, token contrast) with sixteen fixes, each re-checked by a test. Method, findings and mutation checks: [docs/EVALUATION.md](docs/EVALUATION.md).
+- The earlier manual click-through in one desktop browser still stands; it is now superseded by the tests above for everything it covered.
 
 ## What was not verified
 
 - Nothing has been compiled or run in a Google SecOps tenant. Google's pages disagree on `condition:` in Search; chapter 6 says so.
-- No Playwright, screen-reader, keyboard-only or 200% zoom testing.
-- Only one browser engine.
+- No session with a real screen reader, and no browser-zoom (200%) run; the live-region and focus checks are structural.
+- Only one browser engine (Chromium).
 - Learning effectiveness: nobody but the builder has used it.
 
 ## How to compare fairly
