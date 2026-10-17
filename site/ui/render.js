@@ -1,0 +1,46 @@
+// Tiny DOM helpers. Everything renders through text nodes; there is no innerHTML anywhere.
+export function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') node.className = v;
+    else if (k === 'text') node.textContent = v;
+    else if (k === 'style') node.style.cssText = v; // CSSOM assignment is allowed under style-src 'self'; a style attribute is not
+    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+    else if (k === 'dataset') Object.assign(node.dataset, v);
+    else node.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return node;
+}
+export const frag = (...kids) => { const f = document.createDocumentFragment(); for (const k of kids.flat()) if (k) f.append(k); return f; };
+export function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+export const fmtTime = s => { const d = new Date(s * 1000); return d.toISOString().slice(5, 19).replace('T', ' '); };
+export const fmtNum = n => typeof n === 'number' ? n.toLocaleString('en-US') : String(n);
+export const fmtBytes = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B';
+
+const BASE_COLS = ['metadata.event_type', 'principal.user.userid', 'principal.hostname', 'principal.ip', 'target.user.userid', 'target.hostname', 'target.ip', 'target.port', 'security_result.action'];
+const EXTRA_COLS = ['target.process.command_line', 'target.process.file.full_path', 'network.dns.questions.name', 'network.email.from', 'network.email.to', 'network.email.subject', 'target.url', 'target.file.full_path', 'network.sent_bytes', 'network.received_bytes', 'security_result.summary'];
+const short = c => c.replace('metadata.', '').replace('security_result.', 'sr.').replace('network.', 'net.').replace('.file.full_path', '.path').replace('.questions.name', '.question').replace('.command_line', '.cmd');
+
+export function resultsTable(result, onRow) {
+  if (result.kind === 'events') {
+    const sample = result.rows.slice(0, 200);
+    const present = c => sample.some(r => r[c] !== undefined && r[c] !== '' && r[c] !== 0);
+    const cols = ['time', ...BASE_COLS.filter(present), ...EXTRA_COLS.filter(present)].slice(0, 9);
+    const head = el('tr', {}, cols.map(c => el('th', { text: c === 'time' ? 'time (UTC)' : short(c) })));
+    const body = sample.map(r => el('tr', { class: 'row-btn', tabindex: 0, role: 'button', 'aria-label': 'Open record ' + r['metadata.id'], onclick: () => onRow(r), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRow(r); } } },
+      cols.map(c => el('td', { text: c === 'time' ? fmtTime(r['metadata.event_timestamp.seconds']) : cell(r[c]) }))));
+    return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
+  }
+  const head = el('tr', {}, result.columns.map(c => el('th', { text: c === 'window_start' ? 'window start (UTC)' : short(c) })));
+  const body = result.rows.slice(0, 200).map(r => el('tr', {}, result.columns.map(c => el('td', { text: c === 'window_start' ? fmtTime(r[c]) : cell(r[c]) }))));
+  return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
+}
+const cell = v => v === undefined || v === '' ? '—' : typeof v === 'number' ? fmtNum(v) : String(v);
+
+export function rawRecord(r) {
+  const entries = Object.entries(r).sort(([a], [b]) => a.localeCompare(b));
+  return el('div', { class: 'raw' }, el('dl', {}, entries.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: k === 'metadata.event_timestamp.seconds' ? v + ' (' + fmtTime(v) + ' UTC)' : String(v) })])));
+}

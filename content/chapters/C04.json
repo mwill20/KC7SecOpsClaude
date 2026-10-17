@@ -1,0 +1,135 @@
+{
+  "id": "C04",
+  "title": "Beacons in the fog",
+  "subtitle": "DNS rhythm, address ranges, and which way the bytes went",
+  "intro": "Every ten minutes since 19:40, AUTOMATION-01 has asked the same question of DNS and made the same small connection. That rhythm is a scheduled task talking to whoever owns 203.0.113.44. Network events carry direction: principal is the side that started it, target is the side that answered. Read them that way and the night's traffic tells its own story.",
+  "concepts": ["Regular intervals are a signature", "CIDR notation names a range of addresses", "Parentheses decide what OR applies to", "sent_bytes is from the principal's point of view"],
+  "missions": [
+    {
+      "id": "C04-M01",
+      "kind": "watch",
+      "title": "The same question every ten minutes",
+      "beat": "Count DNS lookups for anything under the lookalike domain, grouped by the machine asking. One number will stand out.",
+      "question": "Which machine keeps looking up the lookalike domain, and how often?",
+      "concept": { "title": "Regular intervals are a signature", "text": "People browse in bursts. Scheduled code is punctual. Sixty-two lookups in ten hours and twenty minutes is one every ten minutes, which is exactly what the PledgeSync task was told to do." },
+      "explain": [
+        { "part": "/pier9-partners\\.example$/", "meaning": "Anchored to the end, so cdn-sync.pier9-partners.example and the bare domain both match." },
+        { "part": "match:\n  principal.hostname", "meaning": "One row per asking machine." },
+        { "part": "$lookups = count(metadata.id)", "meaning": "How many lookup events each machine produced." }
+      ],
+      "starter": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = /pier9-partners\\.example$/\nmatch:\n  principal.hostname\noutcome:\n  $lookups = count(metadata.id)",
+      "reference": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = /pier9-partners\\.example$/\nmatch:\n  principal.hostname\noutcome:\n  $lookups = count(metadata.id)",
+      "hints": [
+        "Run it. Two machines appear; compare their counts.",
+        "Change match to principal.hostname, network.dns.questions.name to see which exact name each machine asked for.",
+        "AUTOMATION-01 made 62 lookups for cdn-sync.pier9-partners.example. PLEDGE-DESK-02 made one, at 18:52, for the bare domain."
+      ],
+      "answer": { "prompt": "How many lookups did AUTOMATION-01 make?", "value": "62", "check": { "type": "cell", "row": { "principal.hostname": "AUTOMATION-01" }, "column": "$lookups" } },
+      "call": {
+        "prompt": "Sixty-two lookups at ten-minute spacing. What is the strongest reading?",
+        "options": [
+          { "id": "A", "label": "A user kept refreshing the sponsor page all night" },
+          { "id": "B", "label": "Automated check-ins from the scheduled task: a beacon" },
+          { "id": "C", "label": "A DNS misconfiguration" }
+        ],
+        "correct": "B",
+        "why": "The spacing matches the task's /mo 10 interval exactly, and the lookups continue long after every human went home."
+      },
+      "clue": "AUTOMATION-01 called home 62 times. PLEDGE-DESK-02 called once, at 18:52, when Hal followed the link. Two different stories from the same domain: one click, then one machine on a leash.",
+      "caveat": "Beacons in the wild add jitter and rotate names. A clean ten-minute cadence is a teaching case, not a promise."
+    },
+    {
+      "id": "C04-M02",
+      "kind": "build",
+      "title": "Connections into the attacker's range",
+      "beat": "The lookalike resolves to 203.0.113.44. Attackers rarely own one address; they rent a block. Search for connections into the whole /24 on the web port.",
+      "question": "How many connections went to 203.0.113.0/24 on port 443?",
+      "concept": { "title": "CIDR names a range", "text": "203.0.113.0/24 means 'the first 24 bits are fixed': every address from 203.0.113.0 to 203.0.113.255. net.ip_in_range_cidr tests an IP field against that range, so you catch neighbours of the one address you already know." },
+      "explain": [
+        { "part": "net.ip_in_range_cidr(target.ip, \"203.0.113.0/24\")", "meaning": "A function used as a condition. First argument is the IP field, second is the range as a quoted string." },
+        { "part": "target.port = 443", "meaning": "Numbers are unquoted. Port 443 is HTTPS, which hides the content but not the destination." }
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\nnet.ip_in_range_cidr(___, \"203.0.113.0/24\")\ntarget.port = 443",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nnet.ip_in_range_cidr(target.ip, \"203.0.113.0/24\")\ntarget.port = 443",
+      "hints": [
+        "The connections go to the attacker, so the attacker's address is on the target side.",
+        "The first argument is target.ip.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\nnet.ip_in_range_cidr(target.ip, \"203.0.113.0/24\")\ntarget.port = 443"
+      ],
+      "answer": { "prompt": "How many connection events match?", "value": "65", "check": { "type": "count" } },
+      "call": {
+        "prompt": "All 65 connections used port 443. Does HTTPS make them safer?",
+        "options": [
+          { "id": "A", "label": "Yes; encrypted traffic cannot carry stolen data" },
+          { "id": "B", "label": "No; encryption hides the content from you too, so destination, timing and volume are your evidence" },
+          { "id": "C", "label": "Yes; port 443 is allowed by the firewall, so it is approved" }
+        ],
+        "correct": "B",
+        "why": "Attackers use 443 because it is allowed everywhere and inspected nowhere. The metadata around the connection is what you can still read."
+      },
+      "clue": "Sixty-five connections into the range: 63 from AUTOMATION-01, two from PLEDGE-DESK-02 at 18:52 and 18:53. The two from Hal's desk are the page load and the form post. Everything after that is the playout PC.",
+      "caveat": "The range here is from RFC 5737 documentation space and belongs to nobody. Never put a real indicator from work into a public trainer."
+    },
+    {
+      "id": "C04-M03",
+      "kind": "build",
+      "title": "Either end of the wire",
+      "beat": "Hal's workstation is 10.9.4.22. Odalys wants everything it talked to and everything that talked to it. Direction matters, so you have to ask about both roles.",
+      "question": "How many connections involved 10.9.4.22 in either role?",
+      "concept": { "title": "Parentheses decide what OR applies to", "text": "AND binds tighter than OR. Without parentheses, A AND B OR C reads as (A AND B) OR C, which would drag in every event where C is true regardless of type. Wrap the OR so it is one condition." },
+      "explain": [
+        { "part": "(principal.ip = \"10.9.4.22\" OR target.ip = \"10.9.4.22\")", "meaning": "Either role may hold the address. The parentheses keep both alternatives inside the event-type filter." },
+        { "part": "grouped alternative", "meaning": "ip = \"10.9.4.22\" does the same job in one token. Both forms pass here because they return the same evidence." }
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\n(principal.ip = \"10.9.4.22\" ___ target.ip = \"10.9.4.22\")",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\n(principal.ip = \"10.9.4.22\" OR target.ip = \"10.9.4.22\")",
+      "hints": [
+        "Either alternative may be true, so the word between them is OR, not AND.",
+        "Fill the gap with OR and keep the parentheses.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\n(principal.ip = \"10.9.4.22\" OR target.ip = \"10.9.4.22\")"
+      ],
+      "answer": { "prompt": "How many connection events involve 10.9.4.22?", "value": "21", "check": { "type": "count" } },
+      "call": {
+        "prompt": "You drop the parentheses and the count jumps to hundreds. What happened?",
+        "options": [
+          { "id": "A", "label": "The query became (type AND principal) OR target, so every event with target.ip 10.9.4.22 of any type was added" },
+          { "id": "B", "label": "Search ignored the OR" },
+          { "id": "C", "label": "The grouped field ip was triggered" }
+        ],
+        "correct": "A",
+        "why": "Operator precedence silently changed the question. The results looked plausible, which is the dangerous part."
+      },
+      "clue": "Twenty-one connections. Nineteen are the evening's ordinary browsing and mail. Two are the 18:52 and 18:53 connections to 203.0.113.44 that followed the phishing link. Hal's machine is a victim's machine, not the attacker's.",
+      "caveat": "principal.ip and target.ip are repeated fields in real UDM. This trainer models one value each; the docs cover how repeated values and negation interact."
+    },
+    {
+      "id": "C04-M04",
+      "kind": "solo",
+      "title": "The one big upload",
+      "beat": "Beacons are small. Theft is not. Find any connection tonight that sent more than ten megabytes out. Bytes are plain numbers; compare them like numbers.",
+      "question": "Where did the large outbound transfer go?",
+      "concept": { "title": "sent_bytes is from the principal's point of view", "text": "network.sent_bytes counts what the principal transmitted to the target. A workstation that sends 48 MB to an outside address in one connection has uploaded something. Received bytes would mean a download. Read the direction before you say which." },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nnetwork.sent_bytes > 10000000",
+      "hints": [
+        "A numeric comparison: the sent-bytes field greater than ten million, written as a bare number.",
+        "network.sent_bytes > 10000000 with the connection event type.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\nnetwork.sent_bytes > 10000000"
+      ],
+      "answer": { "prompt": "What is the target.ip of the large transfer?", "value": "203.0.113.44", "check": { "type": "field", "field": "target.ip", "index": 0 } },
+      "call": {
+        "prompt": "48,230,112 bytes sent from AUTOMATION-01 to 203.0.113.44 at 02:10, five minutes after donors_export.zip was written. What can you state, and what remains inference?",
+        "options": [
+          { "id": "A", "label": "State: a 48 MB upload to the attacker address followed the zip. Inference: the zip's contents were the payload" },
+          { "id": "B", "label": "State: the donor list was stolen" },
+          { "id": "C", "label": "State: nothing, since the connection was encrypted" }
+        ],
+        "correct": "A",
+        "why": "You can prove the size, the direction, the destination and the timing. Proving what was inside the stream needs the file itself or the attacker's server, neither of which you have."
+      },
+      "clue": "One connection over ten megabytes all night: 48 MB from the playout PC to 203.0.113.44 at 02:10:33. The pirate segment at 03:10 read donor names on air. The donor list left the building an hour before that. The broadcast was the announcement, not the theft.",
+      "caveat": "Byte counts depend on the sensor. Flow logs, proxies and EDR disagree by headers and retransmits. Treat a size as approximate and the direction as reliable."
+    }
+  ]
+}

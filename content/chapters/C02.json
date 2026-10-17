@@ -1,0 +1,136 @@
+{
+  "id": "C02",
+  "title": "The sponsor portal",
+  "subtitle": "Email, lookalike domains, and who is acting on whom",
+  "intro": "An outside address knew the pledge-desk password by 19:21. Passwords leave a building by email more often than by genius. Pier Nine's mail gateway logs every message as an EMAIL_TRANSACTION. Tonight's inbox was full of sponsor reads, pledge totals and shift notes. Somewhere in it is the message that mattered.",
+  "concepts": ["Regex matches part of a string unless you anchor it", "nocase is a word you add, not a setting", "A DNS lookup proves a visit, not a password", "principal acts; target is acted on"],
+  "missions": [
+    {
+      "id": "C02-M01",
+      "kind": "watch",
+      "title": "Everything about the pledge",
+      "beat": "Priya remembers 'a sponsor email about the portal, right before we opened'. She does not remember who sent it. Start with the subject line and the word everyone was using tonight.",
+      "question": "Which messages tonight mention the pledge?",
+      "concept": { "title": "Regex matches anywhere unless you say otherwise", "text": "A regular expression between slashes matches if the pattern appears anywhere in the field. /pledge/ matches 'Pledge Night' and 'Hourly pledge total' alike, once you add nocase. Anchors (^ and $) are how you say 'starts with' or 'ends with'." },
+      "explain": [
+        { "part": "network.email.subject", "meaning": "The subject line as the gateway recorded it." },
+        { "part": "/pledge/", "meaning": "A regex literal. Slashes instead of quotes tell Search to treat this as a pattern." },
+        { "part": "nocase", "meaning": "Comparisons are case-sensitive by default. nocase goes at the end of the condition it applies to." }
+      ],
+      "starter": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.subject = /pledge/ nocase",
+      "reference": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.subject = /pledge/ nocase",
+      "hints": [
+        "Run it, then remove nocase and run again. Watch the count change.",
+        "Click a row to see from, to, subject and target.url in the full record.",
+        "Fifteen messages mention the pledge. Three of them share a subject about a 'sponsor portal' and carry a link."
+      ],
+      "answer": { "prompt": "How many email events match?", "value": "15", "check": { "type": "count" } },
+      "call": {
+        "prompt": "You remove nocase and the count drops. Why?",
+        "options": [
+          { "id": "A", "label": "Without nocase, /pledge/ no longer matches subjects that spell it 'Pledge'" },
+          { "id": "B", "label": "nocase is required for all regex; the query is invalid without it" },
+          { "id": "C", "label": "Removing nocase turns the regex into an exact match" }
+        ],
+        "correct": "A",
+        "why": "nocase only changes case handling. The pattern still matches anywhere in the string; it just stops matching capital letters it was not told about."
+      },
+      "clue": "Three identical messages at 18:40: to Hal, to Odalys and to the pledge-desk mailbox, subject 'Pledge Night sponsor portal: confirm logo placement before 7 PM', with a login link. The real sponsor wrote at 18:05 from harborlightsponsors.example. This one did not.",
+      "caveat": "Google's docs warn that a regex starting with .* forces a slow full scan. Anchor patterns when you can."
+    },
+    {
+      "id": "C02-M02",
+      "kind": "build",
+      "title": "The domain that is almost right",
+      "beat": "The sponsor's real domain is harborlightsponsors.example. The portal email came from somewhere that merely sounds like a partner. Pull every message from that sending domain.",
+      "question": "How many messages came from the lookalike domain?",
+      "concept": { "title": "Lookalike domains", "text": "pier9-partners.example is not a typo of anything the station uses; it is a name chosen to feel familiar on a busy night. Matching the end of the sender address with an anchored regex catches every mailbox at that domain." },
+      "explain": [
+        { "part": "network.email.from", "meaning": "The envelope sender the gateway saw." },
+        { "part": "/pier9-partners\\.example$/", "meaning": "Backslash-dot means a literal dot. The $ anchors to the end of the string, so it matches the domain, not a mention inside a longer address." }
+      ],
+      "starter": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from = /___\\.example$/",
+      "reference": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from = /pier9-partners\\.example$/",
+      "hints": [
+        "The sender domain is visible in the records you opened in the last mission.",
+        "Fill the gap with pier9-partners, keeping the \\.example$ anchor after it.",
+        "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from = /pier9-partners\\.example$/"
+      ],
+      "answer": { "prompt": "How many messages did the lookalike domain send?", "value": "3", "check": { "type": "count" } },
+      "call": {
+        "prompt": "Three recipients, one link, sent at 18:40 with a 7 PM deadline. Which detail matters most to an analyst?",
+        "options": [
+          { "id": "A", "label": "The deadline; urgency is a classic phishing pressure" },
+          { "id": "B", "label": "The sender domain does not match the sponsor the station actually works with" },
+          { "id": "C", "label": "Both, and together they justify checking who followed the link" }
+        ],
+        "correct": "C",
+        "why": "Urgency alone is normal on a pledge night. Urgency plus a domain nobody has corresponded with is a phishing pattern worth chasing immediately."
+      },
+      "clue": "Three messages, one lookalike domain, one link: http://pier9-partners.example/portal/login. A 'portal login' is where someone types a password. Next: did anyone open it?",
+      "caveat": "The gateway marked these ALLOW. A delivered message is not a safe message; action records the gateway's decision, not the truth."
+    },
+    {
+      "id": "C02-M03",
+      "kind": "build",
+      "title": "Who opened the link?",
+      "beat": "An email link only matters if someone follows it. Following it starts with a DNS lookup for the domain. Find the lookups for the lookalike and see which machine made them.",
+      "question": "Which workstation looked up the lookalike domain?",
+      "concept": { "title": "A lookup proves a visit, not a password", "text": "DNS tells you a machine asked where a name lives. It does not say a page loaded, and it certainly does not say a form was filled. Evidence stacks: lookup, then connection, then a credential used from somewhere new. Build the stack; do not skip steps." },
+      "explain": [
+        { "part": "metadata.event_type = \"NETWORK_DNS\"", "meaning": "DNS queries have their own event type." },
+        { "part": "network.dns.questions.name", "meaning": "The name that was asked about." },
+        { "part": "exact string, not regex", "meaning": "You know the exact domain now, so an exact match is faster and cannot over-match." }
+      ],
+      "starter": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = \"___\"",
+      "reference": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = \"pier9-partners.example\"",
+      "hints": [
+        "Use the bare domain from the email link, without http:// or the path.",
+        "network.dns.questions.name = \"pier9-partners.example\"",
+        "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = \"pier9-partners.example\""
+      ],
+      "answer": { "prompt": "What is the principal.hostname on the lookup?", "value": "PLEDGE-DESK-02", "check": { "type": "field", "field": "principal.hostname", "index": 0 } },
+      "call": {
+        "prompt": "One lookup from PLEDGE-DESK-02 at 18:52, signed in as hal.brunner. What do you know, and what do you not?",
+        "options": [
+          { "id": "A", "label": "Hal's machine resolved the domain; whether a password was typed is still unproven" },
+          { "id": "B", "label": "Hal typed the pledge-desk password into the fake portal" },
+          { "id": "C", "label": "Nothing; one DNS record is noise" }
+        ],
+        "correct": "A",
+        "why": "The lookup places the visit on Hal's desk at 18:52. The two HTTPS connections that follow it, and the login from outside at 19:21, are what turn a visit into a probable credential theft."
+      },
+      "clue": "PLEDGE-DESK-02, 18:52, logged in as hal.brunner. Two small HTTPS connections to 203.0.113.44 follow within a minute: a page load and a form post. Thirteen minutes later, someone outside starts guessing the pledge-desk password. At 19:21 they stop guessing.",
+      "caveat": "Browsers resolve names from prefetch and cache. In real data one lookup can be a hover, not a click. Corroborate with connections and logins."
+    },
+    {
+      "id": "C02-M04",
+      "kind": "solo",
+      "title": "Acting on whom",
+      "beat": "At 19:31 the pledge-desk session on AUTOMATION-01 did something that produced a second login record with a different account in a different field. Find every login where the account being acted on is the playout service account.",
+      "question": "Who used the svc-playout account tonight, and from where?",
+      "concept": { "title": "principal acts; target is acted on", "text": "UDM roles describe direction. principal.user is who initiated the event. target.user is the account the action was performed on or as. A 'run as' shows up with your account as principal and the other account as target. Searching the wrong role gives a confident, wrong answer." },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"",
+      "hints": [
+        "The account you care about was acted on, so it is in the target role, not principal.",
+        "target.user.userid = \"svc-playout\" plus the USER_LOGIN event type.",
+        "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\""
+      ],
+      "answer": { "prompt": "How many different principal accounts used svc-playout?", "value": "2", "check": { "type": "distinct", "field": "principal.user.userid" } },
+      "call": {
+        "prompt": "Two events: pledge-desk at 19:31 and dez.okafor at 20:15, both 'Run as different user' on AUTOMATION-01. What is the right next step?",
+        "options": [
+          { "id": "A", "label": "Treat both as suspicious until proven otherwise" },
+          { "id": "B", "label": "Ask Dez what he did at 20:15 and keep pledge-desk as the lead, since it followed the outside login" },
+          { "id": "C", "label": "Clear pledge-desk because Dez also did it" }
+        ],
+        "correct": "B",
+        "why": "Context separates the two: Dez is the engineer who maintains the PC and the restart he ran is in the process log. The pledge-desk use follows an unexplained outside sign-in by ten minutes."
+      },
+      "clue": "Two actors behind one service account. Dez's restart at 20:15 is routine and he will confirm it. The pledge-desk 'run as' at 19:31 is the first thing the outside session did on the playout PC. Chapter 3 is about what it did next.",
+      "caveat": "Not every product fills target.user for run-as or impersonation events. In your tenant, confirm which field your identity source uses."
+    }
+  ]
+}

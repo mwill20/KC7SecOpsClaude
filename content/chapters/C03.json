@@ -1,0 +1,135 @@
+{
+  "id": "C03",
+  "title": "Backstage on the playout PC",
+  "subtitle": "Processes, command lines, and the difference between a tool and a crime",
+  "intro": "AUTOMATION-01 airs whatever it is told to air. Dez keeps it running with PowerShell, so PowerShell on that machine is normal. What is not normal is PowerShell that hides its own window and carries its instructions in base64. Every process start on the pier is a PROCESS_LAUNCH event with the full path and the command line.",
+  "concepts": ["Anchor the end of a path to match the file, not the folder", "Dual-use tools need context", "Scheduled tasks are how one bad minute becomes a bad night", "Grouped fields search several paths at once"],
+  "missions": [
+    {
+      "id": "C03-M01",
+      "kind": "watch",
+      "title": "PowerShell on the playout PC",
+      "beat": "Dez swears the only PowerShell he ran tonight was a service restart. Pull every PowerShell launch on AUTOMATION-01 and see if he is right.",
+      "question": "Who launched PowerShell on AUTOMATION-01, and when?",
+      "concept": { "title": "Match the file, not the folder", "text": "A path like C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe has the interesting part at the end. \\\\powershell\\.exe$ says: a backslash, then the file name, then nothing after it. Without the $ you would also match a folder named powershell.exe.old." },
+      "explain": [
+        { "part": "target.process.file.full_path", "meaning": "The program that was started. principal.process is its parent." },
+        { "part": "/\\\\powershell\\.exe$/", "meaning": "In a regex, a backslash is itself escaped: \\\\ means one real backslash. \\. is a literal dot. $ anchors the end." },
+        { "part": "nocase", "meaning": "Windows paths are case-insensitive; the log may say PowerShell.exe. Always add nocase to path matches." }
+      ],
+      "starter": "metadata.event_type = \"PROCESS_LAUNCH\"\nprincipal.hostname = \"AUTOMATION-01\"\ntarget.process.file.full_path = /\\\\powershell\\.exe$/ nocase",
+      "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\nprincipal.hostname = \"AUTOMATION-01\"\ntarget.process.file.full_path = /\\\\powershell\\.exe$/ nocase",
+      "hints": [
+        "Run it, then click each row and read target.process.command_line.",
+        "Three launches. One is Dez's restart. Two belong to the shared account.",
+        "Three rows: 19:33 pledge-desk (-enc), 20:15 dez.okafor (Restart-Service), 01:58 pledge-desk (Compress-Archive)."
+      ],
+      "answer": { "prompt": "How many PowerShell launches are there on AUTOMATION-01?", "value": "3", "check": { "type": "count" } },
+      "call": {
+        "prompt": "Why does the pattern end with \\.exe$ rather than just exe?",
+        "options": [
+          { "id": "A", "label": "So it matches the end of the path and a literal dot, not 'exe' anywhere inside a folder name" },
+          { "id": "B", "label": "Because Search requires every regex to end with $" },
+          { "id": "C", "label": "To make the match case-insensitive" }
+        ],
+        "correct": "A",
+        "why": "Unanchored, /exe/ would match C:\\Program Files\\exeter\\tool.bin. Precision in the pattern is precision in the evidence."
+      },
+      "clue": "Three launches. Dez's at 20:15 reads 'Restart-Service PlayoutEngine', exactly what he said. The other two are pledge-desk: one at 19:33 with -w hidden -enc, one at 01:58 compressing something from the file server. Dez was telling the truth.",
+      "caveat": "The trainer escapes backslashes the way Search does. If your pattern does not match, count the backslashes first."
+    },
+    {
+      "id": "C03-M02",
+      "kind": "build",
+      "title": "The hidden, encoded command",
+      "beat": "-w hidden hides the window. -enc means the command is base64 so nobody reading over a shoulder, or a log, sees what it says. Find every command line on the pier that used it.",
+      "question": "Which account ran an encoded PowerShell command?",
+      "concept": { "title": "Dual-use tools need context", "text": "Administrators use -enc too, to pass commands with awkward quoting. What makes it suspicious here is the company it keeps: a hidden window, a shared account that had just arrived from an outside IP, and a playout PC that does not normally receive commands from anyone but Dez." },
+      "explain": [
+        { "part": "target.process.command_line", "meaning": "The full command line, including flags and arguments." },
+        { "part": "/-enc/ nocase", "meaning": "Matches -enc, -Enc and -EncodedCommand, since the pattern matches a prefix anywhere in the string." }
+      ],
+      "starter": "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.command_line = /___/ nocase",
+      "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.command_line = /-enc/ nocase",
+      "hints": [
+        "You are matching a flag inside the command line. The flag starts with a hyphen.",
+        "Put -enc between the slashes.",
+        "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.command_line = /-enc/ nocase"
+      ],
+      "answer": { "prompt": "Which principal.user.userid ran it?", "value": "pledge-desk", "check": { "type": "field", "field": "principal.user.userid", "index": 0 } },
+      "call": {
+        "prompt": "An analyst wants to write a detection that alerts on every -enc. What should you tell them?",
+        "options": [
+          { "id": "A", "label": "Good idea; -enc is always malicious" },
+          { "id": "B", "label": "Expect false positives from admins and installers; pair it with hidden windows, unusual parents or unusual accounts" },
+          { "id": "C", "label": "Never alert on PowerShell; it is too noisy" }
+        ],
+        "correct": "B",
+        "why": "A single dual-use flag is a weak signal alone. The combination you found tonight, hidden plus encoded plus a shared account that just arrived from outside, is a strong one."
+      },
+      "clue": "One encoded command, 19:33, pledge-desk, parent cmd.exe. Two minutes later the same session created a scheduled task. That is how a visitor becomes a resident.",
+      "caveat": "The trainer does not decode the base64. In a real investigation you would, in an isolated tool, never in a browser you trust with other sessions."
+    },
+    {
+      "id": "C03-M03",
+      "kind": "build",
+      "title": "The task that keeps running",
+      "beat": "A scheduled task runs after the attacker logs off, after Dez restarts the box, after everyone goes home. Windows logs task creation as its own event. Find tonight's.",
+      "question": "What scheduled tasks were created tonight, and by whom?",
+      "concept": { "title": "Persistence", "text": "Most of an intrusion is not clever. It is one scheduled task or service that re-runs a script every ten minutes. Finding it answers 'is this still happening' before 'who did it'." },
+      "explain": [
+        { "part": "metadata.event_type = \"SCHEDULED_TASK_CREATION\"", "meaning": "Its own UDM event type, separate from the schtasks.exe process launch that caused it." },
+        { "part": "security_result.summary", "meaning": "Free text from the source; here it carries the task name." }
+      ],
+      "starter": "metadata.event_type = \"___\"",
+      "reference": "metadata.event_type = \"SCHEDULED_TASK_CREATION\"",
+      "hints": [
+        "The event type for a new scheduled task is in the concept card's field list: SCHEDULED_TASK_CREATION.",
+        "metadata.event_type = \"SCHEDULED_TASK_CREATION\"",
+        "metadata.event_type = \"SCHEDULED_TASK_CREATION\""
+      ],
+      "answer": { "prompt": "How many scheduled-task creation events are there?", "value": "2", "check": { "type": "count" } },
+      "call": {
+        "prompt": "Two tasks: PledgeSync by pledge-desk at 19:35, and PlayoutBackup by svc-playout at 21:00. Which needs attention first and why?",
+        "options": [
+          { "id": "A", "label": "PlayoutBackup, because service accounts should never create tasks" },
+          { "id": "B", "label": "PledgeSync: created by the shared account two minutes after the encoded command, pointing at a script in ProgramData" },
+          { "id": "C", "label": "Neither; task creation is routine on Windows" }
+        ],
+        "correct": "B",
+        "why": "The nightly backup is scheduled by the playout software every night. PledgeSync is new, named to look routine, and created in the middle of the suspicious sequence."
+      },
+      "clue": "PledgeSync. Created 19:35:22 by pledge-desk, runs C:\\ProgramData\\PledgeSync\\sync.ps1 every ten minutes as pledge-desk. The schtasks.exe launch one second earlier shows the exact command. Everything that happens on AUTOMATION-01 for the rest of the night traces back to this.",
+      "caveat": "Not every endpoint product emits SCHEDULED_TASK_CREATION. If yours does not, the schtasks.exe process launch is the fallback, and you saw it in the previous mission's data."
+    },
+    {
+      "id": "C03-M04",
+      "kind": "solo",
+      "title": "Everything in the PledgeSync folder",
+      "beat": "The task points at C:\\ProgramData\\PledgeSync. Files were written there tonight, and more than one event type references that folder. Use Google's grouped field file_path to search every path field at once.",
+      "question": "How many events reference the PledgeSync folder?",
+      "concept": { "title": "Grouped fields", "text": "Search offers aliases that fan out across related fields: file_path covers the process paths and the file path; ip covers principal and target addresses; hostname, user, domain and email work the same way. They are slower than a single field, so use them when you genuinely do not know which role the value sits in." },
+      "explain": [],
+      "starter": "",
+      "reference": "file_path = /PledgeSync/",
+      "hints": [
+        "Use the grouped field name file_path with a regex for the folder name.",
+        "file_path = /PledgeSync/ matches the folder in any of the path fields.",
+        "file_path = /PledgeSync/"
+      ],
+      "answer": { "prompt": "How many events reference PledgeSync in a path field?", "value": "4", "check": { "type": "count" } },
+      "call": {
+        "prompt": "The folder holds sync.ps1 at 19:36, donors_export.zip at 02:05 and segment.wav at 02:58. What does the zip most plausibly mean?",
+        "options": [
+          { "id": "A", "label": "A backup the playout software made" },
+          { "id": "B", "label": "Data was staged for removal: the 01:58 command compressed the donor spreadsheet from FS-01 into it" },
+          { "id": "C", "label": "Nothing; zip files are common" }
+        ],
+        "correct": "B",
+        "why": "You saw the Compress-Archive command in mission 1. Staging, then a large outbound transfer, is the pattern chapter 4 and 5 will confirm."
+      },
+      "clue": "Four events: the task, the script, a zip of the donor list, and a WAV file written at 02:58, twelve minutes before the pirate segment aired. The 03:02 playout_ctl.exe launch injected exactly that file into the 03:10 slot. You now know how the segment got on air. You still need where the data went.",
+      "caveat": "Grouped fields exist in Google's Search; the members modelled here are a subset of the real list."
+    }
+  ]
+}

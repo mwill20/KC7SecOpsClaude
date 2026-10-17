@@ -1,0 +1,37 @@
+{
+  "id": "pier-nine",
+  "title": "Static on Pier Nine",
+  "tagline": "A pledge night, a pirate broadcast, and a fired DJ everyone wants to blame.",
+  "role": "You volunteer one night a month as the signal analyst for KPIR 91.3, Pier Nine Radio. The station runs Google SecOps. You have read access to Search and nothing else.",
+  "opening": [
+    "Pledge Night at Pier Nine Radio is the one night the station's phones never stop. At 03:10, between a jazz block and the overnight news, the playout system aired a segment nobody scheduled: a distorted voice reading the names of the night's biggest donors, one by one, followed by forty seconds of static.",
+    "By 03:14 the board treasurer, Hal Brunner, was in the control room. By 03:20 he had a suspect: Marco Vela, the overnight host the station let go last week, who still knows every password on the pier. Station manager Odalys Reyes is not ready to call anyone. 'Bring me what the logs say,' she tells you. 'Not what the room thinks.'",
+    "The station's events are in Google SecOps. You have until the morning news to work out what happened, in what order, and who needs to be told."
+  ],
+  "people": [
+    { "name": "Odalys Reyes", "role": "Station manager", "note": "Wants evidence before blame." },
+    { "name": "Hal Brunner", "role": "Board treasurer", "note": "Runs the pledge desk, certain it was Marco." },
+    { "name": "Marco Vela", "role": "Former overnight host", "note": "Let go last week. Account was disabled on his last day." },
+    { "name": "Priya Nair", "role": "Pledge intern", "note": "First Pledge Night. Shares the pledge-desk login with Hal." },
+    { "name": "Dez Okafor", "role": "Volunteer engineer", "note": "Keeps the playout PC alive. Restarted it around 20:15." },
+    { "name": "Tomas Ikeda", "role": "Producer", "note": "Runs the board in Studio A." }
+  ],
+  "systems": [
+    { "name": "AUTOMATION-01", "note": "The playout PC. Whatever it is told to air, it airs." },
+    { "name": "PLEDGE-DESK-01 / 02", "note": "Two shared workstations at the pledge desk." },
+    { "name": "VPN-GW-01", "note": "Remote access gateway. Staff sign in from home through it." },
+    { "name": "FS-01", "note": "File server. Holds the donor spreadsheet." },
+    { "name": "pledge-desk", "note": "A shared account used by anyone working the pledge phones." },
+    { "name": "svc-playout", "note": "The service account the playout software runs as." }
+  ],
+  "window": { "label": "Pledge Night, 18:00 to 06:00 UTC", "start": "2026-03-13T18:00:00Z", "end": "2026-03-14T06:00:00Z" },
+  "ranges": [
+    { "id": "all", "label": "Whole night (18:00 to 06:00)", "start": 0, "end": 43200 },
+    { "id": "doors", "label": "Doors open (18:00 to 19:00)", "start": 0, "end": 3600 },
+    { "id": "prime", "label": "Prime drive (19:00 to 23:00)", "start": 3600, "end": 18000 },
+    { "id": "overnight", "label": "Overnight (23:00 to 03:00)", "start": 18000, "end": 32400 },
+    { "id": "deadair", "label": "After the segment (03:00 to 06:00)", "start": 32400, "end": 43200 }
+  ],
+  "chapters": ["C01", "C02", "C03", "C04", "C05", "C06"],
+  "boundary": "Everything here is fiction: the station, the people, the logs, the addresses. Nothing runs against a real SIEM. Do not type real workplace values into this site; practise the shape of the query here and use real values only inside tools your employer authorizes."
+}

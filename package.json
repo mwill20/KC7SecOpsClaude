@@ -1,0 +1,15 @@
+{
+  "name": "pier-nine-secops",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "data": "node tools/gen-data.mjs",
+    "validate:content": "node tools/validate-content.mjs",
+    "test": "node --test tests/unit/*.test.mjs",
+    "build": "node tools/build.mjs",
+    "start": "node tools/serve.mjs",
+    "verify": "npm run data && npm run validate:content && npm test && npm run build"
+  }
+}

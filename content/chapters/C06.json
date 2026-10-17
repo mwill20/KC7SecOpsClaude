@@ -1,0 +1,132 @@
+{
+  "id": "C06",
+  "title": "Timeline and handoff",
+  "subtitle": "Time buckets, thresholds, and saying only what the evidence says",
+  "intro": "It is 05:40. Hal still wants Marco's name in the brief. Odalys wants the timeline. You have one query shape left to learn, the one that turns 'seven failures' into 'seven failures inside five minutes', and then you have to write down what you know in a way that survives being read by someone angry.",
+  "concepts": ["Time buckets group by when as well as by whom", "A threshold is a question, not a verdict", "Hand off facts, hypotheses and gaps separately"],
+  "missions": [
+    {
+      "id": "C06-M01",
+      "kind": "watch",
+      "title": "Failures in five-minute buckets",
+      "beat": "Seven failures could be spread across an evening or crammed into five minutes. Only one of those looks like a password attack. Group by account and by five-minute window, and keep buckets with more than three failures.",
+      "question": "Which account had more than three failures inside one five-minute window?",
+      "concept": { "title": "Time buckets", "text": "by 5m in the match section adds the clock to the grouping key: one row per account per five-minute slice. The buckets are fixed on the clock (19:05 to 19:10), not sliding, so a burst that straddles a boundary can be split. condition then filters the groups, the way a filter section filters events." },
+      "explain": [
+        { "part": "$account = principal.user.userid", "meaning": "A placeholder. It names the field so match and outcome can refer to it." },
+        { "part": "match:\n  $account by 5m", "meaning": "Group by account and by five-minute bucket. over every 5m means the same thing." },
+        { "part": "condition:\n  $failures > 3", "meaning": "Keep only groups whose calculated failures exceed three." }
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"FAIL\"\n$account = principal.user.userid\nmatch:\n  $account by 5m\noutcome:\n  $failures = count(metadata.id)\ncondition:\n  $failures > 3",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"FAIL\"\n$account = principal.user.userid\nmatch:\n  $account by 5m\noutcome:\n  $failures = count(metadata.id)\ncondition:\n  $failures > 3",
+      "hints": [
+        "Run it. The window_start column is the bucket's opening time.",
+        "Remove the condition section and run again to see every account's buckets.",
+        "One row: pledge-desk, bucket starting 19:05, seven failures."
+      ],
+      "answer": { "prompt": "Which account appears?", "value": "pledge-desk", "check": { "type": "cell", "row": 0, "column": "principal.user.userid" } },
+      "call": {
+        "prompt": "Google's documentation is inconsistent about condition in Search: one page documents it, two comparison tables say Search does not use it. What should you do before relying on this shape at work?",
+        "options": [
+          { "id": "A", "label": "Run it once in your own tenant and keep the result; docs describe, tenants decide" },
+          { "id": "B", "label": "Assume it works because this trainer accepts it" },
+          { "id": "C", "label": "Never use condition anywhere" }
+        ],
+        "correct": "A",
+        "why": "This trainer follows the page that documents outcome conditions in Search. Your tenant is the authority. The query also works without the condition section; you simply read the table yourself."
+      },
+      "clue": "pledge-desk, 19:05 to 19:10, seven failures, all from 198.51.100.23. Marco's three failures at 22:41, 22:42 and 22:44 land in one bucket too, but three is not more than three. Change the threshold and watch him appear; then ask whether that makes him a suspect or a man who forgot he was fired.",
+      "caveat": "Search statistics have a 90-day lookback and a results cap; the time range picker on the Search page, not the query, sets the window being bucketed."
+    },
+    {
+      "id": "C06-M02",
+      "kind": "build",
+      "title": "Lower the bar, read the difference",
+      "beat": "Hal says 'three failed logins from the fired guy is enough'. Set the threshold to three or more and look at both rows side by side before you answer him.",
+      "question": "At three or more failures per five minutes, how many account-buckets appear?",
+      "concept": { "title": "A threshold is a question, not a verdict", "text": "Thresholds decide what you look at, not what is true. Lowering one adds rows; each added row deserves the same scrutiny as the first. Here the second row is a disabled account failing from the room its owner used to work in, with 'Account disabled' in the summary." },
+      "explain": [
+        { "part": ">= 3", "meaning": "Greater than or equal. Equivalent to > 2 for whole numbers; both forms pass." },
+        { "part": "security_result.summary", "meaning": "Click into the events behind each row and read it. The summary explains the failure." }
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"FAIL\"\n$account = principal.user.userid\nmatch:\n  $account by 5m\noutcome:\n  $failures = count(metadata.id)\ncondition:\n  $failures ___ 3",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"FAIL\"\n$account = principal.user.userid\nmatch:\n  $account by 5m\noutcome:\n  $failures = count(metadata.id)\ncondition:\n  $failures >= 3",
+      "hints": [
+        "The comparison must include three itself.",
+        "Use >= in the gap.",
+        "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"FAIL\"\n$account = principal.user.userid\nmatch:\n  $account by 5m\noutcome:\n  $failures = count(metadata.id)\ncondition:\n  $failures >= 3"
+      ],
+      "answer": { "prompt": "How many rows does the table have now?", "value": "2", "check": { "type": "count" } },
+      "call": {
+        "prompt": "Marco's row: three failures, 22:41 to 22:44, Studio B, 'Account disabled', no success after. pledge-desk's row: seven failures from outside, then success, then the playout PC. What goes in the brief about Marco?",
+        "options": [
+          { "id": "A", "label": "Marco attempted access to a disabled account from Studio B at 22:41; no success and no activity follows. Recommend HR follow-up, not incident attribution" },
+          { "id": "B", "label": "Marco attacked the station" },
+          { "id": "C", "label": "Omit Marco; he is irrelevant" }
+        ],
+        "correct": "A",
+        "why": "It is a real finding and it is not the intrusion. Writing it precisely protects the station and protects Marco from a story the evidence does not support."
+      },
+      "clue": "Two rows, two different nights. One is an intrusion. The other is a man who walked into his old studio at 22:40 and tried his old password three times. Both belong in the brief; only one belongs in the incident.",
+      "caveat": "Why did Marco have building access a week after being let go? That is a finding for the station, not for this query."
+    },
+    {
+      "id": "C06-M03",
+      "kind": "solo",
+      "title": "Capstone: when did they get in?",
+      "beat": "Last query. The burst ended at 19:09:50. Find the first successful login for the shared account after it, from the same outside address, and read the exact time. That timestamp anchors the whole timeline.",
+      "question": "At what time did pledge-desk first sign in successfully from outside?",
+      "concept": { "title": "The anchor timestamp", "text": "Every incident timeline needs one moment you can defend to the second. For Pier Nine it is the first success after the failures: everything before it is the lure, everything after it is the attacker's hands on the station." },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"ALLOW\"\nprincipal.user.userid = \"pledge-desk\"\nprincipal.ip = \"198.51.100.23\"",
+      "hints": [
+        "Four conditions: login, allowed, the shared account, and the outside address you found in chapter 1.",
+        "Add principal.ip = \"198.51.100.23\" to the allowed-login filter for pledge-desk.",
+        "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"ALLOW\"\nprincipal.user.userid = \"pledge-desk\"\nprincipal.ip = \"198.51.100.23\""
+      ],
+      "answer": { "prompt": "Time of that first success (HH:MM, UTC)?", "value": "19:21", "also": ["19:21:04"], "check": { "type": "time", "index": 0 } },
+      "call": {
+        "prompt": "Odalys asks: 'So who did it?' What is the honest answer?",
+        "options": [
+          { "id": "A", "label": "Someone using the pledge-desk credential from 198.51.100.23, obtained via the 18:40 phishing email that Hal's workstation visited. The person is unidentified" },
+          { "id": "B", "label": "Hal did it" },
+          { "id": "C", "label": "Marco did it" }
+        ],
+        "correct": "A",
+        "why": "The logs identify an account, an address and a sequence. They do not identify a human. Saying so is the difference between an analyst and a rumour."
+      },
+      "clue": "19:21:04. Eleven minutes after the last guess. Nine minutes before the playout PC. The whole night hangs on that one second, and you can show it.",
+      "caveat": "Timestamps are UTC here. Real sources mix zones and clock drift; normalize before you build a timeline."
+    },
+    {
+      "id": "C06-M04",
+      "kind": "read",
+      "title": "Handoff",
+      "beat": "06:05. Odalys has coffee for both of you and a legal pad. Hal is in the doorway. You have the pad. Write the three columns every handoff needs: what the logs show, what you believe and why, and what you could not see.",
+      "question": "What goes in the brief, and in which column?",
+      "concept": { "title": "Facts, hypotheses, gaps", "text": "Facts are things a second analyst could reproduce from the same queries. Hypotheses are the story that explains the facts, labelled as such. Gaps are what you lacked: the email body, the decoded command, the server at 203.0.113.44, Dez's confirmation. Mixing the columns is how good investigations become bad decisions." },
+      "explain": [
+        { "part": "Facts", "meaning": "18:40 three lure emails from pier9-partners.example. 18:52 PLEDGE-DESK-02 resolved and connected to 203.0.113.44. 19:05 to 19:09 seven pledge-desk failures from 198.51.100.23. 19:21:04 success. 19:30 to 19:36 pledge-desk on AUTOMATION-01: run-as svc-playout, encoded PowerShell, task PledgeSync, sync.ps1. 19:40 to 05:50 ten-minute beacons. 01:58 to 02:10 donor spreadsheet compressed and 48 MB sent to 203.0.113.44. 02:58 to 03:02 segment.wav written and injected into the 03:10 slot. 22:41 to 22:44 marco.vela three failures, account disabled, Studio B." },
+        { "part": "Hypotheses", "meaning": "The pledge-desk password was entered into the fake portal from Hal's desk. The donor list was the content of the 48 MB upload. The broadcast was intended to be noticed." },
+        { "part": "Gaps", "meaning": "No email body or attachment analysis. Encoded command not decoded. No visibility past 203.0.113.44. Dez's 20:15 restart assumed benign pending his confirmation. Marco's building access unexplained." }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Hal asks you to add one line: 'Marco Vela is the primary suspect.' Which response is correct?",
+        "options": [
+          { "id": "A", "label": "Decline: the evidence places the intrusion on a shared credential used from outside after a phishing email, and shows Marco's attempts failed against a disabled account" },
+          { "id": "B", "label": "Add it; the board wants a name" },
+          { "id": "C", "label": "Add it as a hypothesis to keep the peace" }
+        ],
+        "correct": "A",
+        "why": "A hypothesis still has to explain the facts. 'Marco did it' explains none of them and contradicts several. The brief's job is to be right, not to be comfortable."
+      },
+      "clue": "Odalys reads the pad twice, resets the pledge-desk password, pulls the playout PC off the network, and calls the board. Hal sits down. The morning news goes out at 06:30, on time, with no static.",
+      "caveat": "This case is fiction. The habit is not: facts, hypotheses, gaps, every time."
+    }
+  ]
+}
