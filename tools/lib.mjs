@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { parseSearch } from '../site/engine/parser.js';
 import { execute } from '../site/engine/executor.js';
 import { runQuery, compareResults, normalizeAnswer } from '../site/engine/grader.js';
+import { LIST_TYPES } from '../site/engine/catalog.js';
+import { guardRegex, parseCidr } from '../site/engine/safety.js';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -11,15 +13,17 @@ export function loadContent() {
   const caseFile = JSON.parse(fs.readFileSync(path.join(root, 'content', 'case.json'), 'utf8'));
   const chapters = caseFile.chapters.map(id => JSON.parse(fs.readFileSync(path.join(root, 'content', 'chapters', id + '.json'), 'utf8')));
   const casebook = JSON.parse(fs.readFileSync(path.join(root, 'content', 'casebook.json'), 'utf8'));
-  return { case: caseFile, chapters, casebook };
+  const lists = JSON.parse(fs.readFileSync(path.join(root, 'content', 'lists.json'), 'utf8'));
+  return { case: caseFile, chapters, casebook, lists };
 }
 export function loadData() { return JSON.parse(fs.readFileSync(path.join(root, 'data', 'events.json'), 'utf8')); }
 
 const hhmm = s => new Date(s * 1000).toISOString().slice(11, 16);
 
 // Derives a mission's expected answer from its reference query, so authored answers cannot drift from the data.
-export function deriveAnswer(mission, events) {
-  const r = execute(parseSearch(mission.reference), events);
+export const ctxFor = content => ({ lists: content?.lists?.lists ?? [] });
+export function deriveAnswer(mission, events, ctx = {}) {
+  const r = execute(parseSearch(mission.reference, ctx), events);
   const c = mission.answer.check;
   if (c.type === 'count') return String(r.count);
   if (c.type === 'distinct') return String(new Set(r.rows.map(x => x[c.field])).size);
@@ -31,9 +35,14 @@ export function deriveAnswer(mission, events) {
   if (c.type === 'cell') {
     const row = typeof c.row === 'number' ? r.rows[c.row] : r.rows.find(x => Object.entries(c.row).every(([k, v]) => x[k] === v));
     const col = typeof c.column === 'number' ? r.columns[c.column] : c.column;
-    // format "hhmm": the cell holds a timestamp in seconds (min/max on metadata.event_timestamp.seconds) and the
-    // learner answers with the clock time.
-    return c.format === 'hhmm' ? hhmm(row?.[col]) : String(row?.[col]);
+    // format "hhmm": the cell holds a timestamp in seconds (min/max/earliest/latest on the timestamp) and the learner
+    // answers with the clock time. format "list": the cell holds an array (array/array_distinct) and the learner
+    // answers with the comma-separated values; format "size": the learner answers with the array's length.
+    const v = row?.[col];
+    if (c.format === 'hhmm') return hhmm(v);
+    if (c.format === 'list') return Array.isArray(v) ? v.join(', ') : String(v);
+    if (c.format === 'size') return Array.isArray(v) ? String(v.length) : String(v);
+    return String(v);
   }
   throw new Error('unknown check type ' + c.type);
 }
@@ -74,9 +83,34 @@ export function validateCasebookContent(cb) {
   return problems;
 }
 
-export function validate({ case: caseFile, chapters, casebook }, data) {
+// content/lists.json: the bundled reference lists. Names are what a query writes after %, types are the three Google
+// documents, items must parse (CIDR) or pass the regex guard (regex), and every list carries a description for the
+// Lists panel.
+export const LIST_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+export function validateLists(raw) {
+  const problems = [];
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.lists)) return ['lists.json: shape'];
+  const names = new Set();
+  for (const l of raw.lists) {
+    const where = `lists.json ${l?.name ?? '?'}`;
+    if (!l || typeof l.name !== 'string' || !LIST_NAME.test(l.name)) { problems.push(`${where}: bad name`); continue; }
+    if (names.has(l.name)) problems.push(`${where}: duplicate name`); names.add(l.name);
+    if (!LIST_TYPES.includes(l.type)) problems.push(`${where}: type must be ${LIST_TYPES.join('/')}`);
+    if (typeof l.description !== 'string' || l.description.length < 12) problems.push(`${where}: description`);
+    if (!Array.isArray(l.items) || !l.items.length || l.items.length > 500 || l.items.some(x => typeof x !== 'string' || !x || x.length > 512)) { problems.push(`${where}: items must be 1 to 500 strings of up to 512 characters`); continue; }
+    if (new Set(l.items).size !== l.items.length) problems.push(`${where}: duplicate items`);
+    if (l.type === 'cidr') for (const x of l.items) if (!parseCidr(x)) problems.push(`${where}: "${x}" is not a CIDR range`);
+    if (l.type === 'regex') for (const x of l.items) { const bad = guardRegex(x); if (bad) problems.push(`${where}: "${x}" fails the regex guard (${bad})`); }
+    if (Object.keys(l).some(k => !['name', 'type', 'items', 'description'].includes(k))) problems.push(`${where}: unknown keys`);
+  }
+  return problems;
+}
+
+export function validate({ case: caseFile, chapters, casebook, lists }, data) {
   const problems = [];
   if (casebook !== undefined) problems.push(...validateCasebookContent(casebook));
+  if (lists !== undefined) problems.push(...validateLists(lists));
+  const ctx = ctxFor({ lists });
   const ids = new Set();
   const eventIds = new Set(data.events.map(e => e['metadata.id']));
   for (const ch of chapters) {
@@ -99,22 +133,22 @@ export function validate({ case: caseFile, chapters, casebook }, data) {
       if (m.brief !== undefined && (m.brief !== 'casebook' || m.kind !== 'read' || !['Facts', 'Hypotheses', 'Gaps', 'Determination', 'Remediation', 'Handoff'].every(part => m.explain?.some(e => e.part === part)))) problems.push(`${where}: brief must be "casebook" on a read mission whose explain carries all six brief sections`);
       if (m.kind === 'read') { if (m.reference) problems.push(`${where}: read mission has a reference`); continue; }
       if (!m.reference) { problems.push(`${where}: missing reference`); continue; }
-      const ref = runQuery(m.reference, data.events);
+      const ref = runQuery(m.reference, data.events, null, ctx);
       if (!ref.ok) { problems.push(`${where}: reference does not run (${ref.code})`); continue; }
       if (m.hints.length !== 3) problems.push(`${where}: expected 3 hints`);
       if (m.kind !== 'watch') { // watch missions already show the full query; their hints are reading prompts
-        const full = runQuery(m.hints[2], data.events);
+        const full = runQuery(m.hints[2], data.events, null, ctx);
         if (!full.ok || !compareResults(full.result, ref.result).correct) problems.push(`${where}: hint 3 is not a passing answer`);
       }
       if (m.kind === 'build') {
         if (!m.starter.includes('___')) problems.push(`${where}: build starter has no gap`);
-        const st = runQuery(m.starter, data.events);
+        const st = runQuery(m.starter, data.events, null, ctx);
         if (st.ok && compareResults(st.result, ref.result).correct) problems.push(`${where}: starter already passes`);
       }
       if (m.kind === 'solo' && m.starter !== '') problems.push(`${where}: solo starter must be empty`);
       if (m.kind === 'watch' && m.starter !== m.reference) problems.push(`${where}: watch starter should equal reference`);
       if (!m.answer) { problems.push(`${where}: missing answer`); continue; }
-      const derived = deriveAnswer(m, data.events);
+      const derived = deriveAnswer(m, data.events, ctx);
       if (normalizeAnswer(derived) !== normalizeAnswer(m.answer.value)) problems.push(`${where}: authored answer "${m.answer.value}" but data says "${derived}"`);
     }
   }

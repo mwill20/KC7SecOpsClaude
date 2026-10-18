@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { root, loadContent, loadData, validate, deriveAnswer, validateLogIt, DENSITY } from '../../tools/lib.mjs';
+import { root, loadContent, loadData, validate, deriveAnswer, validateLogIt, validateLists, ctxFor, DENSITY } from '../../tools/lib.mjs';
 import { runQuery, compareResults, gradeQuery, gradeAnswer, gradeCall } from '../../site/engine/grader.js';
 import { MESSAGES, describe } from '../../site/ui/messages.js';
 
@@ -176,4 +176,27 @@ test('C10 chapter density: 7 to 8 desk missions per chapter and two Your-turn mi
   // chapter 1 is allowed a single Your-turn mission
   const oneSolo = JSON.parse(JSON.stringify(content)); const s = oneSolo.chapters[0].missions.find(m => m.id === 'C01-M09'); s.kind = 'build'; s.starter = s.reference.replace('USER_LOGIN', '___');
   assert.ok(!validate(oneSolo, data).some(p => p.includes('C01') && p.includes('Your-turn')));
+});
+
+test('C11 the bundled reference lists validate and resolve from a query; should-fail: unknown type, bad CIDR, a regex that fails the guard, duplicate names, missing description', () => {
+  assert.deepEqual(validateLists(content.lists), []);
+  assert.ok(content.lists.lists.length >= 3);
+  for (const t of ['string', 'cidr', 'regex']) assert.ok(content.lists.lists.some(l => l.type === t), 'a list of type ' + t);
+  const ctx = ctxFor(content);
+  const r = runQuery('target.ip in cidr %blocked_ranges', data.events, null, ctx);
+  assert.equal(r.ok, true); assert.ok(r.result.count > 0);
+  assert.equal(runQuery('target.ip in cidr %no_such_list', data.events, null, ctx).code, 'UNKNOWN_LIST');
+  const bad = l => validateLists({ lists: [{ name: 'x', type: 'string', description: 'a dozen characters', items: ['a'], ...l }] });
+  assert.ok(bad({ type: 'set' }).some(p => p.includes('type')));
+  assert.ok(bad({ type: 'cidr', items: ['203.0.113.0/40'] }).some(p => p.includes('not a CIDR')));
+  assert.ok(bad({ type: 'regex', items: ['(a+)+$'] }).some(p => p.includes('regex guard')));
+  assert.ok(bad({ description: 'short' }).some(p => p.includes('description')));
+  assert.ok(bad({ items: [] }).some(p => p.includes('items')));
+  assert.ok(bad({ items: ['a', 'a'] }).some(p => p.includes('duplicate items')));
+  assert.ok(bad({ name: '9lives' }).some(p => p.includes('bad name')));
+  assert.ok(validateLists({ lists: [{ name: 'x', type: 'string', description: 'a dozen characters', items: ['a'] }, { name: 'x', type: 'string', description: 'a dozen characters', items: ['b'] }] }).some(p => p.includes('duplicate name')));
+  // every new engine code reads as two plain-language parts
+  for (const code of ['TIMEZONE_UNSUPPORTED', 'UNKNOWN_LIST', 'LIST_TYPE_MISMATCH', 'DEDUP_KEY_NOT_GROUPED', 'TIME_AGGREGATE_NEEDS_TIMESTAMP', 'CONDITION_ON_ARRAY', 'ORDER_ON_ARRAY', 'STRING_FN_NEEDS_STRING', 'CONCAT_NEEDS_ARGS', 'TOO_MANY_LISTS']) { assert.equal(MESSAGES[code].length, 2, code); assert.ok(MESSAGES[code][1].length > 20, code); }
+  assert.match(describe('TIMEZONE_UNSUPPORTED', { zone: 'America/Los_Angeles' }).title, /\(America\/Los_Angeles\)/);
+  assert.match(describe('TIMEZONE_UNSUPPORTED', {}).fix, /UTC/);
 });

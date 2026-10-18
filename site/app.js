@@ -1,5 +1,5 @@
 import { CONTENT, DATA } from './bundle.js';
-import { FIELDS } from './engine/catalog.js';
+import { FIELDS, DOCS, FUNCTIONS } from './engine/catalog.js';
 import { runQuery, gradeQuery, gradeAnswer, gradeCall, POINTS } from './engine/grader.js';
 import { describe } from './ui/messages.js';
 import { createStore, CASEBOOK_POINTS } from './ui/progress.js';
@@ -13,6 +13,9 @@ const MISSIONS = CHAPTERS.flatMap(ch => ch.missions.map(m => ({ ...m, chapterId:
 const BY_ID = new Map(MISSIONS.map(m => [m.id, m]));
 const store = createStore(new Set(MISSIONS.map(m => m.id)));
 const EVENTS = DATA.events;
+// Reference lists are bundled content. In a tenant they are objects under Detection > Lists; the query names them with %.
+const REF_LISTS = CONTENT.lists?.lists ?? [];
+const CTX = { lists: REF_LISTS };
 const WINDOW = DATA.window;
 const KIND_LABEL = { watch: 'Watch one', build: 'Build it', solo: 'Your turn', read: 'Read' };
 // The investigative parts (query, answer, analyst call) and, for missions that carry a "Log it", the Casebook part.
@@ -317,12 +320,12 @@ function missionPage(m) {
     const range = CASE.ranges.find(x => x.id === s.rangeId);
     const head = el('div', { class: 'summary' },
       el('span', { text: r.kind === 'events' ? `${fmtNum(r.count)} event${r.count === 1 ? '' : 's'}` : `${fmtNum(r.count)} row${r.count === 1 ? '' : 's'} · ${fmtNum(r.scanned)} events summarised` }),
-      el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') }));
+      el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') + (r.deduped ? ' · deduplicated' : '') }));
     const raw = el('div', { hidden: true, role: 'region', 'aria-label': 'Full record', tabindex: -1 });
     // Opening a record moves focus into the region; closing it returns focus to the button that opened it.
     // Insert from results: the selected record's time and metadata.id go into the Evidence draft; the observation stays the learner's.
     // Outcomes computed on the timestamp (min/max of metadata.event_timestamp.seconds) read as clock times, with the raw seconds beside them.
-    const timeCols = new Set((run.query?.outcomes ?? []).filter(o => o.field === 'metadata.event_timestamp.seconds' && (o.fn === 'min' || o.fn === 'max')).map(o => o.name));
+    const timeCols = new Set(r.timeCols ?? []);
     const wrap = el('div', { class: 'tablewrap' }, r.count ? resultsTable(r, (rec, opener) => { clear(raw); raw.hidden = false; raw.append(el('div', { class: 'row', style: 'justify-content:space-between;margin-top:8px' }, el('strong', { class: 'small', text: 'Full record ' + rec['metadata.id'] }),
       el('span', { class: 'row' }, el('button', { class: 'ghost', text: 'Add to Casebook', 'aria-label': 'Add record ' + rec['metadata.id'] + ' to the Casebook evidence draft', onclick: () => cbui.insertEvidence({ time: hhmm(rec['metadata.event_timestamp.seconds']), id: rec['metadata.id'] }) }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; opener?.focus(); } }))), rawRecord(rec)); raw.focus(); }, timeCols) : el('div', { class: 'empty', text: 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.' }));
     results.append(head, wrap, raw);
@@ -338,17 +341,17 @@ function missionPage(m) {
 
   const doRun = () => {
     if (m.kind === 'read') return;
-    s.run = runQuery(editor.value, EVENTS, rangeFor(s.rangeId)); s.query = null;
+    s.run = runQuery(editor.value, EVENTS, rangeFor(s.rangeId), CTX); s.query = null;
     if (!s.run.ok) { const d = describe(s.run.code, s.run.detail); say(s.run.status === 'unsupported' ? 'warn' : 'bad', (s.run.status === 'unsupported' ? 'Not run here: ' : 'Will not run: ') + d.title, d.fix); }
     else say('info', `Ran against ${CASE.ranges.find(x => x.id === s.rangeId).label}.`, m.kind === 'watch' ? 'Read the table, then answer below.' : 'Check the query when the evidence looks right.');
     paintResults();
   };
   const doCheck = () => {
-    const g = gradeQuery(editor.value, m, EVENTS, rangeFor(s.rangeId)); s.query = g;
+    const g = gradeQuery(editor.value, m, EVENTS, rangeFor(s.rangeId), CTX); s.query = g;
     if (g.status === 'correct') { store.record(m.id, 'q', POINTS.query); say('ok', 'Query correct: it returns the same evidence as the reference.', 'Now read your results and answer the question below.'); }
     else if (g.status === 'incorrect') { const d = describe(g.comparison.reason, g.comparison); const extra = g.comparison.missing !== undefined ? ` You have ${fmtNum(g.comparison.studentCount)} ${g.result.kind === 'events' ? 'events' : 'rows'}; the reference has ${fmtNum(g.comparison.referenceCount)}.` : ''; say('bad', d.title + extra, d.fix, d.examples); }
     else { const d = describe(g.code, g.detail); say(g.status === 'unsupported' ? 'warn' : 'bad', (g.status === 'unsupported' ? 'Not run here: ' : 'Will not run: ') + d.title, d.fix); }
-    if (!s.run || s.run.text !== editor.value) { s.run = runQuery(editor.value, EVENTS, rangeFor(s.rangeId)); paintResults(); }
+    if (!s.run || s.run.text !== editor.value) { s.run = runQuery(editor.value, EVENTS, rangeFor(s.rangeId), CTX); paintResults(); }
     paintScoreBox();
   };
 
@@ -361,7 +364,14 @@ function missionPage(m) {
     deskButtons.append(el('span', { class: 'small muted keys', id: 'editor-help-' + m.id }, ...keys('Ctrl', 'Enter'), ' runs', m.kind !== 'watch' ? [' · ', ...keys('Ctrl', 'Shift', 'Enter'), ' checks'] : [], ' · ', el('kbd', { text: 'Tab' }), ' leaves the editor', ' · ', ...keys('Alt', 'Shift', 'C'), ' casebook'));
   } else deskButtons.append(el('span', { class: 'small muted keys' }, ...(() => { const k = (...ks) => ks.flatMap((x, i) => (i ? [' + ', el('kbd', { text: x })] : [el('kbd', { text: x })])); return k('Alt', 'Shift', 'C'); })(), ' opens the casebook'));
 
-  const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))));
+  const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))),
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'Functions that run here: ' + Object.keys(FUNCTIONS).join(', ') + '. Time functions take "UTC" as their zone.' }));
+  // The Lists panel: every bundled reference list with its type and items, and the honest line about where lists
+  // live in a tenant. The query names a list as %name, in cidr %name or in regex %name.
+  const listsPanel = el('details', { class: 'lists' }, el('summary', { text: `Reference lists (${REF_LISTS.length})` }),
+    el('p', { class: 'small muted', style: 'margin:8px 0' }, 'In Google SecOps, reference lists are objects you create under ', el('strong', { text: 'Detection > Lists' }), ' and a query names them with %. This trainer bundles the lists below so the syntax can be practised; nothing here is created or edited.'),
+    el('ul', { class: 'listlist' }, REF_LISTS.map(l => el('li', {}, el('div', { class: 'row' }, el('code', { text: '%' + l.name }), el('span', { class: 'pill', text: l.type === 'cidr' ? 'cidr · in cidr %' : l.type === 'regex' ? 'regex · in regex %' : 'string · in %' })),
+      el('div', { class: 'small muted', text: l.description }), el('div', { class: 'items', text: l.items.join('  ·  ') })))));
 
   // Answer part
   const answerPart = el('div', { class: 'part' });
@@ -395,7 +405,7 @@ function missionPage(m) {
 
   desk.append(
     el('div', { class: 'deskbar' }, el('div', { class: 'eyebrow', style: 'margin:0', text: 'Query desk' }), el('label', {}, 'Time range', rangeSel)),
-    editor, deskButtons, feedback, results, fieldList, answerPart, callPart, scorebox, announcer,
+    editor, deskButtons, feedback, results, fieldList, listsPanel, answerPart, callPart, scorebox, announcer,
   );
   logItBox?.addEventListener('logged', paintScoreBox);
   paintResults(); paintScoreBox();
@@ -473,7 +483,7 @@ function whereToRead(check) {
   if (check.type === 'distinct') return `Count the different ${check.field} values in your results, not the number of rows.`;
   if (check.type === 'time') return 'Read the time column of the first row and give it as HH:MM, UTC.';
   if (check.type === 'field') return check.where ? `Find the first row where ${named(check.where)}, open it, and read ${check.field}.` : `Open the first row's record and read ${check.field}.`;
-  if (check.type === 'cell') { const col = typeof check.column === 'number' ? 'the first calculated column' : `the ${check.column} column`; return typeof check.row === 'number' ? `Read ${col} of row ${check.row + 1} of the table.` : `Find the row where ${named(check.row)} and read ${col}.`; }
+  if (check.type === 'cell') { const col = typeof check.column === 'number' ? 'the first calculated column' : `the ${check.column} column`; const how = check.format === 'hhmm' ? ' Give it as HH:MM, UTC.' : check.format === 'list' ? ' Give the values separated by commas.' : check.format === 'size' ? ' Give how many values the list holds.' : ''; return (typeof check.row === 'number' ? `Read ${col} of row ${check.row + 1} of the table.` : `Find the row where ${named(check.row)} and read ${col}.`) + how; }
   return 'Run the query and read the value from the results.';
 }
 
@@ -489,16 +499,11 @@ function aboutPage() {
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'What it is not' }),
       el('ul', {}, ['Not connected to any SIEM, and never will be. Nothing you type leaves this tab.', 'Not Google\'s compiler. The supported subset is documented; valid Google syntax outside it is reported as "not run here", separately from mistakes.', 'Not real data. Every event is generated by a script in this repository; IP addresses come from documentation ranges; people and places are invented.', 'Not a place for workplace values. Practise the shape here; use real identifiers only inside tools your employer authorizes.'].map(t => el('li', { text: t })))),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Supported subset' }),
-      el('p', { text: 'Filters with =, !=, <, <=, >, >=, nocase, regex literals, re.regex, net.ip_in_range_cidr, AND/OR/NOT, parentheses, implicit AND, $e. event-variable prefix, placeholders ($x = field), grouped fields (ip, hostname, user, domain, file_path, email). Sections: match (with by / over every windows), outcome (count, count_distinct, sum, max, min), condition, order, limit. Not run here: dedup, arrays, joins, entity graph, additional.fields, multi-event queries, most functions.' })),
+      el('p', { text: 'Filters with =, !=, <, <=, >, >=, nocase, regex literals, re.regex, net.ip_in_range_cidr, AND/OR/NOT, parentheses, implicit AND, $e. event-variable prefix, placeholders ($x = field or $x = function(field)), grouped fields (ip, hostname, user, domain, file_path, email), the functions timestamp.get_hour, timestamp.get_minute and timestamp.get_date (zone "UTC" only; other zones are reported as not run here), strings.to_lower, strings.to_upper and strings.concat, and reference lists (in %name, in cidr %name, in regex %name, not in, nocase) against the lists bundled in content. Sections: match (with by / over every windows), outcome (count, count_distinct, sum, max, min, array, array_distinct, earliest, latest; arrays cut at 1,000 as in Search), condition, dedup, order, limit. Not run here: joins across event variables, entity graph, additional.fields, data tables, multi-stage queries, other functions and zones.' }),
+      el('p', { class: 'small muted', text: 'Reference lists: in a tenant they are objects created under Detection > Lists; this trainer bundles a few in content/lists.json and shows them in the Lists panel on the desk. dedup is accepted between condition and order, keeps the first row per distinct key, and on a summary table can name only the grouping keys or outcomes.' })),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Google documentation used' }),
-      el('ul', {}, [
-        ['https://docs.cloud.google.com/chronicle/docs/investigation/search-syntax-reference', 'Understand search syntax'],
-        ['https://docs.cloud.google.com/chronicle/docs/investigation/statistics-aggregations-in-udm-search', 'Analyze search data with statistics'],
-        ['https://docs.cloud.google.com/chronicle/docs/investigation/yara-l-2-0-conditions', 'Use conditions in search and dashboards'],
-        ['https://docs.cloud.google.com/chronicle/docs/investigation/udm-search-vs-rules-results', 'UDM search compared with rule results'],
-        ['https://docs.cloud.google.com/chronicle/docs/reference/udm-field-list', 'UDM field list'],
-      ].map(([h, t]) => el('li', {}, link(h, t)))),
-      el('p', { class: 'small muted', text: 'Links open in a new tab on click only. Google\'s pages disagree on whether Search supports the condition section; this trainer follows the page that documents it and says so in chapter 6.' })),
+      el('ul', {}, DOCS.map(([h, t]) => el('li', {}, link(h, t)))),
+      el('p', { class: 'small muted', text: 'Links open in a new tab on click only. Google\'s pages disagree on whether Search supports the condition section; this trainer follows the page that documents it and says so in chapter 6. The dedup, statistics, functions and reference-list pages were read through search summaries on 2026-10-18, not fetched in full; run each new shape once in your own tenant.' })),
     el('div', { class: 'navrow' }, linkBtn('#', '← Back to the case file')),
   );
 }

@@ -70,10 +70,12 @@ docs/             INSTALLATION.md, USAGE.md, DEPLOYMENT.md, EVALUATION.md, LIMIT
 
 ## Supported YARA-L Search subset
 
-Filters: `=`, `!=`, `<`, `<=`, `>`, `>=`, `nocase`, regex literals `/…/`, `re.regex()`, `net.ip_in_range_cidr()`, `AND`/`OR`/`NOT`, parentheses, implicit AND, `events:` with a single `$e.` event variable, placeholders (`$x = field`), grouped fields (`ip`, `hostname`, `user`, `domain`, `file_path`, `email`), `//` and `/* */` comments.
-Sections: `match` (with `by`/`over every` windows), `outcome` (`count`, `count_distinct`, `sum`, `max`, `min`), `condition`, `order`, `limit`.
+Filters: `=`, `!=`, `<`, `<=`, `>`, `>=`, `nocase`, regex literals `/…/`, `re.regex()`, `net.ip_in_range_cidr()`, `AND`/`OR`/`NOT`, parentheses, implicit AND, `events:` with a single `$e.` event variable, placeholders (`$x = field` or `$x = function(field)`), grouped fields (`ip`, `hostname`, `user`, `domain`, `file_path`, `email`), `//` and `/* */` comments.
+Functions (engine v2): `timestamp.get_hour(ts, "UTC")`, `timestamp.get_minute`, `timestamp.get_date` (zone `"UTC"` or omitted; any other zone is reported as *not run here* with the reason), `strings.to_lower`, `strings.to_upper`, `strings.concat`, in filters and placeholders; `metadata.event_timestamp` is accepted as the name of the stored timestamp.
+Reference lists (engine v2): `field in %name`, `in cidr %name`, `in regex %name`, `not in`, `nocase`, against the lists bundled in `content/lists.json` (name, type `string|cidr|regex`, items, description) and shown in the **Lists** panel on the desk. In a tenant, lists are objects under *Detection > Lists*; the trainer says so.
+Sections: `match` (with `by`/`over every` windows), `outcome` (`count`, `count_distinct`, `sum`, `max`, `min`, `array`, `array_distinct` cut at 1,000 as in Search, `earliest`, `latest` rendered as UTC clock times), `condition`, `dedup` (between `condition` and `order`; keeps the first row per distinct key; on a summary table only grouping keys or outcomes), `order`, `limit`.
 
-Not implemented (reported as unsupported): `dedup`, arrays, joins across event variables, entity graph, `additional.fields`, most functions.
+Not implemented (reported as unsupported): joins across event variables, entity graph, `additional.fields`, data tables, multi-stage queries, other functions, time zones other than UTC, `option` and `unselect`. The Google pages followed are listed on the About page and in `site/engine/catalog.js` (`DOCS`); on the build date they were read through search summaries, not fetched in full.
 
 ## Verification status
 

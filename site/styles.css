@@ -120,6 +120,10 @@ textarea.editor:disabled { opacity: .7; }
 .scorebox span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); } .scorebox span.on { color: var(--ok); border-color: var(--ok); }
 .fields { margin-top: 8px; } .fields summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .fields ul { columns: 2; list-style: none; padding: 0; margin: 8px 0 0; font-family: var(--mono); font-size: 12px; } .fields li { padding: 2px 0; } .fields li span { color: var(--muted); }
+.lists { margin-top: 8px; } .lists summary { cursor: pointer; color: var(--muted); font-size: 13px; } .lists ul { list-style: none; padding: 0; margin: 4px 0 0; }
+.lists .listlist { columns: 1; } .lists .listlist li { padding: 8px 0; border-top: 1px solid var(--line); } .lists .listlist li:first-child { border-top: 0; }
+.lists .listlist code { color: var(--accent); } .lists .items { font-family: var(--mono); font-size: 12px; color: var(--text); overflow-wrap: anywhere; margin-top: 3px; }
+.tablewrap td.arr { white-space: normal; max-width: 420px; overflow-wrap: anywhere; }
 kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media (max-width: 480px) { .app { padding: 14px; } h1 { font-size: 24px; } .top { padding: 10px 14px; } .brand-text { display: none; } }
