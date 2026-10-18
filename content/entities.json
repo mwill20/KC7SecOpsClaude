@@ -1,0 +1,33 @@
+{
+  "note": "The station directory as entity context: who owns an account, who owns a host, what each is for. In Google SecOps, entity records are queried in Search with graph.entity.* fields and are valid over a time range. This trainer bundles a small directory with two versions of the records that changed after Pledge Night; the desk shows the version valid in the case's window. Field names mirror UDM entity nouns as the team reads them; the values (roles, criticality, remote_access) are the station's own labels. Verify both in a tenant.",
+  "product": "Station Directory",
+  "users": [
+    { "userid": "odalys.reyes", "title": "Station Manager", "department": "Operations", "manager": "board", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STATION_ADMIN", "remote_access": "yes", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "hal.brunner", "title": "Board Treasurer", "department": "Board", "manager": "board", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STAFF", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "priya.nair", "title": "Pledge Intern", "department": "Membership", "manager": "lena.ostrowski", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STAFF", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "dez.okafor", "title": "Volunteer Engineer", "department": "Engineering", "manager": "odalys.reyes", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STATION_ADMIN", "remote_access": "yes", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "tomas.ikeda", "title": "Producer", "department": "Programming", "manager": "odalys.reyes", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STAFF", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "ruth.calloway", "title": "News Director", "department": "News", "manager": "odalys.reyes", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STAFF", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "kenji.mori", "title": "Music Director", "department": "Programming", "manager": "odalys.reyes", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STAFF", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "lena.ostrowski", "title": "Membership Coordinator", "department": "Membership", "manager": "odalys.reyes", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STAFF", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-03-16T12:00:00Z" },
+    { "userid": "lena.ostrowski", "title": "Membership Coordinator", "department": "Membership", "manager": "odalys.reyes", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "MEMBERSHIP_SHARE_EDITOR", "remote_access": "no", "valid_from": "2026-03-16T12:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "marco.vela", "title": "Overnight Host", "department": "Programming", "manager": "kenji.mori", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "STAFF", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-03-16T12:00:00Z" },
+    { "userid": "marco.vela", "title": "Overnight Host", "department": "Programming", "manager": "kenji.mori", "employment_status": "TERMINATED", "account_type": "NAMED", "role": "NONE", "remote_access": "no", "valid_from": "2026-03-16T12:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "pledge-desk", "title": "Pledge desk phones", "department": "Membership", "manager": "hal.brunner", "employment_status": "ACTIVE", "account_type": "SHARED", "role": "SHARED_PHONES", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "svc-playout", "title": "Playout service", "department": "Engineering", "manager": "dez.okafor", "employment_status": "ACTIVE", "account_type": "SERVICE", "role": "PLAYOUT_SERVICE", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" }
+  ],
+  "assets": [
+    { "hostname": "AUTOMATION-01", "ip": "10.9.4.40", "owner": "dez.okafor", "role": "PLAYOUT", "criticality": "HIGH", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "FS-01", "ip": "10.9.4.50", "owner": "odalys.reyes", "role": "FILE_SERVER", "criticality": "HIGH", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "VPN-GW-01", "ip": "10.9.4.1", "owner": "dez.okafor", "role": "GATEWAY", "criticality": "HIGH", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "DC-01", "ip": "10.9.4.2", "owner": "dez.okafor", "role": "DIRECTORY", "criticality": "HIGH", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "PLEDGE-DESK-01", "ip": "10.9.4.21", "owner": "lena.ostrowski", "role": "WORKSTATION", "criticality": "LOW", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "PLEDGE-DESK-02", "ip": "10.9.4.22", "owner": "hal.brunner", "role": "WORKSTATION", "criticality": "LOW", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "OPS-LAPTOP-07", "ip": "10.9.4.17", "owner": "odalys.reyes", "role": "WORKSTATION", "criticality": "MEDIUM", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "ENG-SHOP-01", "ip": "10.9.4.31", "owner": "dez.okafor", "role": "WORKSTATION", "criticality": "MEDIUM", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "STUDIO-A", "ip": "10.9.4.11", "owner": "tomas.ikeda", "role": "STUDIO", "criticality": "MEDIUM", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "STUDIO-B", "ip": "10.9.4.12", "owner": "marco.vela", "role": "STUDIO", "criticality": "MEDIUM", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-03-16T12:00:00Z" },
+    { "hostname": "STUDIO-B", "ip": "10.9.4.12", "owner": "kenji.mori", "role": "STUDIO", "criticality": "MEDIUM", "valid_from": "2026-03-16T12:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "NEWSROOM-03", "ip": "10.9.4.13", "owner": "ruth.calloway", "role": "WORKSTATION", "criticality": "LOW", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" }
+  ]
+}

@@ -162,9 +162,12 @@ function executeJoin(query, events, entities, range) {
   for (const v of query.vars) { const keep = compileFilter(query.filters[v]); cands[v] = sourceOf(v).filter(e => inRange(e, range) && keep(e)).sort(byTime); }
   const scanned = cands[v1].length + cands[v2].length;
   const partFor = (key, v) => key.parts.find(pp => pp.evar === v).expr;
-  const joinKey = (e, v) => JSON.stringify(query.joinKeys.map(k => evalExpr(e, partFor(k, v))));
+  // Zero values never join (Google: match variables skip zero values unless option allow_zero_values is set), so a
+  // blank hostname on one side cannot pair with a blank hostname on the other, and an asset record cannot pair with
+  // an event on the user field it does not carry.
+  const joinKey = (e, v) => { const vals = query.joinKeys.map(k => evalExpr(e, partFor(k, v))); return vals.some(x => x === '' || x === 0 || x === undefined) ? null : JSON.stringify(vals); };
   const index = new Map();
-  for (const b of cands[v2]) { const k = joinKey(b, v2); if (!index.has(k)) index.set(k, []); index.get(k).push(b); }
+  for (const b of cands[v2]) { const k = joinKey(b, v2); if (k === null) continue; if (!index.has(k)) index.set(k, []); index.get(k).push(b); }
   const window = query.match?.window ?? null, over = query.match?.windowKind === 'over';
   const together = (a, b) => {
     if (isEntity(a) || isEntity(b)) { const [ent, ev] = isEntity(a) ? [a, b] : [b, a]; return tsOf(ev) >= ent[ENTITY_START] && tsOf(ev) <= ent[ENTITY_END]; }
@@ -176,7 +179,8 @@ function executeJoin(query, events, entities, range) {
   const keys = query.match.keys, names = query.match.names;
   const groups = new Map();
   for (const a of cands[v1]) {
-    for (const b of index.get(joinKey(a, v1)) ?? []) {
+    const ka = joinKey(a, v1); if (ka === null) continue;
+    for (const b of index.get(ka) ?? []) {
       if (!together(a, b)) continue;
       const kv = keys.map(k => evalExpr(a, k, v1));
       if (window && !over) kv.push(bucket(isEntity(a) ? b : a));

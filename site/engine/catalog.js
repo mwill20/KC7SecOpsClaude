@@ -27,7 +27,33 @@ export const FIELDS = Object.freeze({
   'network.email.from': 'string',
   'network.email.to': 'string',
   'network.email.subject': 'string',
+  // Entity context (Google: statistics page queries entity data in Search with graph.entity.* fields; entity records
+  // are valid over a time range). The trainer bundles a small station directory (content/entities.json): users and
+  // assets with validity intervals. Field names mirror UDM entity nouns; label and role values are the station's own.
+  'graph.metadata.entity_type': 'enum',
+  'graph.metadata.product_name': 'string',
+  'graph.metadata.event_metadata.event_timestamp.seconds': 'number',
+  'graph.metadata.interval.start_time.seconds': 'number',
+  'graph.metadata.interval.end_time.seconds': 'number',
+  'graph.entity.user.userid': 'string',
+  'graph.entity.user.title': 'string',
+  'graph.entity.user.department': 'string',
+  'graph.entity.user.managers.userid': 'string',
+  'graph.entity.user.employment_status': 'enum',
+  'graph.entity.user.account_type': 'enum',
+  'graph.entity.user.attribute.roles.name': 'string',
+  'graph.entity.user.attribute.labels.remote_access': 'string',
+  'graph.entity.asset.hostname': 'string',
+  'graph.entity.asset.ip': 'ip',
+  'graph.entity.asset.attribute.roles.name': 'string',
+  'graph.entity.asset.attribute.labels.owner': 'string',
+  'graph.entity.asset.attribute.labels.criticality': 'string',
 });
+export const EVENT_FIELDS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).filter(([f]) => !f.startsWith('graph.'))));
+export const ENTITY_FIELDS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).filter(([f]) => f.startsWith('graph.'))));
+export const ENTITY_TYPES = Object.freeze(['USER', 'ASSET']);
+export const EMPLOYMENT_STATUSES = Object.freeze(['ACTIVE', 'TERMINATED']);
+export const ACCOUNT_TYPES = Object.freeze(['NAMED', 'SHARED', 'SERVICE']);
 
 export const EVENT_TYPES = Object.freeze([
   'USER_LOGIN', 'PROCESS_LAUNCH', 'NETWORK_CONNECTION', 'NETWORK_DNS',
@@ -38,13 +64,19 @@ export const ACTIONS = Object.freeze(['ALLOW', 'BLOCK', 'FAIL', 'QUARANTINE', 'U
 // Google's field is metadata.event_timestamp; this flat dataset carries its seconds. Either spelling resolves to the
 // stored field, so earliest(metadata.event_timestamp) and timestamp.get_hour(metadata.event_timestamp, "UTC") read as
 // the docs write them.
-export const ALIASES = Object.freeze({ 'metadata.event_timestamp': 'metadata.event_timestamp.seconds' });
+// graph.entity.hostname and graph.entity.ip are the forms the statistics page writes; this flat directory stores them
+// under the asset noun, so both spellings resolve to the stored field.
+export const ALIASES = Object.freeze({ 'metadata.event_timestamp': 'metadata.event_timestamp.seconds', 'graph.metadata.event_metadata.event_timestamp': 'graph.metadata.event_metadata.event_timestamp.seconds', 'graph.entity.hostname': 'graph.entity.asset.hostname', 'graph.entity.ip': 'graph.entity.asset.ip' });
 export const TIMESTAMP_FIELD = 'metadata.event_timestamp.seconds';
 // Entity records (Part C) carry their own timestamp; the time functions and earliest/latest accept either.
 export const ENTITY_TIMESTAMP_FIELD = 'graph.metadata.event_metadata.event_timestamp.seconds';
 export const TIMESTAMP_FIELDS = Object.freeze([TIMESTAMP_FIELD, ENTITY_TIMESTAMP_FIELD]);
 // Entity fields are the graph.* paths (Google: statistics page, graph.entity.hostname and graph.entity.ip examples).
 export const isEntityField = f => typeof f === 'string' && f.startsWith('graph.');
+// Entity records as the executor and the UI read them: id, type, product, the validity interval (seconds) and the
+// entity fields above. The join form documented for rules, $e.principal.user.userid = $u.graph.entity.user.userid,
+// is run here against these records and labelled as rule-context syntax to verify in a tenant.
+export const ENTITY_ID_PREFIX = 'ent-';
 
 // Outcome aggregates (Google: "Analyze search data with statistics"). array and array_distinct return lists, truncated
 // to 1,000 elements in Search; earliest and latest return timestamps.

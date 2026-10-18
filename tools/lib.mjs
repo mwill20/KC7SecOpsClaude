@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseSearch } from '../site/engine/parser.js';
 import { execute } from '../site/engine/executor.js';
 import { runQuery, compareResults, normalizeAnswer } from '../site/engine/grader.js';
-import { LIST_TYPES } from '../site/engine/catalog.js';
+import { LIST_TYPES, ENTITY_TYPES, EMPLOYMENT_STATUSES, ACCOUNT_TYPES, ENTITY_ID_PREFIX } from '../site/engine/catalog.js';
 import { guardRegex, parseCidr } from '../site/engine/safety.js';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,7 +21,8 @@ export function loadContent() {
   const casebook = JSON.parse(fs.readFileSync(path.join(root, 'content', 'casebook.json'), 'utf8'));
   const lists = JSON.parse(fs.readFileSync(path.join(root, 'content', 'lists.json'), 'utf8'));
   const tables = JSON.parse(fs.readFileSync(path.join(root, 'content', 'tables.json'), 'utf8'));
-  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, tables, boundary: caseFile.boundary };
+  const entities = JSON.parse(fs.readFileSync(path.join(root, 'content', 'entities.json'), 'utf8'));
+  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, tables, entities, boundary: caseFile.boundary };
 }
 export function loadData(file = 'events.json') { return JSON.parse(fs.readFileSync(path.join(root, 'data', file), 'utf8')); }
 // Every case's dataset, keyed by case id.
@@ -30,10 +31,29 @@ export const digestOf = events => crypto.createHash('sha256').update(JSON.string
 
 const hhmm = s => new Date(s * 1000).toISOString().slice(11, 16);
 
+// Entity records as the engine reads them: content/entities.json (users and assets with ISO validity intervals) becomes
+// flat graph.* records with the interval in seconds and a stable ent-NNNNN id, in file order. Mirrors site/app.js.
+const secs = iso => Math.floor(Date.parse(iso) / 1000);
+export function entityRecords(raw) {
+  const out = []; let n = 0;
+  const base = (type, r) => ({ 'metadata.id': ENTITY_ID_PREFIX + String(++n).padStart(5, '0'), 'graph.metadata.entity_type': type, 'graph.metadata.product_name': raw.product ?? 'Directory', 'graph.metadata.event_metadata.event_timestamp.seconds': secs(r.valid_from), 'graph.metadata.interval.start_time.seconds': secs(r.valid_from), 'graph.metadata.interval.end_time.seconds': secs(r.valid_to) });
+  for (const u of raw?.users ?? []) out.push({ ...base('USER', u), 'graph.entity.user.userid': u.userid, 'graph.entity.user.title': u.title, 'graph.entity.user.department': u.department, 'graph.entity.user.managers.userid': u.manager, 'graph.entity.user.employment_status': u.employment_status, 'graph.entity.user.account_type': u.account_type, 'graph.entity.user.attribute.roles.name': u.role, 'graph.entity.user.attribute.labels.remote_access': u.remote_access });
+  for (const a of raw?.assets ?? []) out.push({ ...base('ASSET', a), 'graph.entity.asset.hostname': a.hostname, 'graph.entity.asset.ip': a.ip, 'graph.entity.asset.attribute.roles.name': a.role, 'graph.entity.asset.attribute.labels.owner': a.owner, 'graph.entity.asset.attribute.labels.criticality': a.criticality });
+  return out;
+}
+// The entity records valid at some point inside a case's window: the directory as it stood that night.
+export const entitiesFor = (records, win) => (!win ? records : records.filter(e => e['graph.metadata.interval.start_time.seconds'] <= win.end && e['graph.metadata.interval.end_time.seconds'] >= win.start));
+const caseWindow = c => ({ start: Date.parse(c.window.start) / 1000, end: Date.parse(c.window.end) / 1000 });
+
 // Derives a mission's expected answer from its reference query, so authored answers cannot drift from the data.
-export const ctxFor = content => ({ lists: content?.lists?.lists ?? [], tables: content?.tables?.tables ?? [] });
+// ctxFor(content, caseId) scopes the entity records to that case's window; without a case every record is in.
+export const ctxFor = (content, caseId = null) => {
+  const all = entityRecords(content?.entities);
+  const c = caseId ? content.cases.find(x => x.id === caseId) : null;
+  return { lists: content?.lists?.lists ?? [], tables: content?.tables?.tables ?? [], entities: c ? entitiesFor(all, caseWindow(c)) : all };
+};
 export function deriveAnswer(mission, events, ctx = {}) {
-  const r = execute(parseSearch(mission.reference, ctx), events);
+  const r = execute(parseSearch(mission.reference, ctx), events, null, ctx.entities ?? []);
   const c = mission.answer.check;
   if (c.type === 'count') return String(r.count);
   if (c.type === 'distinct') return String(new Set(r.rows.map(x => x[c.field])).size);
@@ -142,6 +162,52 @@ export function validateTables(raw) {
   return problems;
 }
 
+// content/entities.json: the station directory. Users carry userid, title, department, manager, employment_status,
+// account_type, role, remote_access; assets carry hostname, ip, owner, role, criticality; every record carries an ISO
+// validity interval. Values stay fictional (station LAN addresses, lower-case dotted userids, upper-case hostnames) and
+// the versions of one entity may not overlap.
+const ISO = iso => typeof iso === 'string' && !Number.isNaN(Date.parse(iso));
+export function validateEntities(raw) {
+  const problems = [];
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.users) || !Array.isArray(raw.assets)) return ['entities.json: shape'];
+  if (typeof raw.product !== 'string' || !raw.product) problems.push('entities.json: product');
+  const interval = (r, where) => {
+    if (!ISO(r.valid_from) || !ISO(r.valid_to) || Date.parse(r.valid_to) <= Date.parse(r.valid_from)) problems.push(`${where}: valid_from and valid_to must be ISO times with the end after the start`);
+  };
+  const overlap = (list, key, label) => {
+    const byKey = new Map(); for (const r of list) { const k = r[key]; if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(r); }
+    for (const [k, rs] of byKey) { const sorted = rs.slice().sort((a, b) => Date.parse(a.valid_from) - Date.parse(b.valid_from)); for (let i = 1; i < sorted.length; i++) if (Date.parse(sorted[i].valid_from) < Date.parse(sorted[i - 1].valid_to)) problems.push(`entities.json ${label} ${k}: versions overlap`); }
+  };
+  const userKeys = ['userid', 'title', 'department', 'manager', 'employment_status', 'account_type', 'role', 'remote_access', 'valid_from', 'valid_to'];
+  for (const u of raw.users) {
+    const where = `entities.json user ${u?.userid ?? '?'}`;
+    if (!u || typeof u !== 'object') { problems.push(`${where}: shape`); continue; }
+    if (!/^[a-z][a-z0-9.-]{1,40}$/.test(u.userid ?? '')) problems.push(`${where}: userid`);
+    for (const k of ['title', 'department', 'manager', 'role']) if (typeof u[k] !== 'string' || !u[k] || u[k].length > 60) problems.push(`${where}: ${k}`);
+    if (!EMPLOYMENT_STATUSES.includes(u.employment_status)) problems.push(`${where}: employment_status must be ${EMPLOYMENT_STATUSES.join('/')}`);
+    if (!ACCOUNT_TYPES.includes(u.account_type)) problems.push(`${where}: account_type must be ${ACCOUNT_TYPES.join('/')}`);
+    if (!['yes', 'no'].includes(u.remote_access)) problems.push(`${where}: remote_access must be yes or no`);
+    interval(u, where);
+    if (Object.keys(u).some(k => !userKeys.includes(k))) problems.push(`${where}: unknown keys`);
+  }
+  const assetKeys = ['hostname', 'ip', 'owner', 'role', 'criticality', 'valid_from', 'valid_to'];
+  const userids = new Set(raw.users.map(u => u?.userid));
+  for (const a of raw.assets) {
+    const where = `entities.json asset ${a?.hostname ?? '?'}`;
+    if (!a || typeof a !== 'object') { problems.push(`${where}: shape`); continue; }
+    if (!/^[A-Z][A-Z0-9-]{1,30}$/.test(a.hostname ?? '')) problems.push(`${where}: hostname must be an upper-case station name`);
+    if (!/^10\.9\.4\.\d{1,3}$/.test(a.ip ?? '')) problems.push(`${where}: ip must be on the fictional station LAN`);
+    if (!userids.has(a.owner)) problems.push(`${where}: owner ${a.owner} is not a user in the directory`);
+    if (typeof a.role !== 'string' || !a.role) problems.push(`${where}: role`);
+    if (!['LOW', 'MEDIUM', 'HIGH'].includes(a.criticality)) problems.push(`${where}: criticality must be LOW, MEDIUM or HIGH`);
+    interval(a, where);
+    if (Object.keys(a).some(k => !assetKeys.includes(k))) problems.push(`${where}: unknown keys`);
+  }
+  overlap(raw.users, 'userid', 'user'); overlap(raw.assets, 'hostname', 'asset');
+  if (Object.keys(raw).some(k => !['note', 'product', 'users', 'assets'].includes(k))) problems.push('entities.json: unknown keys');
+  return problems;
+}
+
 // A case file entry: the fields the UI reads, a window, ranges inside the window, chapters that exist, a data file and
 // the digest of its events. The digest is how the validator proves an earlier case's events did not move.
 export function validateCase(c, chapterIds, data) {
@@ -163,13 +229,15 @@ export function validateCase(c, chapterIds, data) {
   return problems;
 }
 
-export function validate({ cases, chapters, chapterCase, casebook, lists, tables }, datasets) {
+export function validate({ cases, chapters, chapterCase, casebook, lists, tables, entities }, datasets) {
   const problems = [];
   if (casebook !== undefined) problems.push(...validateCasebookContent(casebook));
   if (lists !== undefined) problems.push(...validateLists(lists));
   if (tables !== undefined) problems.push(...validateTables(tables));
+  if (entities !== undefined) problems.push(...validateEntities(entities));
   if (lists && tables && lists.lists?.some(l => tables.tables?.some(t => t.name === l.name))) problems.push('lists.json and tables.json share a name; a learner could not tell %name from %name.column');
-  const ctx = ctxFor({ lists, tables });
+  const content = { cases, lists, tables, entities: problems.some(p => p.startsWith('entities.json')) ? undefined : entities };
+  const ctxOf = {}; const ctxForCase = id => (ctxOf[id] ??= ctxFor(content, cases?.some(c => c.id === id && c.window) ? id : null));
   const ids = new Set();
   // Accept a single dataset (earlier branches) as the first case's.
   const sets = datasets?.events ? { [cases[0].id]: datasets } : datasets ?? {};
@@ -177,11 +245,12 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
   if (!Array.isArray(cases) || !cases.length) problems.push('case.json: cases array');
   for (const c of cases ?? []) problems.push(...validateCase(c, chapterIds, sets[c.id]));
   if (new Set((cases ?? []).map(c => c.id)).size !== (cases ?? []).length) problems.push('case.json: duplicate case id');
-  const eventIdsOf = {}; for (const [id, d] of Object.entries(sets)) eventIdsOf[id] = new Set(d.events.map(e => e['metadata.id']));
+  // A Log it may cite an event record or an entity record valid in the case's window.
+  const eventIdsOf = {}; for (const [id, d] of Object.entries(sets)) eventIdsOf[id] = new Set([...d.events.map(e => e['metadata.id']), ...ctxForCase(id).entities.map(e => e['metadata.id'])]);
   for (const ch of chapters) {
     const caseId = chapterCase?.[ch.id] ?? cases[0].id; const data = sets[caseId];
     if (!data) { problems.push(`${ch.id}: no dataset for case ${caseId}`); continue; }
-    const eventIds = eventIdsOf[caseId];
+    const eventIds = eventIdsOf[caseId]; const ctx = ctxForCase(caseId);
     if (!ch.id || !ch.title || !Array.isArray(ch.missions)) problems.push(`${ch.id}: chapter shape`);
     // The chapter-end recap card needs three to six plain-language "you can now" lines.
     if (!Array.isArray(ch.recap) || ch.recap.length < 3 || ch.recap.length > 6 || ch.recap.some(r => typeof r !== 'string' || r.length < 12)) problems.push(`${ch.id}: recap needs 3 to 6 lines`);

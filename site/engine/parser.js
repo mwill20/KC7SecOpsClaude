@@ -532,6 +532,11 @@ export function parseSearch(text, ctx = {}) {
     }
   }
   if (multi && !q.match) invalid('MULTI_EVENT_NEEDS_MATCH', { vars: q.vars });
+  if (!multi) {
+    // The sections read the same source as the filter: an entity query aggregates entity fields, an event query event fields.
+    const sectionFields = [...(q.match?.keys ?? []), ...q.outcomes.map(o => o.field), ...(q.dedup?.keys ?? []).map(k => k.expr).filter(Boolean)].flatMap(leaves);
+    if (sectionFields.some(f => f.name !== 'metadata.id' && isEntityField(f.name) !== q.entityQuery)) invalid('ENTITY_MIX', { pos: 0, name: q.vars[0] ?? '$e' });
+  }
   if (q.condition && !q.outcomes.length && !multi) invalid('CONDITION_NEEDS_MATCH');
   if (q.order.length && !q.outcomes.length) invalid('ORDER_UNKNOWN_OUTCOME', {});
   return q;

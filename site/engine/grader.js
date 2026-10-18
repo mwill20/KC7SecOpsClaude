@@ -4,11 +4,12 @@ import { execute, MEMBERS } from './executor.js';
 // Grades by running both queries against the same fictional data and comparing what comes back.
 // Two different-looking queries that return the same evidence both pass; a plausible query that
 // returns different evidence fails with a reason the learner can act on.
-// ctx carries the reference lists ({ lists }) the parser resolves %names against; without it every list is unknown.
+// ctx carries the reference lists and data tables ({ lists, tables }) the parser resolves %names against (without them
+// every list is unknown) and the entity records ({ entities }) graph.* queries and entity joins read.
 export function runQuery(text, events, range, ctx = {}) {
   try {
     const query = parseSearch(text, ctx);
-    const result = execute(query, events, range);
+    const result = execute(query, events, range, ctx.entities ?? []);
     return { ok: true, query, result };
   } catch (error) {
     if (error instanceof QueryError) return { ok: false, status: error.status, code: error.code, detail: error.detail };
@@ -24,8 +25,8 @@ export const EXAMPLE_IDS = 3;
 const examples = ids => [...new Set(ids)].slice(0, EXAMPLE_IDS);
 
 export function compareResults(student, reference) {
-  if (student.kind !== reference.kind) return { correct: false, reason: reference.kind === 'stats' ? 'EXPECTED_STATS' : 'EXPECTED_EVENTS' };
-  if (student.kind === 'events') {
+  if (student.kind !== reference.kind) return { correct: false, reason: reference.kind === 'stats' ? 'EXPECTED_STATS' : reference.kind === 'entities' ? 'EXPECTED_ENTITIES' : 'EXPECTED_EVENTS' };
+  if (student.kind === 'events' || student.kind === 'entities') {
     const s = idSet(student.rows), r = idSet(reference.rows);
     const missingIds = [...r].filter(id => !s.has(id)), extraIds = [...s].filter(id => !r.has(id));
     if (!missingIds.length && !extraIds.length) return { correct: true, reason: 'SAME_EVENTS' };

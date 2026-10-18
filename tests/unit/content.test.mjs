@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { root, loadContent, loadData, loadDatasets, validate, deriveAnswer, validateLogIt, validateLists, ctxFor, digestOf, DENSITY } from '../../tools/lib.mjs';
+import { root, loadContent, loadData, loadDatasets, validate, deriveAnswer, validateLogIt, validateLists, validateTables, validateEntities, entityRecords, entitiesFor, ctxFor, digestOf, DENSITY } from '../../tools/lib.mjs';
 import { runQuery, compareResults, gradeQuery, gradeAnswer, gradeCall } from '../../site/engine/grader.js';
 import { MESSAGES, describe } from '../../site/ui/messages.js';
 
@@ -262,4 +262,47 @@ test('C12 two cases: case 1 events are byte-identical to the density branch (dig
   assert.ok(validate(lateScope, datasets).some(p => p.includes('Scope')));
   // the single-dataset shape earlier branches passed still validates the first case and names the missing second
   assert.ok(validate(content, data).some(p => p.includes('case week-after') && p.includes('no dataset')));
+});
+
+test('C13 the bundled data tables and the station directory validate; should-fail: a bad column type, a short row, a CIDR cell that does not parse, a regex cell that fails the guard, a table named like a list, an unknown asset owner, overlapping versions, a real-looking address', () => {
+  assert.deepEqual(validateTables(content.tables), []);
+  assert.deepEqual(validateEntities(content.entities), []);
+  const tb = t => validateTables({ tables: [{ name: 'x', description: 'a dozen characters', columns: [{ name: 'c', type: 'string' }], rows: [['a']], ...t }] });
+  assert.ok(tb({ columns: [{ name: 'c', type: 'set' }] }).some(p => p.includes('columns')));
+  assert.ok(tb({ columns: [{ name: 'c', type: 'string' }, { name: 'd', type: 'string' }] }).some(p => p.includes('rows')));
+  assert.ok(tb({ columns: [{ name: 'c', type: 'cidr' }], rows: [['203.0.113.0/40']] }).some(p => p.includes('not a CIDR')));
+  assert.ok(tb({ columns: [{ name: 'c', type: 'regex' }], rows: [['(a+)+$']] }).some(p => p.includes('regex guard')));
+  assert.ok(tb({ columns: [{ name: 'c', type: 'string' }, { name: 'c', type: 'string' }], rows: [['a', 'b']] }).some(p => p.includes('duplicate column')));
+  const shared = JSON.parse(JSON.stringify(content)); shared.tables.tables[0].name = 'sponsor_domains';
+  assert.ok(validate(shared, datasets).some(p => p.includes('share a name')));
+  // the directory: two versions of marco.vela, lena.ostrowski and STUDIO-B, and the case windows see the right one
+  const recs = entityRecords(content.entities);
+  assert.equal(recs.length, content.entities.users.length + content.entities.assets.length);
+  assert.ok(recs.every(r => /^ent-\d{5}$/.test(r['metadata.id'])));
+  const w1 = { start: Date.parse(content.cases[0].window.start) / 1000, end: Date.parse(content.cases[0].window.end) / 1000 };
+  const w2 = { start: Date.parse(content.cases[1].window.start) / 1000, end: Date.parse(content.cases[1].window.end) / 1000 };
+  const marco = w => entitiesFor(recs, w).filter(r => r['graph.entity.user.userid'] === 'marco.vela');
+  assert.deepEqual(marco(w1).map(r => r['graph.entity.user.employment_status']), ['ACTIVE'], 'the directory lagged on pledge night');
+  assert.deepEqual(marco(w2).map(r => r['graph.entity.user.employment_status']), ['TERMINATED']);
+  assert.deepEqual(entitiesFor(recs, w2).filter(r => r['graph.entity.asset.hostname'] === 'STUDIO-B').map(r => r['graph.entity.asset.attribute.labels.owner']), ['kenji.mori']);
+  assert.deepEqual(entitiesFor(recs, w1).filter(r => r['graph.entity.user.userid'] === 'lena.ostrowski').map(r => r['graph.entity.user.attribute.roles.name']), ['STAFF']);
+  assert.deepEqual(entitiesFor(recs, w2).filter(r => r['graph.entity.user.userid'] === 'lena.ostrowski').map(r => r['graph.entity.user.attribute.roles.name']), ['MEMBERSHIP_SHARE_EDITOR']);
+  assert.equal(ctxFor(content, 'week-after').entities.length, entitiesFor(recs, w2).length);
+  // every event account and host the datasets carry is in the directory, so a join never silently drops a station name
+  const accounts = new Set([...data.events, ...data2.events].map(e => e['principal.user.userid']).filter(Boolean));
+  const hosts = new Set([...data.events, ...data2.events].map(e => e['principal.hostname']).filter(Boolean));
+  for (const a of accounts) assert.ok(content.entities.users.some(u => u.userid === a), 'user ' + a);
+  for (const h of hosts) assert.ok(content.entities.assets.some(x => x.hostname === h), 'asset ' + h);
+  const en = patch => { const e = JSON.parse(JSON.stringify(content.entities)); patch(e); return validateEntities(e); };
+  assert.ok(en(e => { e.assets[0].owner = 'nobody'; }).some(p => p.includes('not a user')));
+  assert.ok(en(e => { e.assets[0].ip = '8.8.8.8'; }).some(p => p.includes('fictional station LAN')));
+  assert.ok(en(e => { e.users.push({ ...e.users[0], valid_from: '2026-02-01T00:00:00Z' }); }).some(p => p.includes('versions overlap')));
+  assert.ok(en(e => { e.users[0].employment_status = 'FIRED'; }).some(p => p.includes('employment_status')));
+  assert.ok(en(e => { e.users[0].valid_to = e.users[0].valid_from; }).some(p => p.includes('valid_from and valid_to')));
+  assert.ok(en(e => { e.assets[0].hostname = 'pc1'; }).some(p => p.includes('hostname')));
+  // the running directory answers the week-after questions chapter 10 asks
+  const ctx2 = ctxFor(content, 'week-after');
+  const term = runQuery('$e.metadata.event_type = "USER_LOGIN"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\n$u.graph.entity.user.employment_status = "TERMINATED"\nmatch:\n  $uid\noutcome:\n  $n = count($e.metadata.id)', data2.events, null, ctx2);
+  assert.equal(term.ok, true);
+  assert.equal(runQuery('graph.metadata.entity_type = "ASSET"\ngraph.entity.asset.attribute.labels.criticality = "HIGH"', data2.events, null, ctx2).result.count, 4);
 });

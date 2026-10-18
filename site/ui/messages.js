@@ -106,6 +106,7 @@ export const MESSAGES = Object.freeze({
   SAME_STATS: ['Same table as the reference query.', ''],
   EXPECTED_STATS: ['The mission asks for a summary table, but this query returns raw events.', 'Add match: and/or outcome: sections.'],
   EXPECTED_EVENTS: ['The mission asks for events, but this query returns a summary table.', 'Remove the match and outcome sections.'],
+  EXPECTED_ENTITIES: ['The mission asks for entity records (graph.entity.*), but this query returns something else.', 'Filter on entity fields alone, such as graph.metadata.entity_type = "ASSET", with no match or outcome section.'],
   DIFFERENT_EVENTS: ['The query runs, but it selects different events from the reference.', 'Compare your filter with the question: is the scope too wide, too narrow, or on the wrong field?'],
   DIFFERENT_EVENTS_NARROW: ['The query runs, but it misses events the reference returns.', 'Your filter is too narrow. Loosen one condition at a time: a value spelled differently from the record, a role (principal or target) that does not hold the value, or a condition the question never asked for.'],
   DIFFERENT_EVENTS_WIDE: ['The query runs, but it returns events the reference does not.', 'Your filter is too wide. Add or tighten a condition until only what the question asks for is left: usually the event type, an action or an anchored pattern.'],

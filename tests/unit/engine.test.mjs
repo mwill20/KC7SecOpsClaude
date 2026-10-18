@@ -332,6 +332,9 @@ test('V6 two event variables joined by a shared placeholder: over N pairs events
   const bucketed = runL(J + 'match:\n  $u by 10m\noutcome:\n  $n = count($e2.metadata.id)');
   assert.deepEqual(bucketed.columns, ['principal.user.userid', 'window_start', '$n']); assert.deepEqual(bucketed.rows, [{ 'principal.user.userid': 'bo', window_start: 1200, $n: 1 }]);
   assert.equal(runL(J + 'match:\n  $u\noutcome:\n  $n = count($e1.metadata.id)').rows.length, 1, 'no window: the whole range');
+  // zero values never join (Google: match variables skip zero values unless allow_zero_values is set): the blank
+  // account on e4 pairs with nothing, even though a blank is a value on both sides
+  assert.deepEqual(runL('$e1.metadata.event_type = "USER_LOGIN"\n$e1.principal.user.userid = $u\n$e2.metadata.event_type = "USER_LOGIN"\n$e2.principal.user.userid = $u\nmatch:\n  $u\noutcome:\n  $n = count($e1.metadata.id)').rows.map(r => r['principal.user.userid']), ['ana', 'bo']);
   // the join on hostname: a login followed by a connection from the same host, either order, written with a placeholder or directly
   const H = '$e1.metadata.event_type = "USER_LOGIN"\n$e1.principal.hostname = $h\n$e2.metadata.event_type = "NETWORK_CONNECTION"\n$e2.principal.hostname = $h\nmatch:\n  $h over 1h\noutcome:\n  $first_login = earliest($e1.metadata.event_timestamp)\n  $to = array_distinct($e2.target.ip)\n  $n = count($e2.metadata.id)\norder:\n  $first_login';
   const h = runL(H);
@@ -379,4 +382,50 @@ test('V6 should-fail: unjoined variables, a placeholder set twice by one event, 
   failsL(J + 'match:\n  $u over 5m\ndedup:\n  $e1.principal.hostname', 'DEDUP_KEY_NOT_GROUPED', 'invalid');
   // single-event behaviour is unchanged: over N stays the unsupported rule window, by N buckets
   failsL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.hostname over 1h\noutcome:\n  $c = count(metadata.id)', 'OVER_WINDOW', 'unsupported');
+});
+
+// ---------- entity context (Google: statistics page, graph.entity.* in Search; entity records valid over a range) ----------
+const ent = (id, type, from, to, fields) => ({ 'metadata.id': id, 'graph.metadata.entity_type': type, 'graph.metadata.product_name': 'Dir', 'graph.metadata.event_metadata.event_timestamp.seconds': from, 'graph.metadata.interval.start_time.seconds': from, 'graph.metadata.interval.end_time.seconds': to, ...fields });
+const ENTS = [
+  ent('ent-00001', 'USER', 0, 5000, { 'graph.entity.user.userid': 'ana', 'graph.entity.user.title': 'Admin', 'graph.entity.user.employment_status': 'ACTIVE', 'graph.entity.user.attribute.roles.name': 'STATION_ADMIN' }),
+  ent('ent-00002', 'USER', 0, 1300, { 'graph.entity.user.userid': 'bo', 'graph.entity.user.title': 'Host', 'graph.entity.user.employment_status': 'ACTIVE', 'graph.entity.user.attribute.roles.name': 'STAFF' }),
+  ent('ent-00003', 'USER', 1300, 5000, { 'graph.entity.user.userid': 'bo', 'graph.entity.user.title': 'Host', 'graph.entity.user.employment_status': 'TERMINATED', 'graph.entity.user.attribute.roles.name': 'NONE' }),
+  ent('ent-00004', 'ASSET', 0, 5000, { 'graph.entity.asset.hostname': 'PC-1', 'graph.entity.asset.ip': '10.0.0.1', 'graph.entity.asset.attribute.labels.owner': 'ana', 'graph.entity.asset.attribute.labels.criticality': 'HIGH' }),
+];
+const ctxE = { lists: LISTS, tables: TABLES, entities: ENTS };
+const runE = (t, range = null) => execute(parseSearch(t, ctxE), mini, range, ENTS);
+const failsE = (t, code, status) => { try { parseSearch(t, ctxE); } catch (e) { assert.ok(e instanceof QueryError, 'QueryError'); assert.equal(e.code, code); if (status) assert.equal(e.status, status); return; } assert.fail('expected ' + code); };
+
+test('V7 entity queries read the directory records valid in the range, with dedup, match and outcome; the event-to-entity join picks the record valid at the event time; should-fail: entity and event fields in one filter, a window on an entity join, two entity variables', () => {
+  const users = runE('graph.metadata.entity_type = "USER"');
+  assert.equal(users.kind, 'entities'); assert.deepEqual(ids(users), ['ent-00001', 'ent-00002', 'ent-00003']);
+  assert.deepEqual(ids(runE('graph.metadata.entity_type = "USER"', { start: 1600, end: 2000 })), ['ent-00001', 'ent-00003'], 'a range keeps the records valid inside it');
+  assert.deepEqual(ids(runE('graph.entity.user.userid != ""\ndedup:\n  graph.entity.user.userid')), ['ent-00001', 'ent-00002']);
+  assert.deepEqual(ids(runE('graph.entity.hostname != ""')), ['ent-00004'], 'graph.entity.hostname is accepted for the asset field');
+  assert.deepEqual(ids(runE('graph.entity.ip = "10.0.0.1"')), ['ent-00004']);
+  const st = runE('graph.metadata.entity_type = "USER"\nmatch:\n  graph.entity.user.userid\noutcome:\n  $versions = count(metadata.id)\n  $since = min(graph.metadata.event_metadata.event_timestamp.seconds)');
+  assert.equal(st.kind, 'stats'); assert.equal(st.source, 'entities'); assert.deepEqual(st.rows.map(r => [r['graph.entity.user.userid'], r.$versions, r.$since]), [['ana', 1, 0], ['bo', 2, 0]]); assert.deepEqual(st.timeCols, ['$since']);
+  // the join documented for rules, run against the bundled directory: a login by an account the directory had terminated
+  const J2 = '$e.metadata.event_type = "USER_LOGIN"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\n';
+  const term = runE(J2 + '$u.graph.entity.user.employment_status = "TERMINATED"\nmatch:\n  $uid\noutcome:\n  $n = count($e.metadata.id)\n  $hosts = array_distinct($e.principal.hostname)\n  $title = array_distinct($u.graph.entity.user.title)');
+  assert.deepEqual(term.columns, ['graph.entity.user.userid = principal.user.userid', '$n', '$hosts', '$title']);
+  assert.deepEqual(term.rows, [{ 'graph.entity.user.userid = principal.user.userid': 'bo', $n: 1, $hosts: ['PC-2'], $title: ['Host'] }]);
+  assert.deepEqual(term.rows[0][MEMBERS_SYM], ['e3', 'ent-00003']); assert.equal(term.source, 'entities');
+  const roles = runE(J2 + 'match:\n  $uid\noutcome:\n  $role = array_distinct($u.graph.entity.user.attribute.roles.name)\n  $n = count($e.metadata.id)');
+  assert.deepEqual(roles.rows.map(r => [r['graph.entity.user.userid = principal.user.userid'], r.$role, r.$n]), [['ana', ['STATION_ADMIN'], 2], ['bo', ['NONE'], 1]], 'bo at 1400 joins the version valid at 1400; the blank account joins nothing');
+  const owner = runE('$e.metadata.event_type = "NETWORK_CONNECTION"\n$e.principal.ip = $ip\n$a.graph.entity.asset.ip = $ip\nmatch:\n  $ip\noutcome:\n  $owner = array_distinct($a.graph.entity.asset.attribute.labels.owner)\n  $n = count($e.metadata.id)');
+  assert.deepEqual(owner.rows.map(r => [r['graph.entity.asset.ip = principal.ip'], r.$owner, r.$n]), [['10.0.0.1', ['ana'], 1]], 'an address no asset owns is not a row');
+  assert.equal(runE(J2 + 'match:\n  $uid\noutcome:\n  $n = count($e.metadata.id)\ncondition:\n  #u > 0 and #e > 1').rows.length, 1);
+  // grading: entity tables compare like any other table, entity lists like event lists, and the kinds are told apart
+  const ref = runQuery('graph.metadata.entity_type = "ASSET"', mini, null, ctxE).result;
+  assert.equal(compareResults(runQuery('graph.entity.asset.hostname != ""', mini, null, ctxE).result, ref).correct, true);
+  assert.equal(compareResults(runQuery('metadata.event_type = "USER_LOGIN"', mini, null, ctxE).result, ref).reason, 'EXPECTED_ENTITIES');
+  assert.equal(compareResults(ref, runQuery('metadata.event_type = "USER_LOGIN"', mini, null, ctxE).result).reason, 'EXPECTED_EVENTS');
+  assert.equal(runQuery('graph.metadata.entity_type = "USER"', mini, null, ctx).result.count, 0, 'without entities in the context the directory is empty, not an error');
+  failsE('graph.entity.user.userid = "ana"\nmetadata.event_type = "USER_LOGIN"', 'ENTITY_MIX', 'invalid');
+  failsE('$e.principal.user.userid = $uid\n$e.graph.entity.user.userid = $uid\nmatch:\n  $uid', 'ENTITY_MIX', 'invalid');
+  failsE(J2 + 'match:\n  $uid over 1h\noutcome:\n  $n = count($e.metadata.id)', 'ENTITY_WINDOW', 'invalid');
+  failsE('$u.graph.entity.user.userid = $o\n$a.graph.entity.asset.attribute.labels.owner = $o\nmatch:\n  $o', 'ENTITY_JOIN_ONLY', 'unsupported');
+  failsE('graph.entity.user.userid = "ana"\noutcome:\n  $t = earliest(metadata.event_timestamp)', 'ENTITY_MIX', 'invalid');
+  assert.equal(runE('graph.entity.user.userid = "ana"\noutcome:\n  $t = earliest(graph.metadata.event_metadata.event_timestamp)').rows[0].$t, 0, 'earliest takes the entity timestamp on an entity query');
 });
