@@ -24,7 +24,9 @@ const BASE_COLS = ['metadata.event_type', 'principal.user.userid', 'principal.ho
 const EXTRA_COLS = ['target.process.command_line', 'target.process.file.full_path', 'network.dns.questions.name', 'network.email.from', 'network.email.to', 'network.email.subject', 'target.url', 'target.file.full_path', 'network.sent_bytes', 'network.received_bytes', 'security_result.summary'];
 const short = c => c.replace('metadata.', '').replace('security_result.', 'sr.').replace('network.', 'net.').replace('.file.full_path', '.path').replace('.questions.name', '.question').replace('.command_line', '.cmd');
 
-export function resultsTable(result, onRow) {
+// timeCols: outcome column names whose values are timestamps in seconds; they render as UTC clock times with the raw
+// value beside them, so a min/max on metadata.event_timestamp.seconds reads as "first" and "last".
+export function resultsTable(result, onRow, timeCols = new Set()) {
   if (result.kind === 'events') {
     const sample = result.rows.slice(0, 200);
     const present = c => sample.some(r => r[c] !== undefined && r[c] !== '' && r[c] !== 0);
@@ -38,7 +40,7 @@ export function resultsTable(result, onRow) {
     return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
   }
   const head = el('tr', {}, result.columns.map(c => el('th', { text: c === 'window_start' ? 'window start (UTC)' : short(c) })));
-  const body = result.rows.slice(0, 200).map(r => el('tr', {}, result.columns.map(c => el('td', { text: c === 'window_start' ? fmtTime(r[c]) : cell(r[c]) }))));
+  const body = result.rows.slice(0, 200).map(r => el('tr', {}, result.columns.map(c => el('td', { text: c === 'window_start' ? fmtTime(r[c]) : timeCols.has(c) && typeof r[c] === 'number' && r[c] > 0 ? `${fmtTime(r[c])} (${r[c]})` : cell(r[c]) }))));
   return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
 }
 const cell = v => v === undefined || v === '' ? '—' : typeof v === 'number' ? fmtNum(v) : String(v);

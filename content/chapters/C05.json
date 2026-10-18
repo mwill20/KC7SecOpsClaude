@@ -6,8 +6,10 @@
   "concepts": ["limit cuts the output, not the search", "Two outcomes in one query", "count versus count_distinct"],
   "recap": [
     "Sum a numeric field per group, sort it and cut the list with limit",
-    "Calculate two outcomes per row and group by two keys",
-    "Choose count or count_distinct from the question you were asked"
+    "Read the span of an activity from min and max on the timestamp",
+    "Say what limit keeps when the order flips, and why a quiet machine is not a clean one",
+    "Calculate two or three outcomes per row and group by one or two keys",
+    "Choose count or count_distinct from the question you were asked, and read the two together"
   ],
   "missions": [
     {
@@ -45,6 +47,73 @@
       "caveat": "Sum ignores nothing. A single misparsed byte field can dominate a total; click into the biggest group before you quote it."
     },
     {
+      "id": "C05-M04",
+      "kind": "build",
+      "title": "First and last",
+      "beat": "The board will ask when it started and when it stopped. Those are the earliest and latest beacon lookups, and a statistics query can hand them to you as two columns: the minimum and maximum timestamp per machine.",
+      "question": "When did AUTOMATION-01 first and last look up the beacon name?",
+      "concept": {"title":"min and max on a timestamp are first and last","text":"metadata.event_timestamp.seconds is a number, seconds since 1970 in UTC. min of it in a group is the earliest event; max is the latest. The desk shows those cells as clock times with the raw seconds beside them, because that is how you would read them in a brief. Two aggregates in one query give you the span of an activity without scrolling to either end of a table."},
+      "explain": [
+        {"part":"$first = min(metadata.event_timestamp.seconds)","meaning":"The earliest timestamp in each group."},
+        {"part":"$last = max(metadata.event_timestamp.seconds)","meaning":"The latest. Together they are the span."},
+        {"part":"match:\n  principal.hostname","meaning":"One row per machine that asked for the name. Only one did."}
+      ],
+      "starter": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = \"cdn-sync.pier9-partners.example\"\nmatch:\n  principal.hostname\noutcome:\n  $first = ___(metadata.event_timestamp.seconds)\n  $last = max(metadata.event_timestamp.seconds)",
+      "reference": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = \"cdn-sync.pier9-partners.example\"\nmatch:\n  principal.hostname\noutcome:\n  $first = min(metadata.event_timestamp.seconds)\n  $last = max(metadata.event_timestamp.seconds)",
+      "hints": [
+        "The earliest time in a group is its smallest number. The aggregate that returns the smallest value is the opposite of max.",
+        "Fill the gap with min.",
+        "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name = \"cdn-sync.pier9-partners.example\"\nmatch:\n  principal.hostname\noutcome:\n  $first = min(metadata.event_timestamp.seconds)\n  $last = max(metadata.event_timestamp.seconds)"
+      ],
+      "answer": {"prompt":"What clock time is in the $first column for AUTOMATION-01 (HH:MM, UTC)?","value":"19:40","also":["19:40:05"],"check":{"type":"cell","row":{"principal.hostname":"AUTOMATION-01"},"column":"$first","format":"hhmm"}},
+      "call": {
+        "prompt": "The span runs from a few minutes after the task was created until a few minutes before the data ends. What should the brief say about whether it stopped?",
+        "options": [
+          {"id":"A","label":"That the activity ended at the last lookup, since a max is a max and the brief can give the board a stop time"},
+          {"id":"B","label":"That it was still running when the data ends; the latest lookup is the edge of the window, not the end of the behaviour"},
+          {"id":"C","label":"That it ran for exactly the span between the two times, and the number of lookups divided by that span is the proof it was automated"}
+        ],
+        "correct": "B",
+        "why": "A maximum at the edge of the time range means the activity outlived the data. The task is still scheduled until someone removes it; that is a Contain item, not a stop time."
+      },
+      "clue": "First lookup 19:40:05, four minutes after the task was created. Last lookup 05:50:06, ten minutes before the data ends. Nothing in between stopped it, and nothing in the data says it has stopped now.",
+      "logIt": {"kind":"timeline","prompt":"Add two Timeline entries if you like; one is required. Time: 05:50. Fact: AUTOMATION-01's last lookup of cdn-sync.pier9-partners.example in the data is at 05:50:06; the first was at 19:40:05. The task was still scheduled when the data ends. Evidence ref: the # of your cadence evidence.","mustInclude":["05:50","19:40"]},
+      "caveat": "Google exposes timestamp helpers (timestamp.get_hour and friends) that this trainer does not run. In a tenant you would format the span with those rather than reading raw seconds."
+    },
+    {
+      "id": "C05-M05",
+      "kind": "build",
+      "title": "The quiet end of the list",
+      "beat": "Flip the sort. Rank the machines by connection count from fewest to most and keep three. The point is not the quiet machines; the point is what limit keeps when the order changes, and whether quiet means clean.",
+      "question": "Which three machines made the fewest connections tonight?",
+      "concept": {"title":"order decides what limit keeps","text":"limit takes the first rows of the sorted table. With desc, it keeps the biggest; with asc, the smallest; with no order section at all, it keeps whatever came first in key order, which is rarely what you meant. Always read the order line before you trust a limited table. And a quiet machine is not a clean one: the second-quietest tonight is the one that clicked the link."},
+      "explain": [
+        {"part":"order:\n  $connections asc","meaning":"Smallest first. asc is the default, so writing just $connections does the same thing; writing it out says what you meant."},
+        {"part":"limit:\n  3","meaning":"Three rows after sorting. Change asc to desc and the same limit keeps the three busiest."}
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\nmatch:\n  principal.hostname\noutcome:\n  $connections = count(metadata.id)\norder:\n  $connections ___\nlimit:\n  3",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nmatch:\n  principal.hostname\noutcome:\n  $connections = count(metadata.id)\norder:\n  $connections asc\nlimit:\n  3",
+      "hints": [
+        "You want the smallest counts first. The direction word is the opposite of desc.",
+        "Fill the gap with asc.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\nmatch:\n  principal.hostname\noutcome:\n  $connections = count(metadata.id)\norder:\n  $connections asc\nlimit:\n  3"
+      ],
+      "answer": {"prompt":"Which hostname is in the first row?","value":"ENG-SHOP-01","check":{"type":"cell","row":0,"column":"principal.hostname"}},
+      "call": {
+        "prompt": "The victim's desk, PLEDGE-DESK-02, is in your bottom three. A colleague says the quiet machines can be ruled out of the brief. What do you say?",
+        "options": [
+          {"id":"A","label":"Agree; low volume means low exposure, and the brief has enough to cover without listing machines that barely used the network"},
+          {"id":"B","label":"Disagree; two of that desk's few connections are the click and the form post, so a short list is where the quiet, decisive events hide"},
+          {"id":"C","label":"Agree in part; keep PLEDGE-DESK-02 only because Hal owns it, since a treasurer's machine is politically sensitive whatever the logs say"}
+        ],
+        "correct": "B",
+        "why": "Volume ranks noise. The connection that started the night was one of twenty-one on a quiet desk. A sort is a way of reading the table, not a filter on what matters."
+      },
+      "clue": "Fewest connections: ENG-SHOP-01 with eighteen, PLEDGE-DESK-02 with twenty-one, NEWSROOM-03 with forty-one. The second-quietest machine on the pier is where the password left. Flip to desc and the top row is the playout PC, where it was used.",
+      "logIt": {"kind":"gap","prompt":"Log a Gap: connection counts and byte totals come from one sensor; a quiet machine may be quiet because it was lightly logged, not lightly used, and the dataset has no proxy or endpoint network log to cross-check. Why it matters: ENG-SHOP-01 and PLEDGE-DESK-02 rank quietest and one of them is the victim desk; ranking by volume cannot clear a machine.","mustInclude":["PLEDGE-DESK-02","sensor|proxy|logged"]},
+      "caveat": "Google's order section accepts several outcomes and a direction for each. A tie on the first key is broken by the next; with no further key the order of tied rows is not guaranteed."
+    },
+    {
       "id": "C05-M02",
       "kind": "build",
       "title": "Where the playout PC was talking",
@@ -76,6 +145,70 @@
       "clue": "Two destinations all night. The streaming CDN: 40 connections, 59 KB out, which is a player saying hello. The attacker address: 63 connections, 48 MB out. Sixty-two were heartbeats. One was the donor list.",
       "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 02:10. Fact: 48 MB left AUTOMATION-01 for 203.0.113.44 on port 443, the one connection of 63 to that address that carried a payload. Evidence ref: your upload evidence. For contrast, the CDN at 192.0.2.120 took 40 connections and 59 KB all night.","mustInclude":["02:10","203.0.113.44"]},
       "caveat": "Try removing order and see the rows come back in key order. The data is the same; only the reading changes."
+    },
+    {
+      "id": "C05-M06",
+      "kind": "watch",
+      "title": "Three numbers per destination",
+      "beat": "One table for the board: every destination address tonight, with how many connections reached it, how many different machines made them, and how many bytes went out. Three calculations per row. Read the top row against the rest.",
+      "question": "How many different machines connected to the attacker address, and how does its row compare with the station's normal services?",
+      "concept": {"title":"Three outcomes, three questions","text":"count answers \"how often\". count_distinct on the host answers \"how widely\". sum on the bytes answers \"how much\". A benign service scores high on the first two and low on the third: many machines, many connections, little sent. The attacker address scores the other way: two machines, a clock's worth of connections, and almost everything the pier sent out tonight."},
+      "explain": [
+        {"part":"match:\n  target.ip","meaning":"One row per destination."},
+        {"part":"$connections = count(metadata.id)\n  $hosts = count_distinct(principal.hostname)\n  $bytes_out = sum(network.sent_bytes)","meaning":"Three outcomes, three columns. Each has its own name."},
+        {"part":"order:\n  $bytes_out desc","meaning":"Sorted by what left the building."}
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\nmatch:\n  target.ip\noutcome:\n  $connections = count(metadata.id)\n  $hosts = count_distinct(principal.hostname)\n  $bytes_out = sum(network.sent_bytes)\norder:\n  $bytes_out desc",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nmatch:\n  target.ip\noutcome:\n  $connections = count(metadata.id)\n  $hosts = count_distinct(principal.hostname)\n  $bytes_out = sum(network.sent_bytes)\norder:\n  $bytes_out desc",
+      "hints": [
+        "Run it. Read the top row, then read the $hosts column down the whole table.",
+        "Every ordinary service was reached by six or seven machines. One address was reached by fewer.",
+        "The attacker address: 65 connections, two hosts (PLEDGE-DESK-02 and AUTOMATION-01), about 48 million bytes out. Every other row: six or seven hosts, about a million bytes or less."
+      ],
+      "answer": {"prompt":"What is the $hosts value for 203.0.113.44?","value":"2","check":{"type":"cell","row":{"target.ip":"203.0.113.44"},"column":"$hosts"}},
+      "call": {
+        "prompt": "The CDN row has more connections than the attacker row and three times as many hosts. The attacker row has forty times the bytes out. Which column should lead the brief?",
+        "options": [
+          {"id":"A","label":"Connections; it is the most direct measure of activity and the board understands a count better than a byte total"},
+          {"id":"B","label":"Bytes out, with the host count beside it: almost everything the pier sent out went to one address that only two machines ever reached"},
+          {"id":"C","label":"Hosts; the fewer machines that reached an address, the more targeted it is, so the host count alone ranks the threat"}
+        ],
+        "correct": "B",
+        "why": "One column ranks; the others explain. Bytes out puts the attacker address first, and the host count says why that is strange for an address that busy."
+      },
+      "clue": "Eight destinations. Seven of them: six or seven machines each, a million bytes or less sent. One of them: two machines, 65 connections, 48 million bytes. The table is the brief.",
+      "logIt": {"kind":"evidence","prompt":"Log the destination table as evidence. Time: the whole night as a range. Observation: 203.0.113.44 received 65 connections from two hosts (PLEDGE-DESK-02 and AUTOMATION-01) and about 48 million bytes; every other destination was reached by six or seven hosts and received about a million bytes or less. Records: the 02:10 upload, which carries almost all of those bytes. Where to find it: a three-outcome statistics query grouped by target.ip.","mustInclude":["203.0.113.44","PLEDGE-DESK-02","evt-00679"]},
+      "caveat": "Real destination tables run to thousands of rows. The three-column shape still works; add a limit and an order on the column that answers your question."
+    },
+    {
+      "id": "C05-M07",
+      "kind": "solo",
+      "title": "How many, how many different",
+      "beat": "Last one for the brief. The playout PC asked DNS for names all night. Odalys wants two numbers in one line: how many lookups it made, and how many different names it asked for. Build both outcomes in one query, no match section.",
+      "question": "How many DNS lookups did AUTOMATION-01 make tonight, and for how many different names?",
+      "concept": {"title":"count and count_distinct on the same field","text":"count counts events. count_distinct counts different values. On a field that repeats, the two numbers diverge, and the gap between them is the story: a hundred lookups for two names is a machine on a schedule, not a person browsing. Put both in one outcome section and the brief gets its sentence from one row."},
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"NETWORK_DNS\"\nprincipal.hostname = \"AUTOMATION-01\"\noutcome:\n  $lookups = count(network.dns.questions.name)\n  $names = count_distinct(network.dns.questions.name)",
+      "hints": [
+        "Filter DNS events from AUTOMATION-01, then an outcome section with two lines: count of the name field, and count_distinct of the same field. No match section gives one summary row.",
+        "outcome:\n  $lookups = count(network.dns.questions.name)\n  $names = count_distinct(network.dns.questions.name) under the two filter lines.",
+        "metadata.event_type = \"NETWORK_DNS\"\nprincipal.hostname = \"AUTOMATION-01\"\noutcome:\n  $lookups = count(network.dns.questions.name)\n  $names = count_distinct(network.dns.questions.name)"
+      ],
+      "answer": {"prompt":"What is your count (not count_distinct) value?","value":"102","check":{"type":"cell","row":0,"column":0}},
+      "call": {
+        "prompt": "Over a hundred lookups for exactly two names. One is the streaming CDN the playout PC has always used. What is the right sentence for the brief?",
+        "options": [
+          {"id":"A","label":"The playout PC resolved two names all night, one of them the station's own CDN and the other the lookalike's content host, every ten minutes from 19:40"},
+          {"id":"B","label":"The playout PC's DNS traffic is normal for a machine that streams, since two names is a very small set and the count is in line with a busy night"},
+          {"id":"C","label":"The playout PC made over a hundred suspicious DNS requests, which is the number the board should hear first"}
+        ],
+        "correct": "A",
+        "why": "The count alone alarms and the distinct count alone reassures. Together, with the names, they describe exactly what happened: one expected name and one that was not, on a clock."
+      },
+      "clue": "A hundred and two lookups, two names: streaming.tunecast.example, which the playout PC has always asked for, and cdn-sync.pier9-partners.example, which it started asking for at 19:40 and never stopped. A machine with a two-name vocabulary, half of it borrowed.",
+      "logIt": {"kind":"remediation","list":"recover","prompt":"Write a Recover item: rebuild AUTOMATION-01 from a known-good image, restore the playout schedule and verify the 06:30 news airs, then confirm the rebuilt machine resolves only its expected names (streaming.tunecast.example and the vendor hosts) over a full day. Answers: your cadence evidence and your PledgeSync folder evidence. Owner role: volunteer engineer. Urgency: today.","mustInclude":["AUTOMATION-01","rebuild|reimage|image"]},
+      "caveat": "count(field) in Google counts events where the field is present; count(metadata.id) counts every event. On a field every event carries they agree, as here."
     },
     {
       "id": "C05-M03",

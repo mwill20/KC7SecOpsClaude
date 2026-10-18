@@ -50,7 +50,9 @@ export function mountCasebook({ host, toggle, store, cases }) {
   }
   host.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); closeDrawer(); } });
   toggle.addEventListener('click', () => (open ? closeDrawer() : openDrawer()));
-  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'N' || e.key === 'n')) { e.preventDefault(); open ? closeDrawer() : openDrawer(); } });
+  // Alt+Shift+C toggles the drawer from any page. Matched on the physical key as well as the key value, because Alt+Shift
+  // changes the character some layouts report. Chrome reserves Ctrl+Shift+N, the previous combination, for incognito.
+  document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyC' || e.key === 'C' || e.key === 'c')) { e.preventDefault(); open ? closeDrawer() : openDrawer(); } });
   store.subscribe(() => { if (open) render(); });
   narrow.addEventListener('change', () => { if (open) render(); });
 

@@ -8,12 +8,12 @@ const KEY = 'pier9.casebook.v1';
 const drawer = page => page.locator('#casebook');
 const active = page => page.evaluate(() => { const a = document.activeElement; return { tag: a.tagName, id: a.id, text: a.textContent.trim().slice(0, 40), label: a.getAttribute('aria-label') }; });
 
-test('Drawer: Ctrl+Shift+N and the top-bar button open it beside the desk, arrows move between tabs, Escape closes and focus returns', async ({ page }) => {
+test('Drawer: Alt+Shift+C and the top-bar button open it beside the desk, arrows move between tabs, Escape closes and focus returns', async ({ page }) => {
   await page.goto(`#${SOLO}`);
   const cb = drawer(page);
   await expect(cb).toBeHidden();
   await page.locator('textarea.editor').focus();
-  await page.keyboard.press('Control+Shift+N');
+  await page.keyboard.press('Alt+Shift+C');
   await expect(cb).toBeVisible();
   await expect(page.locator('#casebook-toggle')).toHaveAttribute('aria-expanded', 'true');
   expect((await active(page)).id).toBe('cb-title');
@@ -109,10 +109,10 @@ test('Insert from results drafts the evidence entry, the note check passes, Log 
   await expect(logit.locator('.feedback')).toHaveClass(/ok/);
   await expect(logit.locator('.feedback')).toContainText('Logged. Evidence #1 passes the structure check');
   await expect(page.locator('.scorebox')).toContainText('Casebook 10/10');
-  await expect(page.locator('#topscore')).toHaveText('70 / 2,235 pts');
+  await expect(page.locator('#topscore')).toHaveText('70 / 4,355 pts');
 
   // 5. Should-fail: a second entry with a claim word and no record fails with the claim rule and the records rule, in plain language.
-  await page.keyboard.press('Control+Shift+N');
+  await page.keyboard.press('Alt+Shift+C');
   await cb.locator('#cb-evidence-time').fill('19:30');
   await cb.getByRole('button', { name: 'Use current query' }).click();
   await cb.locator('#cb-evidence-observation').fill('This proves the pledge desk was brute-forced.');

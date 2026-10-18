@@ -76,6 +76,16 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 .clue { border: 1px solid var(--ok); background: rgba(88,214,141,.07); } .clue .eyebrow { color: var(--ok); }
 .recap { border-left: 3px solid var(--info); } .recap .eyebrow { color: var(--info); } .recap ul { margin: 0 0 8px; padding-left: 20px; } .recap li { margin: 4px 0; }
 .recap.complete { border-left-color: var(--ok); } .recap.complete .eyebrow { color: var(--ok); }
+/* Mission map: one segment per mission, coloured by kind, filled when complete. Links, so keyboard users get one stop each. */
+.mmap .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--muted); }
+.mmap .legend li { display: flex; align-items: center; gap: 5px; } .swatch { width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--muted); }
+.swatch.watch { border-color: var(--info); } .swatch.build { border-color: var(--accent); } .swatch.solo { border-color: var(--teal); } .swatch.read { border-color: var(--muted); }
+.strip { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 10px 0 0; padding: 0; }
+.seg { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 34px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; font: 600 12px/1 var(--mono); }
+.seg .fill { display: block; width: 22px; height: 4px; border-radius: 2px; background: var(--line); }
+.seg.watch { border-color: var(--info); } .seg.build { border-color: var(--accent); } .seg.solo { border-color: var(--teal); } .seg.read { border-color: var(--muted); }
+.seg.partial .fill { background: var(--accent); } .seg.done { color: var(--ok); border-color: var(--ok); } .seg.done .fill { background: var(--ok); }
+.seg:hover { color: var(--text); }
 .columns { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 14px; } .columns .card + .card { margin-top: 0; }
 .closed ul { margin: 0; padding-left: 20px; } .closed li { margin: 6px 0; }
 .closed.facts { border-top: 3px solid var(--ok); } .closed.hypotheses { border-top: 3px solid var(--accent); } .closed.gaps { border-top: 3px solid var(--bad); }

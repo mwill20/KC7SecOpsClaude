@@ -83,12 +83,12 @@ test('Build mission end to end with the keyboard only: invalid, correct, answer,
   await expect(page.locator('.scorebox')).toContainText('Log it to complete');
   await expect(page.locator('.desk .sr-only[role="status"]')).toContainText('Log it in the Casebook to complete the mission');
   await expect(page.locator('.logit')).toBeVisible();
-  await expect(page.locator('#topscore')).toHaveText('100 / 2,235 pts');
+  await expect(page.locator('#topscore')).toHaveText('100 / 4,355 pts');
 
   // 6. The next-mission control (in the lesson pane, before the desk in DOM order) is a real link: Enter on it navigates.
-  await tabTo(page, 'a.btn[href="#C01-M03"]', 80, true);
+  await tabTo(page, 'a.btn[href="#C01-M07"]', 80, true);
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/#C01-M03$/);
+  await expect(page).toHaveURL(/#C01-M07$/);
   await expect(page.locator('h1')).not.toHaveText('Keep only the failures');
 });
 
@@ -134,7 +134,7 @@ test('Hints reveal one at a time, move focus to the new hint, cost nothing, and 
   await expect(hints.nth(2).locator('pre')).toContainText('security_result.action = "FAIL"');
   await expect(page.getByRole('button', { name: /Show/ })).toHaveCount(0);
   await expect(page.locator('.hints')).toContainText('Hints never cost points');
-  await expect(page.locator('#topscore')).toHaveText('0 / 2,235 pts');
+  await expect(page.locator('#topscore')).toHaveText('0 / 4,355 pts');
 });
 
 test('Record drill-down opens a full record, moves focus into it, and returns focus on close', async ({ page }) => {
@@ -209,7 +209,7 @@ test('Zero CSP violations, console errors or non-loopback requests across routin
   await page.getByRole('link', { name: 'Case file' }).first().click();
   await page.locator('a.chapter-card').first().click();
   await expect(page).toHaveURL(/#C01$/);
-  await page.getByRole('link', { name: /Keep only the failures/ }).click();
+  await page.locator('.list').getByRole('link', { name: /Keep only the failures/ }).click();   // the mission map carries a second link to the same mission
   await page.getByRole('button', { name: 'Run query' }).click();
   await page.getByRole('button', { name: 'Check query' }).click();
   await page.getByRole('button', { name: 'Show a hint' }).click();
@@ -227,7 +227,7 @@ test('Zero CSP violations, console errors or non-loopback requests across routin
   await page.getByLabel(/Remember my points/).uncheck();
   await page.getByLabel(/Remember my casebook/).check();
   await page.getByLabel(/Remember my casebook/).uncheck();
-  await page.keyboard.press('Control+Shift+N');
+  await page.keyboard.press('Alt+Shift+C');
   await expect(page.locator('#casebook')).toBeVisible();
   await page.keyboard.press('Escape');
   expect(await log.csp()).toEqual([]);
@@ -283,7 +283,7 @@ test('Accessibility: names, focus order, headings, live regions and the skip lin
   await expect(page).toHaveTitle(/^What this is · /);
 });
 
-// Seed a validated progress record so a test can start from a chosen state without clicking through 25 missions.
+// Seed a validated progress record so a test can start from a chosen state without clicking through 48 missions.
 // The store only accepts mission IDs it knows and point values from its fixed set, so this is the same data a real
 // run would have written.
 async function seedProgress(page, ids, full = true) {
@@ -341,15 +341,23 @@ test('Top-bar chapter progress updates as a mission completes, and the chapter p
   const seg = page.locator('#chapterprog .chap');
   await expect(seg).toHaveCount(6);
   await expect(seg.first()).toHaveAttribute('aria-current', 'page');
-  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 0 of 7 missions complete');
+  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 0 of 11 missions complete');
   await expect(seg.nth(1)).not.toHaveAttribute('aria-current', 'page');
   const recap = page.getByRole('region', { name: 'Chapter recap' });
   await expect(recap).toContainText('By the end of this chapter you will be able to');
   await expect(recap.locator('li')).toHaveCount(6);
-  await expect(recap).toContainText('0 of 7 missions complete so far.');
+  await expect(recap).toContainText('0 of 11 missions complete so far.');
+  // The mission map: one link per mission, coloured by kind, nothing complete yet; the legend names every kind in the chapter.
+  const map = page.getByRole('region', { name: 'Mission map' });
+  await expect(map).toContainText('Mission map · 0 of 11 complete');
+  await expect(map.locator('.seg')).toHaveCount(11);
+  await expect(map.locator('.seg.done')).toHaveCount(0);
+  await expect(map.locator('.seg').nth(1)).toHaveAttribute('href', `#${WATCH}`);
+  await expect(map.locator('.seg').nth(1)).toHaveAttribute('aria-label', 'Mission 2, Open the login log, Watch one, not started');
+  await expect(map.locator('.legend li')).toHaveCount(4);
   // Complete the Watch mission C01-M01: answer 40, option C, then its Log it (the Scope) in the Casebook.
   await page.goto(`#${WATCH}`);
-  await expect(seg.first()).toHaveAttribute('aria-label', /0 of 7/);
+  await expect(seg.first()).toHaveAttribute('aria-label', /0 of 11/);
   await page.getByRole('button', { name: 'Run query' }).click();
   await expect(page.locator('.logit')).toBeHidden();
   await page.getByLabel('How many USER_LOGIN events are there for the whole night?').fill('40');
@@ -358,7 +366,7 @@ test('Top-bar chapter progress updates as a mission completes, and the chapter p
   await page.locator('input[type="radio"][value="C"]').check();
   await page.getByRole('button', { name: 'Check call' }).click();
   await expect(page.locator('.scorebox')).toContainText('Log it to complete');
-  await expect(seg.first()).toHaveAttribute('aria-label', /0 of 7/);
+  await expect(seg.first()).toHaveAttribute('aria-label', /0 of 11/);
   await page.locator('.logit').getByRole('button', { name: 'Check my Casebook' }).click();
   await expect(page.locator('.logit .feedback')).toContainText('No scope yet.');
   await page.locator('.logit').getByRole('button', { name: 'Open Casebook: Scope' }).click();
@@ -376,10 +384,17 @@ test('Top-bar chapter progress updates as a mission completes, and the chapter p
   await expect(page.locator('.logit .feedback')).toContainText('Logged.');
   await expect(page.locator('.scorebox')).toContainText('Mission complete');
   await expect(page.locator('.desk .sr-only[role="status"]')).toContainText('Mission complete');
-  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 1 of 7 missions complete');
+  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 1 of 11 missions complete');
   await expect(seg.first()).toHaveClass(/partial/);
   await page.goto('#C01');
-  await expect(recap).toContainText('1 of 7 missions complete so far.');
+  await expect(recap).toContainText('1 of 11 missions complete so far.');
+  await expect(map).toContainText('Mission map · 1 of 11 complete');
+  await expect(map.locator('.seg.done')).toHaveCount(1);
+  await expect(map.locator('.seg').nth(1)).toHaveClass(/done/);
+  await expect(map.locator('.seg').nth(1)).toHaveAttribute('aria-label', /complete$/);
+  await map.locator('.seg').nth(2).click();
+  await expect(page).toHaveURL(/#C01-M02$/);
+  await page.goto('#C01');
   // Chapter links in the bar are real links.
   await seg.nth(3).click();
   await expect(page).toHaveURL(/#C04$/);
@@ -391,7 +406,7 @@ test('Case-closed page: lists what is left while the case is open, and the three
   const open = await (await browser.newContext()).newPage();
   await open.goto('#closed');
   await expect(open.locator('h1')).toHaveText('The handoff is not written yet');
-  await expect(open.locator('.list li')).toHaveCount(26);
+  await expect(open.locator('.list li')).toHaveCount(49);
   await expect(open.getByRole('region', { name: 'Casebook' })).toContainText('Not written yet');
   await expect(open.getByRole('region', { name: 'Facts' })).toHaveCount(0);
   await expect(open.getByRole('link', { name: 'Next open mission →' })).toHaveAttribute('href', '#C01-M00');
@@ -404,7 +419,7 @@ test('Case-closed page: lists what is left while the case is open, and the three
   const ids = await (async () => { const p = await ctx.newPage(); await p.goto('./'); const r = await p.evaluate(async () => { const { CONTENT } = await import('./bundle.js'); return CONTENT.chapters.flatMap(c => c.missions.map(m => [m.id, m.kind, Boolean(m.logIt)])); }); await p.close(); return r; })();
   await seedProgress(page, ids);
   await page.goto('./');
-  await expect(page.locator('#topscore')).toHaveText('2,235 / 2,235 pts');
+  await expect(page.locator('#topscore')).toHaveText('4,355 / 4,355 pts');
   await expect(page.locator('#chapterprog .chap.done')).toHaveCount(6);
   await page.getByRole('link', { name: 'Read the case-closed handoff →' }).click();
   await expect(page).toHaveURL(/#closed$/);
@@ -426,4 +441,59 @@ test('Case-closed page: lists what is left while the case is open, and the three
   const csp = await page.evaluate(() => new Promise(res => { let n = 0; document.addEventListener('securitypolicyviolation', () => n++); setTimeout(() => res(n), 50); }));
   expect(csp).toBe(0);
   await ctx.close();
+});
+
+test('Density sample: a min/max mission shows timestamp cells as clock times, a Read mission on wrong queries needs no desk, and a Your-turn timeline query grades by execution', async ({ page }) => {
+  // C05-M04: fill the gap, run, and the $first / $last cells read as UTC clock times with the raw seconds beside them.
+  await page.goto('#C05-M04');
+  await expect(page.locator('h1')).toHaveText('First and last');
+  await expect(page.locator('.crumbs')).toContainText('Mission 2 of 7');
+  const editor = page.locator('textarea.editor');
+  await editor.fill((await editor.inputValue()).replace('___', 'min'));
+  await page.getByRole('button', { name: 'Run query' }).click();
+  const table = page.locator('.results table');
+  await expect(table.locator('th')).toHaveText(['principal.hostname', '$first', '$last']);
+  await expect(table.locator('tbody td').nth(1)).toHaveText(/^03-13 19:40:05 \(\d{10}\)$/);
+  await expect(table.locator('tbody td').nth(2)).toHaveText(/^03-14 05:50:06 \(\d{10}\)$/);
+  await page.getByRole('button', { name: 'Check query' }).click();
+  await expect(page.locator('.desk .feedback')).toContainText('Query correct');
+  await page.getByLabel(/clock time is in the \$first column/).fill('19:40');
+  await page.getByRole('button', { name: 'Check answer' }).click();
+  await expect(page.locator('.part [role="status"]').first()).toContainText('Correct.');
+  // A plain sum column stays a number.
+  await editor.fill('metadata.event_type = "NETWORK_CONNECTION"\nmatch:\n  principal.hostname\noutcome:\n  $bytes = sum(network.sent_bytes)\norder:\n  $bytes desc\nlimit:\n  1');
+  await page.getByRole('button', { name: 'Run query' }).click();
+  await expect(table.locator('tbody td').nth(1)).toHaveText('48,345,375');
+
+  // C01-M10: a Read mission; the desk is disabled, the three queries are in the side-by-side, the call completes the investigation.
+  await page.goto('#C01-M10');
+  await expect(page.locator('h1')).toHaveText('Spot the wrong query');
+  await expect(page.locator('textarea.editor')).toBeDisabled();
+  await expect(page.getByText('Side by side')).toBeVisible();
+  await expect(page.locator('.explain li')).toHaveCount(3);
+  await expect(page.locator('.logit')).toBeHidden();
+  await page.locator('input[type="radio"][value="C"]').check();
+  await page.getByRole('button', { name: 'Check call' }).click();
+  await expect(page.locator('.part [role="status"]').last()).toContainText('Right.');
+  await expect(page.locator('.logit')).toBeVisible();
+  await expect(page.locator('.logit')).toContainText('This mission earned: a pivot');
+
+  // C06-M06: a Your-turn mission with no event type; a narrower query fails with the one-sided reason, the full one passes.
+  await page.goto('#C06-M06');
+  await expect(page.locator('h1')).toHaveText('Everything from one address');
+  const ed = page.locator('textarea.editor');
+  await expect(ed).toHaveValue('');
+  await ed.fill('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "FAIL"\nprincipal.ip = "198.51.100.23"');
+  await ed.press('Control+Shift+Enter');
+  await expect(page.locator('.desk .feedback')).toContainText('misses events');
+  await expect(page.locator('.desk .feedback .examples')).toContainText('evt-00094');
+  await ed.fill('principal.ip = "198.51.100.23"');
+  await ed.press('Control+Shift+Enter');
+  await expect(page.locator('.desk .feedback')).toContainText('Query correct');
+  await expect(page.locator('.results .summary')).toContainText('8 events');
+  // The chapter page's mission map reflects the partial progress on this mission.
+  await page.goto('#C06');
+  const seg = page.getByRole('region', { name: 'Mission map' }).locator('.seg[href="#C06-M06"]');
+  await expect(seg).toHaveClass(/partial/);
+  await expect(seg).toHaveAttribute('aria-label', 'Mission 4, Everything from one address, Your turn, in progress');
 });

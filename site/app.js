@@ -132,7 +132,7 @@ function casebookCard() {
     el('div', { class: 'row', style: 'margin-top:10px;justify-content:space-between' }, meterLine, el('button', { class: 'ghost', text: 'Open the Casebook', onclick: () => cbui.open() })),
     meter,
     el('div', { class: 'row', style: 'margin-top:10px' }, clearBtn),
-    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'The Casebook button in the top bar, or Ctrl+Shift+N, opens it on every page. Export is a local Markdown download; nothing is uploaded.' }));
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'The Casebook button in the top bar, or Alt+Shift+C, opens it on every page. Export is a local Markdown download; nothing is uploaded.' }));
 }
 const onBookChangeAlso = fn => { const prev = onBookChange; onBookChange = () => { prev?.(); fn(); }; };
 
@@ -145,6 +145,7 @@ function chapterPage(ch) {
       el('div', { class: 'eyebrow', text: `Chapter ${String(idx + 1).padStart(2, '0')}` }),
       el('h1', { text: ch.title }), el('p', { class: 'muted', text: ch.subtitle }), el('p', { text: ch.intro }),
       el('ul', { class: 'chips' }, ch.concepts.map(c => el('li', { text: c })))),
+    missionMap(ch),
     el('section', { class: 'card' },
       el('div', { class: 'eyebrow', text: 'Missions' }),
       el('ul', { class: 'list' }, ch.missions.map((mm, i) => { const m = BY_ID.get(mm.id); return el('li', {},
@@ -152,6 +153,21 @@ function chapterPage(ch) {
         el('span', { class: 'row' }, el('span', { class: 'pill ' + m.kind, text: KIND_LABEL[m.kind] }), el('span', { class: 'pill' + (isDone(m) ? ' done' : ''), text: `${earned(m)} / ${missionMax(m)}` }))); }))),
     recapCard(ch),
     el('div', { class: 'navrow' }, idx > 0 ? linkBtn('#' + CHAPTERS[idx - 1].id, '← Previous chapter') : el('span'), idx < CHAPTERS.length - 1 ? linkBtn('#' + CHAPTERS[idx + 1].id, 'Next chapter →') : allDone() ? linkBtn('#closed', 'Case closed →', true) : el('span')));
+}
+
+// Mission map: one segment per mission at the top of a chapter page, coloured by kind and filled when complete, each a
+// link. Chapters are long enough now that the list below needs a shape above it; the legend names the four kinds.
+function missionMap(ch) {
+  const d = chapterDone(ch), n = ch.missions.length;
+  const kinds = [...new Set(ch.missions.map(m => m.kind))];
+  return el('section', { class: 'card mmap', 'aria-label': 'Mission map' },
+    el('div', { class: 'row', style: 'justify-content:space-between;align-items:baseline' },
+      el('div', { class: 'eyebrow', style: 'margin:0', text: `Mission map · ${d} of ${n} complete` }),
+      el('ul', { class: 'legend', 'aria-label': 'Kinds in this chapter' }, kinds.map(k => el('li', {}, el('span', { class: 'swatch ' + k, 'aria-hidden': 'true' }), KIND_LABEL[k])))),
+    el('ol', { class: 'strip' }, ch.missions.map((mm, i) => { const m = BY_ID.get(mm.id); const done = isDone(m);
+      return el('li', {}, el('a', { class: 'seg ' + m.kind + (done ? ' done' : isInvestigated(m) || earned(m) ? ' partial' : ''), href: '#' + m.id,
+        'aria-label': `Mission ${i + 1}, ${m.title}, ${KIND_LABEL[m.kind]}, ${done ? 'complete' : earned(m) ? 'in progress' : 'not started'}`, title: `${i + 1}. ${m.title} · ${KIND_LABEL[m.kind]}` },
+        el('span', { class: 'n', 'aria-hidden': 'true', text: String(i + 1) }), el('span', { class: 'fill', 'aria-hidden': 'true' }))); })));
 }
 
 // Chapter-end recap: what the learner can now do, in plain language. Before the chapter is complete it reads as a
@@ -304,8 +320,10 @@ function missionPage(m) {
     const raw = el('div', { hidden: true, role: 'region', 'aria-label': 'Full record', tabindex: -1 });
     // Opening a record moves focus into the region; closing it returns focus to the button that opened it.
     // Insert from results: the selected record's time and metadata.id go into the Evidence draft; the observation stays the learner's.
+    // Outcomes computed on the timestamp (min/max of metadata.event_timestamp.seconds) read as clock times, with the raw seconds beside them.
+    const timeCols = new Set((run.query?.outcomes ?? []).filter(o => o.field === 'metadata.event_timestamp.seconds' && (o.fn === 'min' || o.fn === 'max')).map(o => o.name));
     const wrap = el('div', { class: 'tablewrap' }, r.count ? resultsTable(r, (rec, opener) => { clear(raw); raw.hidden = false; raw.append(el('div', { class: 'row', style: 'justify-content:space-between;margin-top:8px' }, el('strong', { class: 'small', text: 'Full record ' + rec['metadata.id'] }),
-      el('span', { class: 'row' }, el('button', { class: 'ghost', text: 'Add to Casebook', 'aria-label': 'Add record ' + rec['metadata.id'] + ' to the Casebook evidence draft', onclick: () => cbui.insertEvidence({ time: hhmm(rec['metadata.event_timestamp.seconds']), id: rec['metadata.id'] }) }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; opener?.focus(); } }))), rawRecord(rec)); raw.focus(); }) : el('div', { class: 'empty', text: 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.' }));
+      el('span', { class: 'row' }, el('button', { class: 'ghost', text: 'Add to Casebook', 'aria-label': 'Add record ' + rec['metadata.id'] + ' to the Casebook evidence draft', onclick: () => cbui.insertEvidence({ time: hhmm(rec['metadata.event_timestamp.seconds']), id: rec['metadata.id'] }) }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; opener?.focus(); } }))), rawRecord(rec)); raw.focus(); }, timeCols) : el('div', { class: 'empty', text: 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.' }));
     results.append(head, wrap, raw);
   };
 
@@ -339,8 +357,8 @@ function missionPage(m) {
     if (m.kind !== 'watch') deskButtons.append(el('button', { text: 'Check query', onclick: doCheck }));
     deskButtons.append(el('button', { class: 'ghost', text: 'Reset', onclick: () => { editor.value = s.text = m.starter ?? ''; s.run = null; s.query = null; paintResults(); feedback.hidden = true; } }));
     const keys = (...ks) => ks.flatMap((k, i) => (i ? [' + ', el('kbd', { text: k })] : [el('kbd', { text: k })]));
-    deskButtons.append(el('span', { class: 'small muted keys', id: 'editor-help-' + m.id }, ...keys('Ctrl', 'Enter'), ' runs', m.kind !== 'watch' ? [' · ', ...keys('Ctrl', 'Shift', 'Enter'), ' checks'] : [], ' · ', el('kbd', { text: 'Tab' }), ' leaves the editor', ' · ', ...keys('Ctrl', 'Shift', 'N'), ' casebook'));
-  } else deskButtons.append(el('span', { class: 'small muted keys' }, ...(() => { const k = (...ks) => ks.flatMap((x, i) => (i ? [' + ', el('kbd', { text: x })] : [el('kbd', { text: x })])); return k('Ctrl', 'Shift', 'N'); })(), ' opens the casebook'));
+    deskButtons.append(el('span', { class: 'small muted keys', id: 'editor-help-' + m.id }, ...keys('Ctrl', 'Enter'), ' runs', m.kind !== 'watch' ? [' · ', ...keys('Ctrl', 'Shift', 'Enter'), ' checks'] : [], ' · ', el('kbd', { text: 'Tab' }), ' leaves the editor', ' · ', ...keys('Alt', 'Shift', 'C'), ' casebook'));
+  } else deskButtons.append(el('span', { class: 'small muted keys' }, ...(() => { const k = (...ks) => ks.flatMap((x, i) => (i ? [' + ', el('kbd', { text: x })] : [el('kbd', { text: x })])); return k('Alt', 'Shift', 'C'); })(), ' opens the casebook'));
 
   const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))));
 
@@ -466,7 +484,7 @@ function aboutPage() {
       el('p', { text: 'You write YARA-L 2.0 Search queries against a small fictional dataset of UDM events and see what comes back. Queries are graded by running them: if yours returns the same evidence as the reference, it passes, however you spelled it. Answers are read from your own results. Analyst calls are fixed-choice reasoning checks with an explanation either way.' }),
       el('p', { text: 'Points are formative. Hints never cost anything and the last hint is a full answer. A complete course proves you can read and write the taught subset against this data; it does not prove tenant execution, detection skill or anything an employer should rely on.' })),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'The Casebook' }),
-      el('p', { text: 'A notebook for the case, opened from the top bar or with Ctrl+Shift+N: scope, evidence with record IDs, a timeline, hypotheses, pivots, gaps, a determination, remediation in four lists and an engineering handoff. Each mission ends by asking for one entry; a deterministic check looks at structure only (required fields, UTC times, record IDs that exist, references that resolve, no claim words without a record) and never at the quality of the thinking. It is session-only unless you turn on remembering on the case file page; the export is a local Markdown download.' })),
+      el('p', { text: 'A notebook for the case, opened from the top bar or with Alt+Shift+C: scope, evidence with record IDs, a timeline, hypotheses, pivots, gaps, a determination, remediation in four lists and an engineering handoff. Each mission ends by asking for one entry; a deterministic check looks at structure only (required fields, UTC times, record IDs that exist, references that resolve, no claim words without a record) and never at the quality of the thinking. It is session-only unless you turn on remembering on the case file page; the export is a local Markdown download.' })),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'What it is not' }),
       el('ul', {}, ['Not connected to any SIEM, and never will be. Nothing you type leaves this tab.', 'Not Google\'s compiler. The supported subset is documented; valid Google syntax outside it is reported as "not run here", separately from mistakes.', 'Not real data. Every event is generated by a script in this repository; IP addresses come from documentation ranges; people and places are invented.', 'Not a place for workplace values. Practise the shape here; use real identifiers only inside tools your employer authorizes.'].map(t => el('li', { text: t })))),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Supported subset' }),

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { root, loadContent, loadData, validate, deriveAnswer, validateLogIt } from '../../tools/lib.mjs';
+import { root, loadContent, loadData, validate, deriveAnswer, validateLogIt, DENSITY } from '../../tools/lib.mjs';
 import { runQuery, compareResults, gradeQuery, gradeAnswer, gradeCall } from '../../site/engine/grader.js';
 import { MESSAGES, describe } from '../../site/ui/messages.js';
 
@@ -119,10 +119,10 @@ test('C8 every chapter carries a recap for its chapter-end card, and the validat
   assert.ok(validate(bad, data).some(p => p.includes('C03') && p.includes('recap')));
 });
 
-test('C9 every original mission carries a Log it block the validator accepts; the new notes mission has none; the validator refuses a bad one', () => {
+test('C9 every mission but the notes mission carries a Log it block the validator accepts; the validator refuses a bad one', () => {
   const withLogIt = missions.filter(m => m.logIt);
-  assert.equal(withLogIt.length, 25);
-  assert.equal(missions.length, 26);
+  assert.equal(withLogIt.length, 48);
+  assert.equal(missions.length, 49);
   assert.equal(missions.find(m => m.id === 'C01-M00').logIt, undefined);
   assert.equal(missions[0].id, 'C01-M00');
   const kinds = new Set(withLogIt.map(m => m.logIt.kind));
@@ -144,6 +144,36 @@ test('C9 every original mission carries a Log it block the validator accepts; th
   assert.deepEqual(validateLogIt({ kind: 'remediation', prompt: 'write something useful here', mustInclude: ['evt-00001'], list: 'harden' }, 'T', eventIds), []);
   const bad = JSON.parse(JSON.stringify(content)); bad.chapters[0].missions[1].logIt.mustInclude = ['evt-99999'];
   assert.ok(validate(bad, data).some(p => p.includes('C01-M01') && p.includes('evt-99999')));
-  const noBrief = JSON.parse(JSON.stringify(content)); noBrief.chapters[5].missions[3].explain = noBrief.chapters[5].missions[3].explain.filter(e => e.part !== 'Handoff');
+  const noBrief = JSON.parse(JSON.stringify(content)); const hand = noBrief.chapters[5].missions.find(m => m.id === 'C06-M04'); hand.explain = hand.explain.filter(e => e.part !== 'Handoff');
   assert.ok(validate(noBrief, data).some(p => p.includes('C06-M04') && p.includes('brief')));
+});
+
+test('C10 chapter density: 7 to 8 desk missions per chapter and two Your-turn missions after chapter 1; the validator refuses a thin chapter', () => {
+  assert.deepEqual(DENSITY, { min: 7, maxDesk: 8, solo: 2, soloFirst: 1 });
+  for (const [i, ch] of content.chapters.entries()) {
+    assert.ok(ch.missions.length >= 7, `${ch.id} has ${ch.missions.length} missions`);
+    assert.ok(ch.missions.filter(m => m.kind !== 'read').length <= 8, `${ch.id} desk missions`);
+    assert.ok(ch.missions.filter(m => m.kind === 'solo').length >= (i === 0 ? 1 : 2), `${ch.id} Your-turn missions`);
+  }
+  assert.equal(missions.length, 49);
+  // every new mission carries the full schema
+  const NEW = missions.filter(m => Number(m.id.slice(-2)) >= (m.id.startsWith('C01') ? 7 : m.id.startsWith('C06') ? 5 : m.id.startsWith('C05') ? 4 : 5));
+  assert.equal(NEW.length, 23);
+  for (const m of NEW) {
+    for (const k of ['kind', 'beat', 'question', 'concept', 'explain', 'starter', 'reference', 'hints', 'answer', 'call', 'clue', 'caveat', 'logIt']) assert.ok(Object.hasOwn(m, k), `${m.id} lacks ${k}`);
+    if (m.kind !== 'read') { assert.equal(m.hints.length, 3, m.id); assert.ok(m.answer?.check?.type, m.id); }
+    assert.ok(m.call.why.length > 20, m.id);
+  }
+  // the min/max mission reads its answer as a clock time from a timestamp cell
+  assert.equal(deriveAnswer(missions.find(m => m.id === 'C05-M04'), data.events), '19:40');
+  // should-fail: too few missions, too many desk missions, too few Your-turn missions
+  const thin = JSON.parse(JSON.stringify(content)); thin.chapters[4].missions.splice(0, 1);
+  assert.ok(validate(thin, data).some(p => p.includes('C05') && p.includes('needs at least 7')));
+  const fat = JSON.parse(JSON.stringify(content)); const extra = JSON.parse(JSON.stringify(fat.chapters[1].missions[1])); extra.id = 'C02-M99'; fat.chapters[1].missions.push(extra);
+  assert.ok(validate(fat, data).some(p => p.includes('C02') && p.includes('at most 8')));
+  const noSolo = JSON.parse(JSON.stringify(content)); for (const m of noSolo.chapters[2].missions) if (m.kind === 'solo') { m.kind = 'build'; m.starter = m.reference.replace('PROCESS_LAUNCH', '___'); }
+  assert.ok(validate(noSolo, data).some(p => p.includes('C03') && p.includes('Your-turn')));
+  // chapter 1 is allowed a single Your-turn mission
+  const oneSolo = JSON.parse(JSON.stringify(content)); const s = oneSolo.chapters[0].missions.find(m => m.id === 'C01-M09'); s.kind = 'build'; s.starter = s.reference.replace('USER_LOGIN', '___');
+  assert.ok(!validate(oneSolo, data).some(p => p.includes('C01') && p.includes('Your-turn')));
 });

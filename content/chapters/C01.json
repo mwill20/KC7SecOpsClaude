@@ -6,11 +6,11 @@
   "concepts": ["Facts, hypotheses and gaps are different sentences", "An event is one record of one thing happening", "USER_LOGIN includes attempts that failed", "Count accounts, not repeated logins", "Blank fields are zero values, not errors"],
   "recap": [
     "Filter one event type and one action with two stacked conditions",
-    "Count distinct account IDs and say why that is not a head count",
-    "Group by a field, count per group and sort the biggest first",
-    "Read a blank field as the source saying 'I do not know', not as an error",
-    "Read Google's $e. spelling as the same single-event filter",
-    "Write a casebook entry another analyst could reproduce: UTC time, query, range and record IDs"
+    "Match an account ID exactly, and add nocase only when the spelling is not yours to control",
+    "Count distinct account IDs and say why that is not a head count, then group, count and sort",
+    "Read a blank field as the source saying \"I do not know\", and search the target role when an account was acted on",
+    "Pivot from an account to a host and read the hour that follows a success",
+    "Say a query back as a sentence and catch an OR without parentheses before it reaches the brief"
   ],
   "missions": [
     {
@@ -19,7 +19,7 @@
       "title": "How analysts keep notes",
       "beat": "Before the first query, Odalys slides a legal pad across the desk. 'Whatever you find, write it so I can hand it to someone who was not here.' A casebook is that pad: what you saw, where you saw it, and what you only think.",
       "question": "What makes a note useful to the next analyst, at 3 a.m., who has never heard of Pier Nine?",
-      "concept": { "title": "Facts, inference and gaps live in different sentences", "text": "A fact is what a record shows and another analyst can reproduce from the same query, time range and record IDs. An inference is the story that would explain the facts; label it a hypothesis until a record supports it. A gap is what you could not see. Keep every time in UTC, write one claim per entry, and cite a record or mark the sentence as a hypothesis. The Casebook (top bar, or Ctrl+Shift+N) has a tab for each of these; every mission from here on ends by asking you for one entry." },
+      "concept": { "title": "Facts, inference and gaps live in different sentences", "text": "A fact is what a record shows and another analyst can reproduce from the same query, time range and record IDs. An inference is the story that would explain the facts; label it a hypothesis until a record supports it. A gap is what you could not see. Keep every time in UTC, write one claim per entry, and cite a record or mark the sentence as a hypothesis. The Casebook (top bar, or Alt+Shift+C) has a tab for each of these; every mission from here on ends by asking you for one entry." },
       "explain": [
         { "part": "A good entry", "meaning": "19:05 to 19:10 UTC · USER_LOGIN · seven FAIL events for pledge-desk from 198.51.100.23 through VPN-GW-01; principal.hostname blank on every one · records evt-00039 to evt-00057 · source: metadata.event_type = \"USER_LOGIN\" and principal.user.userid = \"pledge-desk\", whole night · confidence high. Reproducible, UTC, one claim, no verdict." },
         { "part": "A bad entry", "meaning": "Someone clearly brute-forced the pledge desk around 7 last night and got in. Probably Marco. No query, no range, no record ID, a local time, a verdict and a name in one sentence; nothing in it can be checked by anyone else." },
@@ -109,6 +109,40 @@
       "clue": "Fourteen failures. Marco is in there: three attempts from Studio B around 22:40, each marked 'Account disabled'. But he is not the only one, and he is not the biggest. Count before you conclude.",
       "logIt": {"kind":"evidence","prompt":"Log the failures as evidence. Time: the whole night as a range. Source: the query and range you ran. Observation: how many USER_LOGIN events carry FAIL and which accounts appear, including marco.vela's three from STUDIO-B marked 'Account disabled'. Records: at least one of Marco's three (open a row, press Add to Casebook). Confidence: high; you are reporting a count, not a cause.","mustInclude":["marco.vela","evt-00387|evt-00388|evt-00391"]},
       "caveat": "Different products record failure differently. In your own tenant, check how a source maps its failure codes before trusting a FAIL count."
+    },
+    {
+      "id": "C01-M07",
+      "kind": "build",
+      "title": "Hal spells it in capitals",
+      "beat": "Hal writes MARCO.VELA on the whiteboard in block capitals and says 'pull his attempts'. Account IDs in UDM are strings, and strings match exactly, case included. Pull Marco's login attempts whatever case the board or the source used.",
+      "question": "How many login attempts did marco.vela make tonight, matched without regard to case?",
+      "concept": {"title":"Exact means exact, until you say nocase","text":"An = comparison on a string field matches character for character. \"MARCO.VELA\" and \"marco.vela\" are different strings, so the capitals from the whiteboard return nothing, not an error. nocase at the end of the condition switches case off for that one comparison. Use it when the source's spelling is not under your control; leave it off when you know the exact value, because exact is faster and cannot over-match."},
+      "explain": [
+        {"part":"principal.user.userid = \"MARCO.VELA\"","meaning":"Exact, case-sensitive. The source wrote marco.vela in lower case, so this alone returns zero rows."},
+        {"part":"nocase","meaning":"Goes at the end of the one condition it applies to. The comparison now ignores case on both sides."},
+        {"part":"zero rows is not an error","meaning":"An empty result means no record matched. Before you conclude Marco never tried, check the spelling, then the range, then the field."}
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\nprincipal.user.userid = \"MARCO.VELA\" ___",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\nprincipal.user.userid = \"MARCO.VELA\" nocase",
+      "hints": [
+        "Run the starter without the gap first: the capitals match nothing. You need the word that switches case off.",
+        "Replace ___ with nocase, after the closing quote.",
+        "metadata.event_type = \"USER_LOGIN\"\nprincipal.user.userid = \"MARCO.VELA\" nocase"
+      ],
+      "answer": {"prompt":"How many login events are there for marco.vela?","value":"3","check":{"type":"count"}},
+      "call": {
+        "prompt": "A colleague's query for an account returns zero rows and they write 'no activity' in the brief. What should you ask first?",
+        "options": [
+          {"id":"A","label":"Whether the value was spelled and cased exactly as the source records it, and whether the time range covers the night"},
+          {"id":"B","label":"Nothing; an empty result is the engine telling you the account was idle, and the brief can say so"},
+          {"id":"C","label":"Whether they added nocase, since every string comparison in Search needs it or the query returns nothing"}
+        ],
+        "correct": "A",
+        "why": "An empty result is information only once the query is known to be right. Spelling, case and range are the three usual reasons a real account looks idle."
+      },
+      "clue": "Three attempts, 22:41 to 22:44, all from STUDIO-B, all 'Account disabled'. In capitals or not, that is the whole of Marco's night in the login log. Hal's whiteboard is not wrong about the attempts; it is wrong about what they mean.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 22:41. Fact: marco.vela failed three logins from STUDIO-B between 22:41 and 22:44, each marked 'Account disabled'; none succeeded. Evidence ref: the # of your failures evidence from mission 3, which carries one of his records. A timeline entry points at evidence; it never stands alone.","mustInclude":["22:41","marco.vela|Marco","STUDIO-B"]},
+      "caveat": "Some sources upper-case user IDs, some preserve what was typed. In your own tenant, open one record and copy the value as it is stored before you decide whether nocase is needed."
     },
     {
       "id": "C01-M03",
@@ -207,6 +241,99 @@
       "clue": "Seven failures from one outside address between 19:05 and 19:10, then a success from the same address at 19:21, then two sign-ins on AUTOMATION-01 nine minutes later. The playout PC. Hal's suspect was in Studio B at 22:40 getting 'Account disabled'. The timeline already does not fit his story.",
       "logIt": {"kind":"evidence","prompt":"Log the burst as evidence. Time: the range of the seven failures, 19:05 to 19:10. Source: your query and range. Observation: seven FAIL events for pledge-desk from one outside address through VPN-GW-01 with a blank hostname, then an ALLOW from the same address at 19:21. Records: at least one failure and the success (open a row, press Add to Casebook). Name the IP; do not name a person.","mustInclude":["19:05","198.51.100.23","evt-00039|evt-00040|evt-00048|evt-00049|evt-00053|evt-00054|evt-00057|evt-00094"]},
       "caveat": "In production, exact matching is case-sensitive unless you add nocase. Account IDs vary by source; check how yours are recorded."
+    },
+    {
+      "id": "C01-M08",
+      "kind": "build",
+      "title": "Same question, other role",
+      "beat": "Two of the AUTOMATION-01 sign-ins carried a second account in a field you have not searched yet. principal.user is who acted. target.user is who was acted on, or as. Ask the login log the same question from the other side: which logins were performed as someone else?",
+      "question": "How many login events tonight name an account in the target role?",
+      "concept": {"title":"The same question, asked of the other role","text":"UDM gives every event two sides. principal.user.userid is the account that did the thing. target.user.userid is the account the thing was done to, or done as. On an ordinary sign-in the target side is blank. On a run-as or impersonation it carries the second account. Searching principal for an account that was only ever a target returns nothing, confidently."},
+      "explain": [
+        {"part":"target.user.userid != \"\"","meaning":"Keep records where the acted-on account is filled. != \"\" is how you say \"not blank\" in a dialect with no null."},
+        {"part":"principal.user.userid","meaning":"Still on every row. Read both columns together: who did it, as whom."}
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\n___.user.userid != \"\"",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid != \"\"",
+      "hints": [
+        "The account that was acted on is in the target role, not principal.",
+        "Fill the gap with target, so the condition reads target.user.userid != \"\".",
+        "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid != \"\""
+      ],
+      "answer": {"prompt":"How many login events have a non-blank target.user.userid?","value":"2","check":{"type":"count"}},
+      "call": {
+        "prompt": "Both rows name svc-playout in the target role, one from the shared account at 19:31 and one from dez.okafor at 20:15. What does the field tell you on its own?",
+        "options": [
+          {"id":"A","label":"That svc-playout signed in twice tonight on its own, so the service account itself is the account to investigate first"},
+          {"id":"B","label":"That two different principals used the playout service account; who they were and why is the next question, not this one"},
+          {"id":"C","label":"That the two events are duplicates of one run-as, logged once per account involved, and should be counted as a single login"}
+        ],
+        "correct": "B",
+        "why": "The target field says which account was used, the principal field says by whom. Two principals, one target: the service account was borrowed twice, and chapter 2 asks by whom and why."
+      },
+      "clue": "Two run-as events, both on AUTOMATION-01, both as svc-playout: pledge-desk at 19:31:10 and dez.okafor at 20:15:02. Had you searched principal.user.userid = \"svc-playout\" you would have found neither. Roles are a field, not a hint.",
+      "logIt": {"kind":"hypothesis","prompt":"Log a Hypothesis, status open: the pledge-desk session on AUTOMATION-01 borrowed svc-playout at 19:31 to control the playout software. Test next: what did that session launch on the playout PC after 19:31 (PROCESS_LAUNCH, chapter 3), and does Dez's 20:15 run-as have an ordinary explanation?","mustInclude":["svc-playout","19:31"]},
+      "caveat": "Products disagree about which side of a run-as goes in principal. Read one record of each shape in your own tenant before you write a search that depends on the role."
+    },
+    {
+      "id": "C01-M09",
+      "kind": "solo",
+      "title": "Pivot to the playout PC",
+      "beat": "The 19:21 success from outside was followed, nine minutes later, by sign-ins on AUTOMATION-01. A pivot is a change of key: you stop asking about an account and start asking about a machine. Pull every login event on the playout PC, any account, any outcome, and read the hour after 19:21.",
+      "question": "Who signed in on AUTOMATION-01 tonight, and when?",
+      "concept": {"title":"A pivot changes the key, not the question","text":"You have been filtering on the account. The evidence now points at a host, so you filter on the host and let the accounts fall out of the rows. Every login event carries principal.hostname; a login on the playout PC has AUTOMATION-01 there. Read the rows in time order and compare them with the 19:21 success: anything in the following hour is part of the same story until shown otherwise."},
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\nprincipal.hostname = \"AUTOMATION-01\"",
+      "hints": [
+        "Two conditions: the login event type, and the machine name in principal.hostname. Hostnames are strings, so quote the value.",
+        "metadata.event_type = \"USER_LOGIN\" and principal.hostname = \"AUTOMATION-01\" on two lines.",
+        "metadata.event_type = \"USER_LOGIN\"\nprincipal.hostname = \"AUTOMATION-01\""
+      ],
+      "answer": {"prompt":"At what time is the first login on AUTOMATION-01 (HH:MM, UTC)?","value":"19:30","also":["19:30:45"],"check":{"type":"time","index":0}},
+      "call": {
+        "prompt": "Three logins on the playout PC all night: the shared account twice within a minute of each other, then dez.okafor forty-five minutes on. How do you read the hour after the outside success?",
+        "options": [
+          {"id":"A","label":"The outside session reached the playout PC within ten minutes and borrowed the service account; Dez arrived forty-five minutes later"},
+          {"id":"B","label":"Dez's login at 20:15 is the suspicious one, because an engineer signing in to a machine that is already misbehaving is how cover-ups start"},
+          {"id":"C","label":"Nothing can be read yet, because three logins on a shared machine during a live broadcast is a normal hour for a radio station"}
+        ],
+        "correct": "A",
+        "why": "The sequence is the finding: outside success at 19:21, remote logon on the playout PC at 19:30, run-as at 19:31. Dez's 20:15 is in character for the person who keeps the PC alive, and chapter 3 checks what he ran."
+      },
+      "clue": "19:30:45, 'Remote interactive logon', pledge-desk. 19:31:10, 'Run as different user', pledge-desk as svc-playout. 20:15:02, dez.okafor as svc-playout. Nine minutes from the VPN to the machine that decides what goes on air.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 19:30. Fact: pledge-desk signed in to AUTOMATION-01 with a remote interactive logon at 19:30:45 and ran as svc-playout at 19:31:10, nine minutes after the 19:21 success from outside. Evidence ref: the # of your burst evidence, which carries the 19:21 success record. Open the 19:30 row and press Add to Casebook if you also want it as evidence.","mustInclude":["19:30","AUTOMATION-01"]},
+      "caveat": "Remote desktop and run-as are logged with different logon types in Windows. The summary field here is a stand-in for the logon type your source records; learn which numbers yours uses."
+    },
+    {
+      "id": "C01-M10",
+      "kind": "read",
+      "title": "Spot the wrong query",
+      "beat": "Before the chapter ends, a test of reading rather than writing. Odalys asks: 'How many of tonight's failed logins were the pledge-desk account?' Three analysts write three queries. Two return the right evidence. One returns a confident wrong answer, and nothing about the result table says so.",
+      "question": "Which of the three queries returns the wrong evidence for the question, and why?",
+      "concept": {"title":"A query that runs is not a query that is right","text":"Search reports syntax errors. It does not report questions you did not mean to ask. AND binds tighter than OR, so A AND B OR C means (A AND B) OR C. A grouped field such as user widens a condition across roles. Neither produces an error; both change the count. The habit: before you quote a number, say the query back to yourself as a sentence and check it is the sentence Odalys asked."},
+      "explain": [
+        {"part":"Query 1\nmetadata.event_type = \"USER_LOGIN\"\nprincipal.user.userid = \"pledge-desk\"\nsecurity_result.action = \"FAIL\"","meaning":"Three conditions joined by implicit AND: login, this account, failed. Returns seven events. This is the question as asked."},
+        {"part":"Query 2\nmetadata.event_type = \"USER_LOGIN\" AND principal.user.userid = \"pledge-desk\" OR security_result.action = \"FAIL\"","meaning":"Reads as (login AND pledge-desk) OR failed. Every pledge-desk login, including the successes, plus every failure by anyone. Returns seventeen events. Runs without a warning."},
+        {"part":"Query 3\nsecurity_result.action = \"FAIL\"\nuser = \"pledge-desk\"","meaning":"No event type, and the grouped field user covers principal and target. It happens to return the same seven events tonight, because only logins carry FAIL and pledge-desk is never a target. Right evidence, by luck rather than by design."}
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\" AND principal.user.userid = \"pledge-desk\" OR security_result.action = \"FAIL\"",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Which query would put a wrong number in the brief, and what is the one-line fix?",
+        "options": [
+          {"id":"A","label":"Query 3; it needs the event type, because without it the FAIL condition can match any event that carries a failure action"},
+          {"id":"B","label":"Query 1; stacking three conditions on separate lines leaves the join ambiguous, so it should be written with explicit AND"},
+          {"id":"C","label":"Query 2; the OR swallowed the account condition, so wrap the two alternatives in parentheses or drop the OR entirely"}
+        ],
+        "correct": "C",
+        "why": "Query 2 returns seventeen, not seven, because the OR applied to everything before it. Query 3 is loose but right tonight; query 1 is right by construction. Precedence errors are the ones that look most like evidence."
+      },
+      "clue": "Seven, seventeen, seven. Two of the three analysts would have been right; the third would have been confidently wrong in front of the board. Paste query 2 into the desk and count. Then add the parentheses and count again.",
+      "logIt": {"kind":"pivot","prompt":"Log a Pivot: re-read every query already cited in this casebook as a sentence, and mark any that uses OR without parentheses or a grouped field without an event type for a re-run before it is quoted. Name query 2's wrong count in the text so the next analyst knows what the trap looked like.","mustInclude":["17|seventeen","OR|parentheses"]},
+      "caveat": "Google documents operator precedence in the search syntax reference. When a count surprises you, the first suspect is the query, not the data."
     },
     {
       "id": "C01-M06",
