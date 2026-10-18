@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCasebook, validateState, checkEntry, checkLogIt, contextFor, toMarkdown, handoffText, sortTimeline, isTime, KEY, MAX_BYTES, FIELDS, KINDS, SINGLE } from '../../site/ui/casebook.js';
+import { createCasebook, validateState, checkEntry, checkLogIt, contextFor, toMarkdown, handoffText, sortTimeline, isTime, KEY, MAX_BYTES, MAX_NAME, MAX_FREEFORM, FIELDS, KINDS, TABS, SINGLE, normalizePaste, freeformBytes, checkFreeform, exportFilename, cleanName } from '../../site/ui/casebook.js';
 import { loadContent, loadData } from '../../tools/lib.mjs';
 
 const CASE = 'pier-nine';
@@ -115,7 +115,9 @@ test('N1 a complete evidence entry passes, and every rule message is plain langu
   assert.deepEqual(checkEntry('timeline', { time: '19:21', fact: 'first success for pledge-desk from 198.51.100.23', ref: 1 }, ctxWith(cb)), []);
   assert.deepEqual(checkEntry('hypothesis', { statement: 'guessing from outside', status: 'supported', supporting: [1], contradicting: [], testNext: '' }, ctxWith(cb)), []);
   assert.deepEqual(checkEntry('remediation', { list: 'contain', text: 'block egress to 203.0.113.0/24', refs: [1], owner: 'network engineer', urgency: 'now' }, ctxWith(cb)), []);
-  assert.deepEqual(checkEntry('scope', { question: 'who touched a keyboard', requestedBy: 'Odalys Reyes', window: '18:00 to 06:00', inScope: 'logins', outScope: 'names' }, ctxWith(cb)), []);
+  s.setName(CASE, 'Pledge Night static');
+  assert.deepEqual(checkEntry('scope', { question: 'who touched a keyboard', requestedBy: 'Odalys Reyes', window: '18:00 to 06:00', inScope: 'logins', outScope: 'names' }, ctxWith(s.get(CASE))), []);
+  assert.deepEqual(codes(checkEntry('scope', { question: 'who touched a keyboard', requestedBy: 'Odalys Reyes', window: '18:00 to 06:00', inScope: 'logins', outScope: 'names' }, ctxWith(cb))), ['NEEDS_NAME'], 'the scope needs the investigation name');
   assert.ok(isTime('19:21:04') && isTime('19:05 - 19:10') && !isTime('7pm') && !isTime('24:00') && !isTime('19:5'));
 });
 
@@ -145,7 +147,7 @@ test('N4 should-fail: a bad time, a record ID that is not in the dataset, and a 
   assert.deepEqual(codes(checkEntry('evidence', { ...good, observation: '', confidence: '' }, ctxWith(cb))), ['MISSING_FIELD', 'MISSING_FIELD']);
   assert.deepEqual(codes(checkEntry('evidence', { ...good, source: { query: '', range: 'Whole night' } }, ctxWith(cb))), ['MISSING_FIELD']);
   assert.deepEqual(codes(checkEntry('gap', { text: 'no email body', why: '' }, ctxWith(cb))), ['MISSING_FIELD']);
-  assert.deepEqual(codes(checkEntry('scope', { question: 'q', requestedBy: 'O', window: 'all night', inScope: 'a', outScope: 'b' }, ctxWith(cb))), ['BAD_TIME']);
+  assert.deepEqual(codes(checkEntry('scope', { question: 'q', requestedBy: 'O', window: 'all night', inScope: 'a', outScope: 'b' }, ctxWith(cb))), ['BAD_TIME', 'NEEDS_NAME']);
 });
 
 test('N5 should-fail: a supported hypothesis without a supporting ref, a refuted one without a contradicting ref, and an open one without a test', () => {
@@ -209,5 +211,90 @@ test('N8 export: the Markdown and the handoff text are built from the entries on
   assert.match(ticket, /Acceptance criteria\nrule fires on replay/);
   assert.ok(!md.includes('localStorage') && !md.includes('<'), 'no markup, no storage internals');
   const empty = toMarkdown(s.get('other'), { id: 'other' });
-  assert.match(empty, /## Scope\n\n_Not written._/); assert.match(handoffText(s.get('other')), /\(not written\)/);
+  assert.match(empty, /## Scope\n\n- Investigation: _\(unnamed\)_\n- _Scope not written._/); assert.match(handoffText(s.get('other')), /\(not written\)/);
+});
+
+// ---------- the investigation name and the FreeForm page ----------
+test('F1 the name is the first field: cleaned, bounded at 120 characters, saved per case, shown in the export title and file name, and the Scope check requires it', () => {
+  const st = memStorage(); const s = createCasebook(st); s.setRemember(true);
+  assert.equal(s.setName(CASE, '  Pledge\u0000 Night \n static  ').name, 'Pledge Night static');
+  assert.equal(s.setName(CASE, 'x'.repeat(500)).name.length, MAX_NAME);
+  assert.equal(s.get(CASE).name.length, MAX_NAME);
+  s.setName(CASE, 'Pledge Night: static at 03:10!'); s.setName('other', 'Second case');
+  assert.equal(s.get(CASE).name, 'Pledge Night: static at 03:10!'); assert.equal(s.get('other').name, 'Second case');
+  assert.ok(st.getItem(KEY).includes('Second case'));
+  const md = toMarkdown(s.get(CASE), { id: CASE, title: 'Static on Pier Nine' });
+  assert.match(md, /^# Casebook: Pledge Night: static at 03:10! \(Static on Pier Nine\)/);
+  assert.match(md, /- Investigation: Pledge Night: static at 03:10!/);
+  assert.equal(exportFilename('Pledge Night: static at 03:10!', CASE), 'casebook-pledge-night-static-at-03-10.md');
+  assert.equal(exportFilename('', CASE), 'casebook-pier-nine.md');
+  assert.equal(exportFilename('../../etc/passwd <script>', CASE), 'casebook-etc-passwd-script.md');
+  assert.equal(exportFilename('x'.repeat(100), CASE).length, 'casebook-.md'.length + 40);
+  assert.equal(cleanName(null), '');
+  // the Scope structure check and a scope Log it both need the name
+  const scope = { question: 'who touched a keyboard', requestedBy: 'Odalys Reyes', window: '18:00 to 06:00', inScope: 'logins', outScope: 'names' };
+  s.setSingle(CASE, 'scope', scope);
+  assert.deepEqual(codes(checkEntry('scope', scope, ctxWith(s.get(CASE)))), []);
+  s.setName(CASE, '');
+  assert.deepEqual(codes(checkEntry('scope', scope, ctxWith(s.get(CASE)))), ['NEEDS_NAME']);
+  const li = { kind: 'scope', prompt: 'write the scope', mustInclude: ['Odalys', '18:00'] };
+  assert.equal(checkLogIt(li, s.get(CASE), ctxWith(s.get(CASE))).ok, false);
+  assert.match(checkLogIt(li, s.get(CASE), ctxWith(s.get(CASE))).message, /Name the investigation/);
+  s.setName(CASE, 'named');
+  assert.equal(checkLogIt(li, s.get(CASE), ctxWith(s.get(CASE))).ok, true);
+  // tabs: FreeForm sits after Scope and before Evidence, and is not an entry kind
+  assert.deepEqual(TABS.slice(0, 3), ['scope', 'freeform', 'evidence']); assert.ok(!KINDS.includes('freeform'));
+});
+
+test('F2 FreeForm: bounded at 24 KB of UTF-8 (refused, not truncated), normalised on the way in, exported under Free-form notes, and counted toward the 96 KB store bound', () => {
+  const st = memStorage(); const s = createCasebook(st); s.setRemember(true);
+  assert.equal(s.setFreeform(CASE, 'ALERT / CASE #: 12\r\nQUERY: x\u0000y\u200b').freeform, 'ALERT / CASE #: 12\nQUERY: xy');
+  const full = 'é'.repeat(MAX_FREEFORM / 2);                   // exactly 24 KB in UTF-8
+  assert.equal(s.setFreeform(CASE, full).ok, true);
+  const over = s.setFreeform(CASE, full + 'a');
+  assert.deepEqual(over, { ok: false, reason: 'FREEFORM_FULL' });
+  assert.equal(s.get(CASE).freeform, full, 'a refused write leaves the page as it was');
+  assert.equal(freeformBytes(full), MAX_FREEFORM); assert.equal(freeformBytes(''), 0);
+  assert.equal(s.setFreeform(CASE, '').freeform, '');
+  s.setFreeform(CASE, 'OBSERVATION: seven failures at 19:05, evt-00039');
+  const md = toMarkdown(s.get(CASE), { id: CASE, title: 'Static on Pier Nine' });
+  assert.match(md, /## Free-form notes\n\n```text\nOBSERVATION: seven failures at 19:05, evt-00039\n```/);
+  assert.match(toMarkdown(s.get('other'), { id: 'other' }), /## Free-form notes\n\n_No free-form notes\._/);
+  // the whole store bound still applies: four pages of 24 KB cannot fit beside anything else in 96 KB
+  for (const id of ['a', 'b', 'c']) assert.equal(s.setFreeform(id, 'x'.repeat(MAX_FREEFORM)).ok, true);
+  assert.equal(s.setFreeform('d', 'x'.repeat(MAX_FREEFORM)).reason, 'FULL');
+});
+
+test('F3 should-fail: hostile stored state for the name or the page is ignored and left in place; a good one loads', () => {
+  const cases = [
+    '{"v":1,"cases":{"pier-nine":{"name":123}}}',
+    '{"v":1,"cases":{"pier-nine":{"name":' + JSON.stringify('x'.repeat(MAX_NAME + 1)) + '}}}',
+    '{"v":1,"cases":{"pier-nine":{"freeform":["a"]}}}',
+    '{"v":1,"cases":{"pier-nine":{"freeform":' + JSON.stringify('é'.repeat(MAX_FREEFORM / 2 + 1)) + '}}}',
+    '{"v":1,"cases":{"pier-nine":{"freeform":"ok","notes":"x"}}}',
+  ];
+  for (const text of cases) {
+    const st = memStorage({ [KEY]: text }); const s = createCasebook(st);
+    assert.equal(s.remember, false, text.slice(0, 60)); assert.equal(s.isEmpty(CASE), true, text.slice(0, 60)); assert.equal(st.getItem(KEY), text);
+  }
+  const good = JSON.stringify({ v: 1, cases: { 'pier-nine': { name: 'Pledge Night', freeform: '<img src=x onerror=alert(1)>' } } });
+  const s = createCasebook(memStorage({ [KEY]: good }));
+  assert.equal(s.remember, true); assert.equal(s.get(CASE).name, 'Pledge Night'); assert.equal(s.get(CASE).freeform, '<img src=x onerror=alert(1)>');
+  assert.equal(validateState({ v: 1, cases: { 'pier-nine': { name: 'n', freeform: 'f', seq: 0, nextRef: 1 } } }).cases['pier-nine'].freeform, 'f');
+});
+
+test('F4 paste normalisation keeps text only, and the FreeForm structure check reports presence and nothing else', () => {
+  assert.equal(normalizePaste('a\r\nb\rc\n'), 'a\nb\nc\n');
+  assert.equal(normalizePaste('x\u0007y\u001bz\u200e\u202e\ufeff\ttab'), 'xyz\ttab');
+  assert.equal(normalizePaste(null), '');
+  assert.equal(normalizePaste('<b>bold</b> stays as the characters it is'), '<b>bold</b> stays as the characters it is');
+  const ids = new Set(['evt-00039']);
+  assert.deepEqual(checkFreeform('', ids), { time: false, query: false, record: false, records: [], unknown: [] });
+  assert.deepEqual(checkFreeform('DATE-TIME (UTC): 19:05\nQUERY: metadata.event_type = "USER_LOGIN"\nRESULTS: evt-00039 evt-00039 evt-12345', ids), { time: true, query: true, record: true, records: ['evt-00039'], unknown: ['evt-12345'] });
+  assert.equal(checkFreeform('at 7pm something', ids).time, false);
+  assert.equal(checkFreeform('24:00', ids).time, false);
+  assert.equal(checkFreeform('match:\n  principal.hostname', ids).query, true);
+  assert.equal(checkFreeform('no query here, just words', ids).query, false);
+  assert.equal(checkFreeform('evt-12345 only', ids).record, false);
+  assert.equal(checkFreeform('evt-12345 only', null).record, true, 'without a dataset every well-formed ID counts');
 });

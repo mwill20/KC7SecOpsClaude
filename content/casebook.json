@@ -1,0 +1,17 @@
+{
+  "freeformTemplate": [
+    "ALERT / CASE #:",
+    "DATE-TIME (UTC):",
+    "QUERY:",
+    "RESULTS:",
+    "OBSERVATION:",
+    "HYPOTHESIS:",
+    "PIVOT (why):",
+    "NEXT QUERY:",
+    "RESULTS:",
+    "DETERMINATION:",
+    "REMEDIATION:",
+    "OPEN QUESTIONS:"
+  ],
+  "freeformTeach": "A blank page for raw capture: type fast, paste query text and results, think out loud. Nothing here is graded or checked by Log it; the faded template is a prompt, not a form. When a thought firms up, move it to the structured tab it belongs in."
+}

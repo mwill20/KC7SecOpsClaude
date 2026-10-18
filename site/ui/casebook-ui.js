@@ -3,10 +3,11 @@
 // Drafts (the entry being written) live only in this module's memory; saved entries go through the store in
 // casebook.js, which bounds and validates them. Escape closes and focus returns to where it was.
 import { el, clear, fmtBytes } from './render.js';
-import { KINDS, KIND_LABEL, ENTRY_LABEL, FIELDS, SINGLE, LISTS, LIST_LABEL, LIST_TEACH, VERDICT_LABEL, checkEntry, contextFor, sortTimeline, timeKey, toMarkdown, handoffText } from './casebook.js';
+import { KINDS, TABS, KIND_LABEL, ENTRY_LABEL, FIELDS, SINGLE, LISTS, LIST_LABEL, LIST_TEACH, VERDICT_LABEL, MAX_NAME, MAX_FREEFORM, checkEntry, contextFor, sortTimeline, timeKey, toMarkdown, handoffText, normalizePaste, freeformBytes, checkFreeform, exportFilename } from './casebook.js';
 
 const TEACH = {
-  scope: 'Write the question before you write an answer. A scope line keeps you from proving something nobody asked.',
+  scope: 'Write the question before you write an answer. A scope line keeps you from proving something nobody asked. The investigation needs a name first: the field at the top of this drawer.',
+  freeform: 'A blank page for raw capture: type fast, paste query text and results, think out loud. Nothing here is graded or checked by Log it; the faded template is a prompt, not a form. When a thought firms up, move it to the structured tab it belongs in.',
   evidence: 'One claim per entry. Time in UTC, the query and range that produced it, and the record IDs. A second analyst at 3 a.m. should be able to rerun it.',
   timeline: 'Facts in clock order, each pointing at the Evidence entry it came from. Sorted automatically by time.',
   hypothesis: 'The story that would explain the facts, labelled as a story. Supported and refuted need references; open needs a test.',
@@ -19,7 +20,7 @@ const TEACH = {
 const SELECT_LABEL = { high: 'high', medium: 'medium', low: 'low', open: 'open', supported: 'supported', refuted: 'refuted', now: 'now', today: 'today', 'this-week': 'this week', ...VERDICT_LABEL, ...LIST_LABEL };
 const hhmm = s => (String(s).match(/\d{2}:\d{2}/) ?? [''])[0];
 
-export function mountCasebook({ host, toggle, store, cases }) {
+export function mountCasebook({ host, toggle, store, cases, template = [] }) {
   let open = false, tab = 'evidence', caseId = cases[0].id, editing = null, returnTo = null, confirmClear = false;
   const drafts = {};
   let context = () => ({ query: '', range: '' });
@@ -37,7 +38,7 @@ export function mountCasebook({ host, toggle, store, cases }) {
   const say = (text, cls = '') => { status.textContent = text; status.className = 'cbstatus small ' + cls; };
 
   function openDrawer(which, opts = {}) {
-    if (which && KINDS.includes(which)) tab = which;
+    if (which && TABS.includes(which)) tab = which;
     if (!open) { returnTo = document.activeElement; open = true; }
     host.hidden = false; document.body.classList.add('cb-open'); toggle.setAttribute('aria-expanded', 'true');
     render();
@@ -53,7 +54,11 @@ export function mountCasebook({ host, toggle, store, cases }) {
   // Alt+Shift+C toggles the drawer from any page. Matched on the physical key as well as the key value, because Alt+Shift
   // changes the character some layouts report. Chrome reserves Ctrl+Shift+N, the previous combination, for incognito.
   document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyC' || e.key === 'C' || e.key === 'c')) { e.preventDefault(); open ? closeDrawer() : openDrawer(); } });
-  store.subscribe(() => { if (open) render(); });
+  // Typing into the name field or the FreeForm page saves on every keystroke; those saves must not repaint the drawer
+  // under the learner's cursor, so they run with the repaint suppressed. Every other change repaints.
+  let quiet = false;
+  const quietly = fn => { quiet = true; try { return fn(); } finally { quiet = false; } };
+  store.subscribe(() => { if (open && !quiet) render(); });
   narrow.addEventListener('change', () => { if (open) render(); });
 
   function render() {
@@ -67,22 +72,34 @@ export function mountCasebook({ host, toggle, store, cases }) {
       el('div', { class: 'cbhead' },
         el('h2', { id: 'cb-title', tabindex: -1, text: 'Casebook' }),
         el('div', { class: 'row' }, caseSel, el('button', { class: 'ghost', text: 'Close', 'aria-label': 'Close casebook', onclick: closeDrawer }))),
+      nameField(),
       el('p', { class: 'small muted cbintro', text: `${caseInfo().title}. Your notes, in your words. The check is for structure, never for the quality of your thinking.` }),
       tabs(), panel(), footer());
+  }
+
+  // The investigation name: the first field of every casebook, saved as it is typed, shown in the header, the export
+  // title and file name and on the case-closed page. The Scope structure check requires it.
+  function nameField() {
+    const b = book();
+    const input = el('input', { type: 'text', id: 'cb-name', autocomplete: 'off', maxlength: String(MAX_NAME), placeholder: 'Name this investigation', 'aria-label': 'Investigation name', 'aria-describedby': 'cb-name-hint',
+      oninput: e => { const r = quietly(() => store.setName(caseId, e.target.value)); if (!r.ok) say(reason(r.reason), 'bad'); } });
+    input.value = b.name ?? '';
+    return el('div', { class: 'cbname' }, el('label', { for: 'cb-name', class: 'small', text: 'Investigation' }), input,
+      el('div', { class: 'small muted', id: 'cb-name-hint', text: 'Short and specific, as the ticket would be titled. Saved as you type; used for the export title and file name.' }));
   }
 
   function tabs() {
     const b = book();
     const count = k => SINGLE.has(k) ? (b[k] ? 1 : 0) : b[k].length;
     const list = el('div', { class: 'cbtabs', role: 'tablist', 'aria-label': 'Casebook sections' });
-    const buttons = KINDS.map(k => { const n = count(k); return el('button', { role: 'tab', id: 'cbtab-' + k, 'aria-selected': k === tab ? 'true' : 'false', 'aria-controls': 'cbpanel-' + k, tabindex: k === tab ? 0 : -1, class: k === tab ? 'on' : '',
+    const buttons = TABS.map(k => { const n = k === 'freeform' ? ((b.freeform ?? '').trim() ? 1 : 0) : count(k); return el('button', { role: 'tab', id: 'cbtab-' + k, 'aria-selected': k === tab ? 'true' : 'false', 'aria-controls': 'cbpanel-' + k, tabindex: k === tab ? 0 : -1, class: k === tab ? 'on' : '',
       'aria-label': n ? `${KIND_LABEL[k]}, ${n} ${n === 1 ? 'entry' : 'entries'}` : KIND_LABEL[k],
       onclick: () => { tab = k; editing = null; render(); host.querySelector('#cbtab-' + k)?.focus(); } }, KIND_LABEL[k], n ? el('span', { class: 'cnt', 'aria-hidden': 'true', text: String(n) }) : null); });
     list.append(...buttons);
     list.addEventListener('keydown', e => {
-      const i = KINDS.indexOf(tab); let j = null;
-      if (e.key === 'ArrowRight') j = (i + 1) % KINDS.length; else if (e.key === 'ArrowLeft') j = (i + KINDS.length - 1) % KINDS.length; else if (e.key === 'Home') j = 0; else if (e.key === 'End') j = KINDS.length - 1;
-      if (j === null) return; e.preventDefault(); tab = KINDS[j]; editing = null; render(); host.querySelector('#cbtab-' + tab)?.focus();
+      const i = TABS.indexOf(tab); let j = null;
+      if (e.key === 'ArrowRight') j = (i + 1) % TABS.length; else if (e.key === 'ArrowLeft') j = (i + TABS.length - 1) % TABS.length; else if (e.key === 'Home') j = 0; else if (e.key === 'End') j = TABS.length - 1;
+      if (j === null) return; e.preventDefault(); tab = TABS[j]; editing = null; render(); host.querySelector('#cbtab-' + tab)?.focus();
     });
     return list;
   }
@@ -91,6 +108,7 @@ export function mountCasebook({ host, toggle, store, cases }) {
     const kind = tab, b = book();
     const p = el('div', { class: 'cbpanel', role: 'tabpanel', id: 'cbpanel-' + kind, 'aria-labelledby': 'cbtab-' + kind });
     p.append(el('p', { class: 'small teach', text: TEACH[kind] }));
+    if (kind === 'freeform') { p.append(freeformPanel(b)); return p; }
     if (kind === 'handoff') p.append(el('p', { class: 'small muted', text: 'Harden items become proposed controls; the determination becomes the problem statement. Detection ideas are written in words, never as a query.' }));
     if (SINGLE.has(kind)) {
       if (kind === 'handoff') p.append(el('div', { class: 'row', style: 'margin-bottom:8px' }, el('button', { class: 'ghost', text: 'Assemble from casebook', onclick: assemble })));
@@ -110,6 +128,39 @@ export function mountCasebook({ host, toggle, store, cases }) {
     }
     p.append(form(kind, false));
     return p;
+  }
+
+  // FreeForm: one bounded textarea. The template is the placeholder (faded, gone as soon as the learner types) and the
+  // text "Insert template" drops in at the cursor as editable text. Paste is reduced to plain text and normalised.
+  // The optional structure check reports presence only: a UTC time, a query line, record IDs that exist.
+  function freeformPanel(b) {
+    const tpl = template.join('\n');
+    const meterLine = el('span', { class: 'small muted' });
+    const meter = el('div', { class: 'cbmeter', role: 'img' }, el('span'));
+    const paintMeter = text => { const used = freeformBytes(text); meterLine.textContent = `${fmtBytes(used)} of ${fmtBytes(MAX_FREEFORM)}`; meter.setAttribute('aria-label', `FreeForm: ${meterLine.textContent} used`); meter.firstChild.style.width = Math.min(100, Math.round(100 * used / MAX_FREEFORM)) + '%'; };
+    const area = el('textarea', { id: 'cb-freeform', class: 'mono freeform', rows: 16, spellcheck: 'false', placeholder: tpl, 'aria-label': 'Free-form notes', 'aria-describedby': 'cb-freeform-hint' });
+    area.value = b.freeform ?? ''; paintMeter(area.value);
+    let last = area.value;
+    const paintBadge = () => { const t = host.querySelector('#cbtab-freeform'); if (!t) return; const has = area.value.trim().length > 0; t.setAttribute('aria-label', has ? 'FreeForm, 1 entry' : 'FreeForm'); const c = t.querySelector('.cnt'); if (has && !c) t.append(el('span', { class: 'cnt', 'aria-hidden': 'true', text: '1' })); else if (!has && c) c.remove(); };
+    const commitText = () => { const r = quietly(() => store.setFreeform(caseId, area.value)); paintBadge(); if (!r.ok) { say(reason(r.reason), 'bad'); area.value = last; } else { last = r.freeform; paintMeter(last); } };
+    area.addEventListener('input', commitText);
+    area.addEventListener('paste', e => {
+      e.preventDefault();
+      const text = normalizePaste(e.clipboardData?.getData('text/plain') ?? '');
+      area.setRangeText(text, area.selectionStart, area.selectionEnd, 'end'); commitText();
+    });
+    const insertTemplate = () => { const at = area.selectionStart ?? area.value.length; const text = (at > 0 && area.value[at - 1] !== '\n' ? '\n' : '') + tpl + '\n'; area.setRangeText(text, at, area.selectionEnd ?? at, 'end'); commitText(); area.focus(); say('Template inserted at the cursor. Fill the lines you need; delete the rest.'); };
+    const check = () => {
+      const r = checkFreeform(area.value, caseInfo().eventIds);
+      const parts = [`UTC time (HH:MM): ${r.time ? 'found' : 'none'}`, `a query line: ${r.query ? 'found' : 'none'}`, `record IDs: ${r.record ? r.records.join(', ') : 'none'}` + (r.unknown.length ? ` (not in this dataset: ${r.unknown.join(', ')})` : '')];
+      say(`Structure only, nothing graded. ${parts.join('. ')}.`, r.time && r.query && r.record ? 'ok' : 'warn');
+    };
+    return el('div', { class: 'freeformpanel' },
+      el('div', { class: 'small muted', id: 'cb-freeform-hint', text: 'Ungraded by design. The template fades as you type; paste arrives as plain text. Bounded at 24 KB.' }),
+      area,
+      el('div', { class: 'row', style: 'justify-content:space-between;margin-top:6px' }, meterLine, el('span', { class: 'small muted', text: 'Not checked by Log it.' })),
+      meter,
+      el('div', { class: 'row', style: 'margin-top:8px' }, el('button', { type: 'button', class: 'ghost', text: 'Insert template', onclick: insertTemplate }), el('button', { type: 'button', class: 'ghost', text: 'Check structure', onclick: check })));
   }
 
   // One saved entry: its fields as text, the structure check's verdict in plain language, Edit and Delete.
@@ -182,7 +233,7 @@ export function mountCasebook({ host, toggle, store, cases }) {
     render();
     (host.querySelector(single ? '.cbstatus' : '#cb-entry-' + (wasEditing ?? r.entry.id)) ?? status).focus();
   }
-  const reason = code => ({ FULL: 'The casebook is full (96 KB). Shorten or delete entries before adding more.', TOO_LONG: 'One field is longer than 4,000 characters.', TOO_MANY: 'Too many entries or references in one place.', BLANK: 'Write something in the entry first.', MISSING: 'That entry no longer exists.' })[code] ?? 'Could not save.';
+  const reason = code => ({ FULL: 'The casebook is full (96 KB). Shorten or delete entries before adding more.', FREEFORM_FULL: 'The FreeForm page is full (24 KB). Move finished thoughts into the structured tabs, then trim here.', TOO_LONG: 'One field is longer than 4,000 characters.', TOO_MANY: 'Too many entries or references in one place.', BLANK: 'Write something in the entry first.', MISSING: 'That entry no longer exists.' })[code] ?? 'Could not save.';
 
   // Handoff: fill what the other tabs already know; the engineer-facing fields stay the learner's to write.
   function assemble() {
@@ -236,10 +287,11 @@ export function download(casebook, caseInfo, say = () => {}) {
     const md = toMarkdown(casebook, caseInfo);
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
-    const a = el('a', { href: url, download: `casebook-${caseInfo.id}.md`, class: 'sr-only', text: 'download' });
+    const file = exportFilename(casebook.name, caseInfo.id);
+    const a = el('a', { href: url, download: file, class: 'sr-only', text: 'download' });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
-    say(`Downloaded casebook-${caseInfo.id}.md (${fmtBytes(md.length)}).`, 'ok');
+    say(`Downloaded ${file} (${fmtBytes(md.length)}).`, 'ok');
   } catch { say('The browser refused the download. The export is built from your entries only; try again or copy the ticket instead.', 'bad'); }
 }
 // Write-only clipboard, on click. If the browser refuses, the ticket text is still visible in the Handoff tab.

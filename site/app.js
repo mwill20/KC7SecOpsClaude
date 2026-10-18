@@ -41,7 +41,7 @@ const rangeFor = id => { const r = CASE.ranges.find(x => x.id === id) ?? CASE.ra
 
 const app = document.getElementById('main');
 const topscore = document.getElementById('topscore');
-const cbui = mountCasebook({ host: document.getElementById('casebook'), toggle: document.getElementById('casebook-toggle'), store: casebook, cases: CASES });
+const cbui = mountCasebook({ host: document.getElementById('casebook'), toggle: document.getElementById('casebook-toggle'), store: casebook, cases: CASES, template: CONTENT.casebook?.freeformTemplate ?? [] });
 let onBookChange = null; // the current page's repaint hook for casebook changes (the brief and the closed page use it)
 casebook.subscribe(() => onBookChange?.());
 const chapterprog = document.getElementById('chapterprog');
@@ -128,7 +128,7 @@ function casebookCard() {
   return el('section', { class: 'card' },
     el('div', { class: 'eyebrow', text: 'Remembering the casebook' }),
     el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: casebook.remember, disabled: !casebook.available, onchange: e => { casebook.setRemember(e.target.checked); } }),
-      el('span', {}, 'Remember my casebook in this browser. Stores your own notes for this case (scope, evidence, timeline, hypotheses, pivots, gaps, determination, remediation, handoff) under 96 KB. Off by default; leave off on a shared device.', casebook.available ? '' : ' (Storage is unavailable here, so the casebook is session-only.)')),
+      el('span', {}, 'Remember my casebook in this browser. Stores your own notes for this case (investigation name, scope, free-form notes, evidence, timeline, hypotheses, pivots, gaps, determination, remediation, handoff) under 96 KB. Off by default; leave off on a shared device.', casebook.available ? '' : ' (Storage is unavailable here, so the casebook is session-only.)')),
     el('div', { class: 'row', style: 'margin-top:10px;justify-content:space-between' }, meterLine, el('button', { class: 'ghost', text: 'Open the Casebook', onclick: () => cbui.open() })),
     meter,
     el('div', { class: 'row', style: 'margin-top:10px' }, clearBtn),
@@ -219,6 +219,7 @@ function closedCasebook() {
     const say = (text, cls = '') => { status.textContent = text; status.style.color = cls === 'ok' ? 'var(--ok)' : cls === 'bad' ? 'var(--bad)' : cls === 'warn' ? 'var(--warn)' : 'var(--muted)'; };
     const fillers = kind => MISSIONS.filter(m => m.logIt?.kind === kind).map(m => el('a', { href: '#' + m.id, text: m.id }));
     box.append(el('div', { class: 'eyebrow', text: 'Your casebook' }),
+      el('h2', { class: 'sub cbname-title', text: (b.name ?? '').trim() || 'Unnamed investigation' }),
       el('p', { class: 'small muted', text: 'The determination and the engineering handoff you wrote while working the case. The export is a local file; the copy is write-only to your clipboard.' }),
       el('h2', { class: 'sub', text: 'Determination' }),
       d ? el('div', {}, el('p', {}, el('strong', { text: (VERDICT_LABEL[d.verdict] ?? d.verdict ?? '—') + ' · confidence ' + (d.confidence || '—') }), ' · decided by ' + ((d.refs ?? []).map(n => '#' + n).join(', ') || '—')), el('p', { text: d.summary }))

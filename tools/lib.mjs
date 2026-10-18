@@ -10,7 +10,8 @@ export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export function loadContent() {
   const caseFile = JSON.parse(fs.readFileSync(path.join(root, 'content', 'case.json'), 'utf8'));
   const chapters = caseFile.chapters.map(id => JSON.parse(fs.readFileSync(path.join(root, 'content', 'chapters', id + '.json'), 'utf8')));
-  return { case: caseFile, chapters };
+  const casebook = JSON.parse(fs.readFileSync(path.join(root, 'content', 'casebook.json'), 'utf8'));
+  return { case: caseFile, chapters, casebook };
 }
 export function loadData() { return JSON.parse(fs.readFileSync(path.join(root, 'data', 'events.json'), 'utf8')); }
 
@@ -60,8 +61,22 @@ export function validateLogIt(li, where, eventIds) {
 // Every chapter after the first needs DENSITY.solo Your-turn missions; the first chapter may have one.
 export const DENSITY = Object.freeze({ min: 7, maxDesk: 8, solo: 2, soloFirst: 1 });
 
-export function validate({ case: caseFile, chapters }, data) {
+// content/casebook.json: the FreeForm template (3 to 40 short lines, each ending in a colon so it reads as a prompt)
+// and the teaching line shown above the page.
+export function validateCasebookContent(cb) {
   const problems = [];
+  if (!cb || typeof cb !== 'object' || Array.isArray(cb)) return ['casebook.json: shape'];
+  const t = cb.freeformTemplate;
+  if (!Array.isArray(t) || t.length < 3 || t.length > 40) problems.push('casebook.json: freeformTemplate needs 3 to 40 lines');
+  else for (const line of t) if (typeof line !== 'string' || !/^[A-Z][A-Za-z0-9 /#()-]{1,60}:$/.test(line)) problems.push(`casebook.json: template line "${line}" must be a short label ending in a colon`);
+  if (typeof cb.freeformTeach !== 'string' || cb.freeformTeach.length < 40 || cb.freeformTeach.length > 600) problems.push('casebook.json: freeformTeach missing or out of range');
+  if (Object.keys(cb).some(k => !['freeformTemplate', 'freeformTeach'].includes(k))) problems.push('casebook.json: unknown keys');
+  return problems;
+}
+
+export function validate({ case: caseFile, chapters, casebook }, data) {
+  const problems = [];
+  if (casebook !== undefined) problems.push(...validateCasebookContent(casebook));
   const ids = new Set();
   const eventIds = new Set(data.events.map(e => e['metadata.id']));
   for (const ch of chapters) {

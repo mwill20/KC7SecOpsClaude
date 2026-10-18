@@ -372,6 +372,8 @@ test('Top-bar chapter progress updates as a mission completes, and the chapter p
   await page.locator('.logit').getByRole('button', { name: 'Open Casebook: Scope' }).click();
   const cb = page.locator('#casebook');
   await expect(cb.getByRole('tab', { name: 'Scope' })).toHaveAttribute('aria-selected', 'true');
+  await cb.getByRole('tab', { name: 'FreeForm' }).waitFor();                // the FreeForm tab sits between Scope and Evidence
+  await cb.locator('#cb-name').fill('Pledge Night static');                // the investigation name is the first field; the Scope check needs it
   await cb.locator('#cb-scope-question').fill('Everyone who touched a keyboard tonight.');
   await cb.locator('#cb-scope-requestedBy').fill('Odalys Reyes');
   await cb.locator('#cb-scope-window').fill('18:00 to 06:00');

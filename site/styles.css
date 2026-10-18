@@ -132,6 +132,10 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
 .casebook[hidden] { display: none; }
 .cbhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; } .cbhead h2 { margin: 0; font-size: 18px; }
 .cbintro { margin: 6px 0 10px; }
+.cbname { margin-top: 8px; } .cbname > label { display: block; margin-bottom: 3px; }
+.cbname input { width: 100%; font: inherit; font-weight: 600; background: var(--panel-2); color: var(--text); border: 1px solid var(--control); border-radius: 8px; padding: 7px 10px; }
+.cbname input::placeholder, textarea.freeform::placeholder { color: var(--muted); opacity: .7; }
+textarea.freeform { width: 100%; min-height: 260px; resize: vertical; background: #0a0f1b; color: var(--text); border: 1px solid var(--control); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-top: 6px; }
 .cbtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .cbtabs [role="tab"] { padding: 5px 9px; font-size: 13px; border-radius: 999px; background: transparent; color: var(--muted); }
 .cbtabs [role="tab"].on { color: var(--text); border-color: var(--teal); background: rgba(58,209,196,.08); }
