@@ -57,7 +57,7 @@ The last mission of each case assembles your Casebook into a brief beside the au
 ## Layout
 
 ```
-content/          case.json (a cases array) + chapters/C01..C08.json + casebook.json (FreeForm template) + lists.json (reference lists)
+content/          case.json (a cases array) + chapters/C01..C08.json + casebook.json (FreeForm template) + lists.json (legacy reference lists) + tables.json (data tables)
 data/             events.json (case 1, 1,010 events) and events-week-after.json (case 2, 971 events), both generated; case.json records each file's digest
 site/engine/      parser → executor → grader (the YARA-L Search subset, engine v2)
 site/ui/          messages, progress store, DOM helpers, casebook store + note check (casebook.js), casebook drawer (casebook-ui.js)
@@ -72,10 +72,10 @@ docs/             INSTALLATION.md, USAGE.md, DEPLOYMENT.md, EVALUATION.md, LIMIT
 
 Filters: `=`, `!=`, `<`, `<=`, `>`, `>=`, `nocase`, regex literals `/…/`, `re.regex()`, `net.ip_in_range_cidr()`, `AND`/`OR`/`NOT`, parentheses, implicit AND, `events:` with a single `$e.` event variable, placeholders (`$x = field` or `$x = function(field)`), grouped fields (`ip`, `hostname`, `user`, `domain`, `file_path`, `email`), `//` and `/* */` comments.
 Functions (engine v2): `timestamp.get_hour(ts, "UTC")`, `timestamp.get_minute`, `timestamp.get_date` (zone `"UTC"` or omitted; any other zone is reported as *not run here* with the reason), `strings.to_lower`, `strings.to_upper`, `strings.concat`, in filters and placeholders; `metadata.event_timestamp` is accepted as the name of the stored timestamp.
-Reference lists (engine v2): `field in %name`, `in cidr %name`, `in regex %name`, `not in`, `nocase`, against the lists bundled in `content/lists.json` (name, type `string|cidr|regex`, items, description) and shown in the **Lists** panel on the desk. In a tenant, lists are objects under *Detection > Lists*; the trainer says so.
+Data tables and reference lists (engine v2, session 4): `field in %table.column`, `in cidr %table.column`, `in regex %table.column`, `not in`, `nocase`, against the tables bundled in `content/tables.json` (name, description, typed columns, rows), and the same forms with `%name` against the legacy lists in `content/lists.json`; both are shown in the **Lists and tables** panel on the desk. Search's limits are enforced: seven `in` tests per query, four of them regex, two cidr. In a tenant, tables are objects under *Detection > Data tables* and lists under *Detection > Lists*; Google migrates lists to tables automatically and retires legacy lists in July 2027; the trainer says so.
 Sections: `match` (with `by`/`over every` windows), `outcome` (`count`, `count_distinct`, `sum`, `max`, `min`, `array`, `array_distinct` cut at 1,000 as in Search, `earliest`, `latest` rendered as UTC clock times), `condition`, `dedup` (between `condition` and `order`; keeps the first row per distinct key; on a summary table only grouping keys or outcomes), `order`, `limit`.
 
-Not implemented (reported as unsupported): joins across event variables, entity graph, `additional.fields`, data tables, multi-stage queries, other functions, time zones other than UTC, `option` and `unselect`. The Google pages followed are listed on the About page and in `site/engine/catalog.js` (`DOCS`); on the build date they were read through search summaries, not fetched in full.
+Not implemented (reported as unsupported): joins across event variables, entity graph, `additional.fields`, the rule-engine data-table join (`field = %table.column`), multi-stage queries, other functions, time zones other than UTC, `option` and `unselect`. The Google pages followed are listed on the About page and in `site/engine/catalog.js` (`DOCS`); the owner verified them against the live pages on 2026-10-18 and the facts the engine follows are recorded there and in `docs/EVALUATION.md`.
 
 ## Verification status
 

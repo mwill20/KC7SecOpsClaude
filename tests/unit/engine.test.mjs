@@ -268,9 +268,53 @@ test('V4 reference lists: in %string, in cidr %cidr, in regex %regex, not in, no
   failsL('target.ip in cidr %ext_ranges nocase', 'NOCASE_ON_CIDR_LIST');
   failsL('principal.ip in %', 'BAD_LIST_NAME');
   failsL('principal.ip in known_ips', 'EXPECTED_LIST');
-  failsL(Array.from({ length: 11 }, () => 'principal.ip in %known_ips').join(' OR '), 'TOO_MANY_LISTS');
+  failsL(Array.from({ length: 8 }, () => 'principal.ip in %known_ips').join(' OR '), 'TOO_MANY_LISTS');
+  assert.equal(parseSearch(Array.from({ length: 7 }, () => 'principal.ip in %known_ips').join(' OR '), ctx).lists.length, 1, 'seven in tests are allowed');
   // without lists in the context every list is unknown, so the engine stays usable where none are bundled
   fails('principal.ip in %known_ips', 'UNKNOWN_LIST');
   // a list that fails the regex guard is skipped, never compiled: (a+)+$ is in ps_shapes and matches nothing here
   assert.deepEqual(ids(runL('principal.user.userid in regex %ps_shapes')), []);
+});
+
+// ---------- data tables (Google: "Use reference lists and data tables in YARA-L 2.0", verified 2026-10-18) ----------
+const TABLES = [
+  { name: 'allow', columns: [{ name: 'domain', type: 'string' }, { name: 'source', type: 'string' }], rows: [['PC-1', 'contract'], ['PC-9', 'log']] },
+  { name: 'blocks', columns: [{ name: 'range', type: 'cidr' }, { name: 'reason', type: 'string' }], rows: [['203.0.113.0/24', 'c2']] },
+  { name: 'shapes', columns: [{ name: 'pattern', type: 'regex' }], rows: [['powershell\\.exe$']] },
+];
+const ctxT = { lists: LISTS, tables: TABLES };
+const runT = t => execute(parseSearch(t, ctxT), mini);
+const failsT = (t, code, status) => { try { parseSearch(t, ctxT); } catch (e) { assert.ok(e instanceof QueryError, 'QueryError'); assert.equal(e.code, code); if (status) assert.equal(e.status, status); return; } assert.fail('expected ' + code); };
+
+test('V5 data tables: %table.column in the three forms, with not and nocase; should-fail: unknown table, unknown column, keyword mismatch, = instead of in, and the 7/4/2 Search limits', () => {
+  assert.deepEqual(ids(runT('principal.hostname in %allow.domain\nmetadata.event_type = "USER_LOGIN"')), ['e1', 'e2']);
+  assert.deepEqual(ids(runT('principal.hostname not in %allow.domain\nmetadata.event_type = "USER_LOGIN"')), ['e3', 'e4']);
+  assert.deepEqual(ids(runT('principal.hostname in %allow.source nocase')), [], 'another column of the same table is another list');
+  assert.deepEqual(ids(runT('target.ip in cidr %blocks.range')), ['e6']);
+  assert.deepEqual(ids(runT('target.process.file.full_path in regex %shapes.pattern nocase')), ['e5']);
+  assert.deepEqual(ids(runT('target.process.file.full_path in regex %shapes.pattern')), [], 'case-sensitive without nocase');
+  const q = parseSearch('principal.hostname in %allow.domain OR target.ip in cidr %blocks.range OR principal.ip in %known_ips', ctxT);
+  assert.deepEqual(q.tables, ['allow', 'blocks']); assert.deepEqual(q.lists, ['known_ips']);
+  // the lists and the tables are both named in the Lists and tables panel; the engine keeps them apart by the dot
+  failsT('principal.hostname in %nowhere.domain', 'UNKNOWN_TABLE', 'invalid');
+  failsT('principal.hostname in %allow.owner', 'UNKNOWN_TABLE_COLUMN', 'invalid');
+  failsT('principal.hostname in %allow', 'UNKNOWN_LIST', 'invalid');
+  failsT('target.ip in %blocks.range', 'LIST_TYPE_MISMATCH', 'invalid');
+  failsT('principal.hostname in cidr %allow.domain', 'LIST_TYPE_MISMATCH');
+  failsT('principal.hostname in regex %allow.domain', 'LIST_TYPE_MISMATCH');
+  failsT('target.ip in cidr %blocks.range nocase', 'NOCASE_ON_CIDR_LIST');
+  failsT('principal.hostname in cidr %blocks.range', 'LIST_NEEDS_IP');
+  failsT('target.port in %allow.domain', 'LIST_ON_NUMBER');
+  failsT('principal.hostname in %allow.', 'BAD_LIST_NAME');
+  failsT('principal.hostname = %allow.domain', 'LIST_AS_VALUE', 'unsupported');
+  failsT('principal.hostname = %hosts', 'LIST_AS_VALUE', 'unsupported');
+  // Search limits per query: at most 7 in statements, 4 regex, 2 cidr (rules allow 10/5/5)
+  const rep = (n, t) => Array.from({ length: n }, () => t).join(' OR ');
+  failsT(rep(8, 'principal.hostname in %allow.domain'), 'TOO_MANY_LISTS', 'invalid');
+  failsT(rep(5, 'principal.hostname in regex %shapes.pattern'), 'TOO_MANY_REGEX_LISTS', 'invalid');
+  failsT(rep(3, 'target.ip in cidr %blocks.range'), 'TOO_MANY_CIDR_LISTS', 'invalid');
+  failsT(rep(4, 'principal.hostname in regex %ps_shapes') + ' OR ' + 'principal.hostname in regex %shapes.pattern', 'TOO_MANY_REGEX_LISTS');
+  assert.equal(parseSearch(rep(4, 'principal.hostname in regex %shapes.pattern') + ' OR ' + rep(2, 'target.ip in cidr %blocks.range') + ' OR principal.hostname in %allow.domain', ctxT).tables.length, 3, 'exactly 7 = 4 regex + 2 cidr + 1 string is allowed');
+  // without tables in the context every table is unknown
+  failsL('principal.hostname in %allow.domain', 'UNKNOWN_TABLE');
 });

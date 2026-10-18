@@ -121,8 +121,8 @@ test('C8 every chapter carries a recap for its chapter-end card, and the validat
 
 test('C9 every mission but the notes mission carries a Log it block the validator accepts; the validator refuses a bad one', () => {
   const withLogIt = missions.filter(m => m.logIt);
-  assert.equal(withLogIt.length, 64);
-  assert.equal(missions.length, 65);
+  assert.equal(withLogIt.length, 65);
+  assert.equal(missions.length, 66);
   assert.equal(missions.find(m => m.id === 'C01-M00').logIt, undefined);
   assert.equal(missions[0].id, 'C01-M00');
   const kinds = new Set(withLogIt.map(m => m.logIt.kind));
@@ -155,7 +155,7 @@ test('C10 chapter density: 7 to 8 desk missions per chapter and two Your-turn mi
     assert.ok(ch.missions.filter(m => m.kind !== 'read').length <= 8, `${ch.id} desk missions`);
     assert.ok(ch.missions.filter(m => m.kind === 'solo').length >= (i === 0 ? 1 : 2), `${ch.id} Your-turn missions`);
   }
-  assert.equal(missions.length, 65);
+  assert.equal(missions.length, 66);
   // every mission the density pass added carries the full schema
   const NEW = missions.filter(m => Number(m.id.slice(1, 3)) <= 6 && Number(m.id.slice(-2)) >= (m.id.startsWith('C01') ? 7 : m.id.startsWith('C06') ? 5 : m.id.startsWith('C05') ? 4 : 5));
   assert.equal(NEW.length, 23);
@@ -232,8 +232,13 @@ test('C12 two cases: case 1 events are byte-identical to the density branch (dig
   assert.ok(content.lists.lists.find(l => l.name === 'sponsor_domains').items.includes('pier9-partners.example'), 'the allowlist is too wide on purpose');
   // chapters 7 and 8: sixteen missions, two cases' worth of points, every answer proven against case 2 data
   const c2 = missions.filter(m => m.id.startsWith('C07') || m.id.startsWith('C08'));
-  assert.equal(c2.length, 16);
-  assert.deepEqual(c2.map(m => m.kind), ['read', 'watch', 'build', 'build', 'watch', 'solo', 'solo', 'build', 'watch', 'build', 'build', 'watch', 'solo', 'solo', 'read', 'read']);
+  assert.equal(c2.length, 17);
+  assert.deepEqual(c2.map(m => m.kind), ['read', 'watch', 'build', 'build', 'watch', 'solo', 'solo', 'build', 'read', 'watch', 'build', 'build', 'watch', 'solo', 'solo', 'read', 'read']);
+  // chapter 8 teaches data tables as the current object: three missions name a %table.column, one the legacy %list, and the Read on the migration carries the date
+  assert.deepEqual(c2.filter(m => /%[a-z_]+\.[a-z_]+/.test(m.reference ?? '')).map(m => m.id), ['C08-M02', 'C08-M03', 'C08-M04']);
+  assert.deepEqual(c2.filter(m => /%[a-z_]+\b(?!\.)/.test(m.reference ?? '')).map(m => m.id), ['C08-M01']);
+  assert.ok(missions.find(m => m.id === 'C08-M00').concept.text.includes('July 2027'));
+  assert.equal(missions.find(m => m.id === 'C08-M00').logIt.kind, 'remediation');
   assert.equal(deriveAnswer(missions.find(m => m.id === 'C07-M03'), data2.events, ctx), '10.9.4.21, 198.51.100.77, 10.9.4.200');
   assert.equal(deriveAnswer(missions.find(m => m.id === 'C07-M04'), data2.events, ctx), '19:12');
   assert.equal(deriveAnswer(missions.find(m => m.id === 'C08-M04'), data2.events, ctx), 'BLOCK');
@@ -247,7 +252,7 @@ test('C12 two cases: case 1 events are byte-identical to the density branch (dig
     assert.equal(ms.at(-1).brief, 'casebook', `${c.id} ends with the brief`);
   }
   // should-fail: a case whose brief is not last, a case missing a logIt kind, a case with a bad window, a scope asked for late
-  const noBrief = JSON.parse(JSON.stringify(content)); delete noBrief.chapters[7].missions[7].brief;
+  const noBrief = JSON.parse(JSON.stringify(content)); delete noBrief.chapters[7].missions[8].brief;
   assert.ok(validate(noBrief, datasets).some(p => p.includes('case week-after') && p.includes('brief')));
   const noGap = JSON.parse(JSON.stringify(content)); noGap.chapters[6].missions[7].logIt.kind = 'pivot';
   assert.ok(validate(noGap, datasets).some(p => p.includes('case week-after') && p.includes('gap')));

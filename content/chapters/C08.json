@@ -1,33 +1,100 @@
 {
   "id": "C08",
   "title": "The lists the station keeps",
-  "subtitle": "Reference lists: tuning out the known-good, and the danger of a list that is too wide",
-  "intro": "On Saturday morning Dez wrote four lists: the sponsor names the station's machines may resolve, the accounts allowed to run as another user, the range the gateway blocks, and the station's own network. In Google SecOps those are reference lists, created under Detection > Lists and named in a query with %. This trainer bundles them; the Lists panel on the desk shows each one. This chapter uses them to tune out the known-good, and shows what happens when a list written in a hurry is wider than it should be.",
+  "subtitle": "Data tables and the reference lists they replace: tuning out the known-good, and the danger of a list that is too wide",
+  "intro": "On Saturday morning Dez wrote four reference lists: the sponsor names the station's machines may resolve, the accounts allowed to run as another user, the range the gateway blocks, and the station's own network. By Friday the tenant had migrated them to data tables, the object Google is replacing reference lists with: each table has named, typed columns, so a row can carry where it came from beside the value. A query names a table column as %table.column and a legacy list as %list, in the same three forms. This trainer bundles both; the Lists and tables panel on the desk shows each one. This chapter uses them to tune out the known-good, and shows what happens when an allowlist written in a hurry is wider than it should be.",
   "concepts": [
-    "A reference list is an object the tenant keeps; a query names it with %list and never contains it",
-    "String lists match whole values, CIDR lists match ranges with in cidr, regex lists match shapes with in regex",
-    "not in %list is how you tune out the known-good; what is left is the question",
-    "A list that is too wide hides the thing it was written to catch",
-    "A block that is too wide cuts off the people who work from home"
+    "A data table is an object the tenant keeps, with typed columns; a query names one column as %table.column and never contains it",
+    "A reference list is the legacy object: migrated to a data table automatically, named %list until it retires in July 2027",
+    "String columns match whole values with in, CIDR columns match ranges with in cidr, regex columns match shapes with in regex; Search allows seven in tests, four regex, two cidr",
+    "not in tunes out the known-good; what is left is the question",
+    "A table that is too wide hides the thing it was written to catch; a block that is too wide cuts off the people who work from home"
   ],
   "recap": [
-    "Name a reference list in a query with in %, in cidr % and in regex %, and say where lists live in a tenant",
-    "Tune out the known-good with not in %list and read what is left as the question, not the answer",
-    "Spot a list that is too wide by finding the known-bad inside it, and say what the list should have been",
-    "Use the admin list to find a privilege used by an account that should not have it",
-    "Show a fix holding with the record of the control refusing, and show where the fix was too narrow",
+    "Name a data table column in a query with in %table.column, in cidr %table.column and in regex %table.column, and a legacy reference list with %list; say where each lives in a tenant",
+    "Say what changes when a list becomes a table (the name form, the columns, the home) and what does not (the three forms, not, nocase, the Search limits), and the date the legacy form retires",
+    "Tune out the known-good with not in and read what is left as the question, not the answer",
+    "Spot a table that is too wide by reading its source column and finding the known-bad inside it, and say what the table should have been",
+    "Use the privileged-accounts table to find a privilege tried by an account that should not have it, and show a fix holding with the record of the control refusing",
     "Close a second case with a determination and a handoff that say what held, what did not, and what to change"
   ],
   "missions": [
     {
+      "id": "C08-M00",
+      "kind": "read",
+      "title": "The lists are moving",
+      "beat": "18:05. The tenant shows a banner above Detection > Lists: reference lists are being replaced by data tables; your lists have been migrated. Dez's four lists now also exist as tables, each with a column or two the list never had. Dez asks whether every saved query has to be rewritten tonight.",
+      "question": "What changes when a reference list becomes a data table, and what does not?",
+      "concept": {
+        "title": "A data table is a list with columns",
+        "text": "Google's reference-lists page says reference lists are being replaced by data tables, that existing lists are migrated automatically, and that legacy reference lists retire in July 2027. What changes: the home (Detection > Data tables instead of Detection > Lists), the name form (%table.column instead of %list), and the shape: a table has named, typed columns, so a row can say where the value came from and who added it. What does not change: the three forms (in, in regex, in cidr), not and nocase in front of and after them, and Search's limits of seven in tests per query, four of them regex and two cidr. Until the retirement date both forms run. Open the Lists and tables panel and read station_allowlist to the end: the source column is the whole point of this chapter."
+      },
+      "explain": [
+        {
+          "part": "network.dns.questions.name in %sponsor_domains",
+          "meaning": "The legacy form: a reference list named with %. It runs tonight and until July 2027."
+        },
+        {
+          "part": "network.dns.questions.name in %station_allowlist.domain",
+          "meaning": "The current form: one column of a data table. Same test, same not and nocase, same result if the rows are the same."
+        },
+        {
+          "part": "in cidr %gateway_blocks.range · in regex %lookalike_shapes.pattern",
+          "meaning": "A CIDR column takes in cidr, a regex column takes in regex, exactly as the list types did. The keyword must match the column's type."
+        },
+        {
+          "part": "7 · 4 · 2",
+          "meaning": "Search's limits per query: seven in tests in all, four of them in regex, two in cidr. Rules allow ten, five and five. Lists and table columns count together."
+        },
+        {
+          "part": "The source column",
+          "meaning": "What a list could never carry. station_allowlist says which rows came from a contract and which from the week-one mail log. A list is a control; a table is a control that explains itself."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez asks whether every saved query that names a %list has to be rewritten tonight. What goes in the ticket?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Yes, tonight: the legacy form stops running the moment a list is migrated, so every saved query that still names a %list is already broken on the desk"
+          },
+          {
+            "id": "B",
+            "label": "No, never: the migration is automatic, so the legacy form keeps running for good and nothing that names a %list ever needs to change"
+          },
+          {
+            "id": "C",
+            "label": "Plan it: both forms run now, the legacy form retires in July 2027, and the rewrite is the chance to add a source column to every table"
+          }
+        ],
+        "correct": "C",
+        "why": "Both forms run tonight; the date is July 2027. A rewrite under pressure copies the list as it is. A planned one adds the column that would have caught Saturday's mistake: where did this row come from?"
+      },
+      "clue": "Dez reads the banner twice and writes the date on the whiteboard. 'July 2027. Fine. Tonight we use what we have.' You open the panel and read station_allowlist to the end. Two rows say week-one mail log.",
+      "logIt": {
+        "kind": "remediation",
+        "list": "harden",
+        "prompt": "Write a Harden item: migrate the station's four reference lists to data tables with a source column (where each row came from and who added it) before July 2027, and retire the legacy %list names from saved queries. Answers: the evidence that the allowlist exists (your chapter-7 baseline entries will do). Owner role: engineer. Urgency: planned.",
+        "mustInclude": [
+          "2027",
+          "source"
+        ]
+      },
+      "caveat": "Verify the migration in your own tenant: which of your lists have a table twin, what the table's column is called, and whether a saved search that names the %list still runs. This trainer bundles both forms side by side; a tenant's banner and dates are the authority."
+    },
+    {
       "id": "C08-M01",
       "kind": "watch",
       "title": "Everything but the sponsors",
-      "beat": "Dez's allowlist is sponsor_domains: every name the station's machines are expected to resolve. Ask the opposite question. Which names were resolved tonight that are not on the list?",
+      "beat": "Dez's allowlist is sponsor_domains, a legacy reference list: every name the station's machines are expected to resolve. Its migrated twin is the station_allowlist table. Ask the opposite question with the legacy form first, so the rewrite in the next missions has something to compare with. Which names were resolved tonight that are not on the list?",
       "question": "Which DNS names did the station resolve tonight that are not on the sponsor allowlist?",
       "concept": {
         "title": "not in %list tunes out the known-good",
-        "text": "A reference list is an object the tenant keeps under Detection > Lists; a query names it with % and never contains its items. field in %list keeps events whose value is on the list; not in %list keeps the rest. Tuning out the known-good does not find the bad; it shrinks the pile to what you have to read. Open the Lists panel on the desk to see the list before you trust it."
+        "text": "A reference list is the legacy object under Detection > Lists; a query names it with % and never contains its items. field in %list keeps events whose value is on the list; not in %list keeps the rest. Tuning out the known-good does not find the bad; it shrinks the pile to what you have to read. The same query with in %station_allowlist.domain returns the same rows tonight, because the table was migrated from the list; the next missions use the table form. Open the Lists and tables panel to see the list before you trust it."
       },
       "explain": [
         {
@@ -35,8 +102,8 @@
           "meaning": "Keep lookups whose name is not on the list. A string list compares whole values; a subdomain of a listed name is not on the list."
         },
         {
-          "part": "The Lists panel",
-          "meaning": "Shows the list's type, its description and its items. Read to the end: the last two items are last week's lookalike and its beacon name, copied in by mistake."
+          "part": "The Lists and tables panel",
+          "meaning": "Shows the list's type, its description and its items, and the migrated table beside it with a source column. Read to the end: the last two items are last week's lookalike and its beacon name, copied in by mistake; the table says so in its source column."
         }
       ],
       "starter": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name not in %sponsor_domains",
@@ -82,34 +149,34 @@
           "evt-20136"
         ]
       },
-      "caveat": "In a tenant, a list is only as good as its last edit. Reference lists have owners, change history and limits; a query that names one should say in the brief which version of the list it ran against."
+      "caveat": "In a tenant, a list is only as good as its last edit. Reference lists and data tables have owners, change history and limits; a query that names one should say in the brief which version of the object it ran against. The legacy %list form retires in July 2027."
     },
     {
       "id": "C08-M02",
       "kind": "build",
       "title": "The shape of a lookalike",
-      "beat": "Two lookalikes in two weeks, both the same trick: a known name with a hyphen pushed into it. Dez wrote a regex list of that shape, lookalike_patterns. Run the mail log against it and look at the action column.",
+      "beat": "Two lookalikes in two weeks, both the same trick: a known name with a hyphen pushed into it. Dez wrote a regex list of that shape; the tenant migrated it to the lookalike_shapes table, whose pattern column holds the shapes and whose imitates column says which real name each one copies. Run the mail log against the pattern column and look at the action column.",
       "question": "Which emails tonight came from a sender whose domain matches the lookalike patterns?",
       "concept": {
-        "title": "A regex list matches shapes, and the keyword must match the list",
-        "text": "Google documents three list types. A string list is used as in %name, a CIDR list as in cidr %name, and a regex list as in regex %name; the keyword must match the list's type or the query is refused. A regex list is for shapes: pier9-anything, harborlight-anything. Every pattern in it runs through the same guard as a pattern you type."
+        "title": "A regex column matches shapes, and the keyword must match the column",
+        "text": "Google documents three types for lists and for data table columns. A string column is used as in %table.column, a CIDR column as in cidr %table.column, and a regex column as in regex %table.column; the keyword must match the column's type or the query is refused. A regex column is for shapes: pier9-anything, harborlight-anything. Every pattern in it runs through the same guard as a pattern you type. Search allows four in regex tests per query."
       },
       "explain": [
         {
-          "part": "network.email.from in regex %lookalike_patterns",
-          "meaning": "Keep mail whose sender matches any pattern on the list. The Lists panel shows the two patterns."
+          "part": "network.email.from in regex %lookalike_shapes.pattern",
+          "meaning": "Keep mail whose sender matches any pattern in the column. The Lists and tables panel shows the two patterns and what each imitates."
         },
         {
           "part": "security_result.action",
           "meaning": "Read it for every row. ALLOW on a sender you already know is bad is the finding."
         }
       ],
-      "starter": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in ___ %lookalike_patterns",
-      "reference": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in regex %lookalike_patterns",
+      "starter": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in ___ %lookalike_shapes.pattern",
+      "reference": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in regex %lookalike_shapes.pattern",
       "hints": [
-        "The keyword after in names the list's type. Open the Lists panel: lookalike_patterns is a regex list.",
+        "The keyword after in names the column's type. Open the Lists and tables panel: lookalike_shapes.pattern is a regex column.",
         "Fill the gap with regex.",
-        "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in regex %lookalike_patterns"
+        "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in regex %lookalike_shapes.pattern"
       ],
       "answer": {
         "prompt": "How many emails match the lookalike patterns?",
@@ -127,7 +194,7 @@
           },
           {
             "id": "B",
-            "label": "Because the gateway's allowlist is sponsor_domains, written by copying every sponsor-looking name from last week's logs, lookalike included"
+            "label": "Because the gateway's allowlist is station_allowlist, written by copying every sponsor-looking name from last week's logs, lookalike included"
           },
           {
             "id": "C",
@@ -135,29 +202,29 @@
           }
         ],
         "correct": "B",
-        "why": "Scroll to the end of sponsor_domains in the Lists panel: pier9-partners.example and its beacon name are on it. A list written in a hurry by copying the log allowlisted the thing the log was about. Too wide hides what it was meant to catch."
+        "why": "Scroll to the end of station_allowlist in the Lists and tables panel: pier9-partners.example and its beacon name are on it, and the source column says week-one mail log. A table written in a hurry by copying the log allowlisted the thing the log was about. Too wide hides what it was meant to catch."
       },
-      "clue": "Three emails: last week's lookalike to Hal at 18:35, this week's to Lena and Priya at 18:58. All ALLOW. The old one got through because it is on the allowlist, copied there from the week-one logs on Saturday morning.",
+      "clue": "Three emails: last week's lookalike to Hal at 18:35, this week's to Lena and Priya at 18:58. All ALLOW. The old one got through because it is on the allowlist, copied there from the week-one logs on Saturday morning; the table's source column says exactly that.",
       "logIt": {
         "kind": "evidence",
-        "prompt": "Write an Evidence entry for the allowlist mistake: 18:35 UTC, mail from sponsorships@pier9-partners.example to hal.brunner, action ALLOW, record evt-20051, and the sponsor_domains list carries pier9-partners.example. Source: this query, whole night. Observation: a known lookalike is on the allowlist. No verdict.",
+        "prompt": "Write an Evidence entry for the allowlist mistake: 18:35 UTC, mail from sponsorships@pier9-partners.example to hal.brunner, action ALLOW, record evt-20051, and the station_allowlist table carries pier9-partners.example with source week-one mail log. Source: this query, whole night. Observation: a known lookalike is on the allowlist. No verdict.",
         "mustInclude": [
           "pier9-partners.example",
           "18:35",
           "evt-20051"
         ]
       },
-      "caveat": "Google caps the number of in-statements per query (ten, with separate caps for regex and CIDR lists on some pages) and a regex that starts with a wildcard defeats index pruning in Search. Anchor the patterns; the ones here end in $."
+      "caveat": "Search caps in tests at seven per query, four of them in regex and two in cidr (rules allow ten, five and five), and a regex that starts with a wildcard defeats index pruning in Search. Anchor the patterns; the ones here end in $."
     },
     {
       "id": "C08-M03",
       "kind": "build",
       "title": "Who may run as another user",
-      "beat": "admin_accounts is the short list of accounts allowed to run as a different user on station hosts. A run-as by anyone else is a privilege being tried by an account that should not have it.",
+      "beat": "privileged_accounts is the short table of accounts allowed to run as a different user on station hosts, with the account each may run as and who granted it. A run-as by anyone else is a privilege being tried by an account that should not have it.",
       "question": "Which run-as attempts tonight came from accounts that are not on the admin list?",
       "concept": {
-        "title": "Lists make a baseline a filter",
-        "text": "target.user.userid set on a USER_LOGIN is a run-as: one account acting as another. The admin list says who may. principal.user.userid not in %admin_accounts keeps the attempts by everyone else, and the action column says whether the attempt worked. One row tonight, FAIL. The fix held for svc-playout; the attempt is still a fact."
+        "title": "Tables make a baseline a filter",
+        "text": "target.user.userid set on a USER_LOGIN is a run-as: one account acting as another. The privileged_accounts table says who may; its account column is the one a query tests. principal.user.userid not in %privileged_accounts.account keeps the attempts by everyone else, and the action column says whether the attempt worked. One row tonight, FAIL. The fix held for svc-playout; the attempt is still a fact."
       },
       "explain": [
         {
@@ -165,16 +232,16 @@
           "meaning": "Run-as attempts targeting the playout service account."
         },
         {
-          "part": "principal.user.userid not in %admin_accounts",
-          "meaning": "By accounts that are not on the list. Dez's legitimate run-as at 21:05 is tuned out; he is on it."
+          "part": "principal.user.userid not in %privileged_accounts.account",
+          "meaning": "By accounts that are not in the account column. Dez's legitimate run-as at 21:05 is tuned out; he is in it, with svc-playout in may_run_as and odalys.reyes in granted_by."
         }
       ],
-      "starter": "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %___",
-      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %admin_accounts",
+      "starter": "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %___.account",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %privileged_accounts.account",
       "hints": [
-        "The gap wants the name of the list of accounts allowed to run as another user. Open the Lists panel.",
-        "Fill the gap with admin_accounts.",
-        "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %admin_accounts"
+        "The gap wants the name of the table whose account column lists who may run as another user. Open the Lists and tables panel.",
+        "Fill the gap with privileged_accounts.",
+        "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %privileged_accounts.account"
       ],
       "answer": {
         "prompt": "At what time (HH:MM, UTC) was the run-as attempt by a non-admin account?",
@@ -200,11 +267,11 @@
           },
           {
             "id": "C",
-            "label": "02:31, the admin list blocked an unauthorised privilege escalation on the file server"
+            "label": "02:31, the privileged-accounts table blocked an unauthorised privilege escalation on the file server"
           }
         ],
         "correct": "B",
-        "why": "The record names an account, an address, a host, a target account and an outcome. Who was at the keyboard, why it failed and whether a list did it are inferences; the second one is probably right and still belongs in Hypotheses."
+        "why": "The record names an account, an address, a host, a target account and an outcome. Who was at the keyboard, why it failed and whether a table did it are inferences; the second one is probably right and still belongs in Hypotheses."
       },
       "clue": "One row: 02:31:05, lena.ostrowski from 10.9.4.200, run as svc-playout on FS-01, FAIL, denied. The playout account was not reset last week, but the remote session did not have its password. The attempt is the fact; the denial is the control.",
       "logIt": {
@@ -214,30 +281,30 @@
           "02:31"
         ]
       },
-      "caveat": "In a tenant the admin list would also be used by a rule, and the rule would fire on this record. Here it is a query. The habit is the same: a list of who may, applied as not in, finds who tried."
+      "caveat": "In a tenant the privileged_accounts table would also be used by a rule, and the rule would fire on this record. Here it is a query. The habit is the same: a table of who may, applied as not in, finds who tried."
     },
     {
       "id": "C08-M04",
       "kind": "watch",
       "title": "Did the block hold?",
-      "beat": "The gateway blocks 203.0.113.0/24 since last week. blocked_ranges is that list, as a CIDR list. Ask the log whether anything tried to reach the range, and what the gateway did.",
+      "beat": "The gateway blocks 203.0.113.0/24 since last week. gateway_blocks is that fact as a data table: a CIDR column with the range, a reason column and a since column. Ask the log whether anything tried to reach the range, and what the gateway did.",
       "question": "What happened to connections to the blocked range tonight?",
       "concept": {
-        "title": "A CIDR list matches ranges",
-        "text": "target.ip in cidr %blocked_ranges keeps connections to any range on the list; the keyword cidr is required for a CIDR list and refused for the others. A control that holds leaves a record of itself refusing. One BLOCK row at 20:20 is the fix holding for the range it covers, and the source of that row is the remote session."
+        "title": "A CIDR column matches ranges",
+        "text": "target.ip in cidr %gateway_blocks.range keeps connections to any range in the column; the keyword cidr is required for a CIDR column and refused for the others, and Search allows two in cidr tests per query. A control that holds leaves a record of itself refusing. One BLOCK row at 20:20 is the fix holding for the range it covers, and the source of that row is the remote session."
       },
       "explain": [
         {
-          "part": "target.ip in cidr %blocked_ranges",
-          "meaning": "Connections to any address in a listed range. One list, one range, one row."
+          "part": "target.ip in cidr %gateway_blocks.range",
+          "meaning": "Connections to any address in a listed range. One table, one row, one range, one event. The reason column says why the range is there."
         },
         {
           "part": "security_result.action",
           "meaning": "BLOCK. The gateway refused it. Open the row: it came from 10.9.4.200 at 20:20."
         }
       ],
-      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip in cidr %blocked_ranges",
-      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip in cidr %blocked_ranges",
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip in cidr %gateway_blocks.range",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip in cidr %gateway_blocks.range",
       "hints": [
         "Run it as written. One row. Read the action column.",
         "Open the row: the source is the remote session, the destination is last week's server.",
@@ -281,7 +348,7 @@
           "BLOCK"
         ]
       },
-      "caveat": "A CIDR list in a tenant can hold many ranges and is also usable with net.ip_in_range_cidr one range at a time. Lists are for the ranges you maintain; the function is for the one you are testing right now."
+      "caveat": "A CIDR column in a tenant can hold many ranges and is also usable with net.ip_in_range_cidr one range at a time. Tables are for the ranges you maintain; the function is for the one you are testing right now."
     },
     {
       "id": "C08-M05",
@@ -418,8 +485,8 @@
           "meaning": "A lure from harborlight-sponsors.example reached Lena and Priya at 18:58 as ALLOW. PLEDGE-DESK-01 reached 198.51.100.77 at 19:12. lena.ostrowski succeeded at the gateway from that address at 20:03 and 02:14 while at her desk. The session reached FS-01 four times, wrote members-export.zip at 02:52, and sent 6.4 MB to 198.51.100.77 at 03:40, with a fifteen-minute beacon in between."
         },
         {
-          "part": "The lists",
-          "meaning": "sponsor_domains tuned the lookalikes in, not out, and allowlisted last week's lure. admin_accounts caught the run-as at 02:31. blocked_ranges caught one connection. A /24 block on the new range would cut off two staff."
+          "part": "The lists and tables",
+          "meaning": "station_allowlist tuned the lookalikes in, not out, and allowlisted last week's lure; its source column shows which rows to delete. privileged_accounts caught the run-as at 02:31. gateway_blocks caught one connection. A /24 block on the new range would cut off two staff."
         },
         {
           "part": "Contain",
@@ -427,7 +494,7 @@
         },
         {
           "part": "Eradicate",
-          "meaning": "Remove the lure from Priya's inbox. Remove pier9-partners.example and its beacon name from sponsor_domains, and add the real sponsor's exact names only. Verify no task or file on FS-01 beyond members-export.zip."
+          "meaning": "Remove the lure from Priya's inbox. Delete the two week-one mail log rows from station_allowlist (pier9-partners.example and its beacon name), and keep only names with a contract in the source column. Verify no task or file on FS-01 beyond members-export.zip."
         },
         {
           "part": "Recover",
@@ -435,7 +502,7 @@
         },
         {
           "part": "Harden",
-          "meaning": "MFA at VPN-GW-01 for every account. A regex list of lookalike shapes applied at the mail gateway, not only in Search. File-share auditing on FS-01. A thirty-day first-seen baseline for account and address pairs at the gateway."
+          "meaning": "MFA at VPN-GW-01 for every account. The lookalike_shapes table applied at the mail gateway, not only in Search. File-share auditing on FS-01. A thirty-day first-seen baseline for account and address pairs at the gateway. Finish the list-to-table migration with a source column before July 2027."
         }
       ],
       "starter": "",
@@ -461,7 +528,7 @@
         "correct": "B",
         "why": "Each control has a record of itself working. Each gap has a record of the attacker walking through it. Both halves are facts, and a brief that keeps them apart is the one the board can act on."
       },
-      "clue": "Odalys reads it twice. \"Held and too narrow.\" She disables Lena's account herself, calls Dez about the /32, and asks for the allowlist to be rewritten by hand, name by name, before Monday.",
+      "clue": "Odalys reads it twice. \"Held and too narrow.\" She disables Lena's account herself, calls Dez about the /32, and asks for the allowlist table to be rewritten by hand, row by row, with a source for every row, before Monday.",
       "logIt": {
         "kind": "determination",
         "prompt": "Write the Determination: confirmed incident, confidence high. Deciding refs: the gateway session, the address list, the cadence, the file-server pivot and the BLOCK. Summary, two sentences: the fix held for each item it covered; a second phished identity (lena.ostrowski) reached FS-01 through 198.51.100.77, a range and a server the fix did not cover.",
@@ -481,7 +548,7 @@
       "question": "What goes in the second handoff, and what did the first one teach?",
       "concept": {
         "title": "Facts, hypotheses, gaps, again",
-        "text": "The columns do not change. The content does: the facts are quieter, the hypotheses are about a named account rather than a shared one, the gaps are about a file share and a person's own account of her evening. The ticket names the lists by name, because the engineer who picks it up will edit them."
+        "text": "The columns do not change. The content does: the facts are quieter, the hypotheses are about a named account rather than a shared one, the gaps are about a file share and a person's own account of her evening. The ticket names the tables by name, because the engineer who picks it up will edit their rows."
       },
       "explain": [
         {
@@ -502,11 +569,11 @@
         },
         {
           "part": "Remediation",
-          "meaning": "Contain: block 198.51.100.77/32, disable lena.ostrowski and end its sessions. Eradicate: remove the lure from Priya's inbox; rewrite sponsor_domains by hand without last week's lookalike; verify FS-01 beyond the export. Recover: tell the members whose data is in the export, once the share's audit says what it held; confirm with Lena. Harden: MFA at the gateway; the lookalike regex list applied at the mail gateway; share auditing on FS-01; a thirty-day first-seen baseline."
+          "meaning": "Contain: block 198.51.100.77/32, disable lena.ostrowski and end its sessions. Eradicate: remove the lure from Priya's inbox; delete the week-one mail log rows from station_allowlist; verify FS-01 beyond the export. Recover: tell the members whose data is in the export, once the share's audit says what it held; confirm with Lena. Harden: MFA at the gateway; the lookalike_shapes table applied at the mail gateway; share auditing on FS-01; a thirty-day first-seen baseline; the list-to-table migration finished with a source column before July 2027."
         },
         {
           "part": "Handoff",
-          "meaning": "Problem: a second phished, named credential reached the file server through a range and a server the first remediation did not cover, and the sponsor allowlist was wide enough to admit a known lure. Assets: FS-01, PLEDGE-DESK-01, VPN-GW-01, lena.ostrowski, the lists sponsor_domains and blocked_ranges. Controls: the Harden list. Detections: an account succeeding at the gateway while it has an active desk session; a DNS name not on the sponsor list resolved on a fixed cadence; an outbound connection over 1 MB from a gateway-assigned address; a run-as by an account not on the admin list. Acceptance: each rule fires on tonight's records replayed and stays quiet on a normal drive night; the rewritten sponsor_domains contains no name that was ever a lure. Open: the share audit, the export contents, Lena, the server, Priya's device."
+          "meaning": "Problem: a second phished, named credential reached the file server through a range and a server the first remediation did not cover, and the sponsor allowlist was wide enough to admit a known lure. Assets: FS-01, PLEDGE-DESK-01, VPN-GW-01, lena.ostrowski, the tables station_allowlist and gateway_blocks (and their legacy lists). Controls: the Harden list. Detections: an account succeeding at the gateway while it has an active desk session; a DNS name not on the sponsor list resolved on a fixed cadence; an outbound connection over 1 MB from a gateway-assigned address; a run-as by an account not on the admin list. Acceptance: each rule fires on tonight's records replayed and stays quiet on a normal drive night; the rewritten station_allowlist contains no row that was ever a lure and every row has a source. Open: the share audit, the export contents, Lena, the server, Priya's device."
         }
       ],
       "starter": "",
@@ -518,7 +585,7 @@
         "options": [
           {
             "id": "A",
-            "label": "The fact: sponsor_domains held pier9-partners.example and admitted a known lure; the control: lists are reviewed before use"
+            "label": "The fact: station_allowlist held pier9-partners.example and admitted a known lure; the control: tables are reviewed before use"
           },
           {
             "id": "B",
@@ -530,12 +597,12 @@
           }
         ],
         "correct": "A",
-        "why": "The ticket records what the list contained and what the control should be. Names belong to HR, not the handoff; silence belongs to nobody. The habit from chapter 1 holds: facts, then the fix."
+        "why": "The ticket records what the table contained and what the control should be. Names belong to HR, not the handoff; silence belongs to nobody. The habit from chapter 1 holds: facts, then the fix."
       },
-      "clue": "The ticket goes to the engineer who will rewrite the lists. The first line of the Harden section is the sentence the whole week was about: a list is a control, and a control written in a hurry is wide in the wrong direction.",
+      "clue": "The ticket goes to the engineer who will rewrite the tables. The first line of the Harden section is the sentence the whole week was about: a table is a control, and a control written in a hurry is wide in the wrong direction.",
       "logIt": {
         "kind": "handoff",
-        "prompt": "Write the Handoff ticket. Press Assemble from casebook, then write the rest. Affected assets: FS-01, PLEDGE-DESK-01, VPN-GW-01, lena.ostrowski, the lists sponsor_domains and blocked_ranges. Detection ideas, in words: an account succeeding at the gateway while it has an active desk session; a DNS name not on the sponsor list resolved on a fixed cadence; an outbound connection over 1 MB from a gateway-assigned address; a run-as by an account not on the admin list. Acceptance criteria: how the engineer proves each control and each list is right.",
+        "prompt": "Write the Handoff ticket. Press Assemble from casebook, then write the rest. Affected assets: FS-01, PLEDGE-DESK-01, VPN-GW-01, lena.ostrowski, the tables station_allowlist and gateway_blocks. Detection ideas, in words: an account succeeding at the gateway while it has an active desk session; a DNS name not on the sponsor list resolved on a fixed cadence; an outbound connection over 1 MB from a gateway-assigned address; a run-as by an account not on the admin list. Acceptance criteria: how the engineer proves each control and each table row is right.",
         "mustInclude": [
           "FS-01",
           "lena.ostrowski",

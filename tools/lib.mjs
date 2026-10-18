@@ -20,7 +20,8 @@ export function loadContent() {
   const chapters = cases.flatMap(c => c.chapters.map(id => { chapterCase[id] = c.id; return JSON.parse(fs.readFileSync(path.join(root, 'content', 'chapters', id + '.json'), 'utf8')); }));
   const casebook = JSON.parse(fs.readFileSync(path.join(root, 'content', 'casebook.json'), 'utf8'));
   const lists = JSON.parse(fs.readFileSync(path.join(root, 'content', 'lists.json'), 'utf8'));
-  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, boundary: caseFile.boundary };
+  const tables = JSON.parse(fs.readFileSync(path.join(root, 'content', 'tables.json'), 'utf8'));
+  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, tables, boundary: caseFile.boundary };
 }
 export function loadData(file = 'events.json') { return JSON.parse(fs.readFileSync(path.join(root, 'data', file), 'utf8')); }
 // Every case's dataset, keyed by case id.
@@ -30,7 +31,7 @@ export const digestOf = events => crypto.createHash('sha256').update(JSON.string
 const hhmm = s => new Date(s * 1000).toISOString().slice(11, 16);
 
 // Derives a mission's expected answer from its reference query, so authored answers cannot drift from the data.
-export const ctxFor = content => ({ lists: content?.lists?.lists ?? [] });
+export const ctxFor = content => ({ lists: content?.lists?.lists ?? [], tables: content?.tables?.tables ?? [] });
 export function deriveAnswer(mission, events, ctx = {}) {
   const r = execute(parseSearch(mission.reference, ctx), events);
   const c = mission.answer.check;
@@ -115,6 +116,32 @@ export function validateLists(raw) {
   return problems;
 }
 
+// content/tables.json: the bundled data tables. Each has a name, a description, one to eight typed columns (the three
+// list types) and one to 500 rows with one string per column; CIDR cells must parse and regex cells must pass the guard,
+// as list items must. Column values are what %table.column tests against.
+export function validateTables(raw) {
+  const problems = [];
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.tables)) return ['tables.json: shape'];
+  const names = new Set();
+  for (const t of raw.tables) {
+    const where = `tables.json ${t?.name ?? '?'}`;
+    if (!t || typeof t.name !== 'string' || !LIST_NAME.test(t.name)) { problems.push(`${where}: bad name`); continue; }
+    if (names.has(t.name)) problems.push(`${where}: duplicate name`); names.add(t.name);
+    if (typeof t.description !== 'string' || t.description.length < 12) problems.push(`${where}: description`);
+    if (!Array.isArray(t.columns) || !t.columns.length || t.columns.length > 8 || t.columns.some(c => !c || typeof c.name !== 'string' || !LIST_NAME.test(c.name) || !LIST_TYPES.includes(c.type))) { problems.push(`${where}: columns must be 1 to 8 of { name, type string|cidr|regex }`); continue; }
+    if (new Set(t.columns.map(c => c.name)).size !== t.columns.length) problems.push(`${where}: duplicate column`);
+    if (!Array.isArray(t.rows) || !t.rows.length || t.rows.length > 500 || t.rows.some(r => !Array.isArray(r) || r.length !== t.columns.length || r.some(x => typeof x !== 'string' || !x || x.length > 512))) { problems.push(`${where}: rows must be 1 to 500 arrays of ${t.columns.length} non-empty strings up to 512 characters`); continue; }
+    t.columns.forEach((c, i) => {
+      const cells = t.rows.map(r => r[i]);
+      if (new Set(cells).size !== cells.length && c.type !== 'string') problems.push(`${where}.${c.name}: duplicate cells`);
+      if (c.type === 'cidr') for (const x of cells) if (!parseCidr(x)) problems.push(`${where}.${c.name}: "${x}" is not a CIDR range`);
+      if (c.type === 'regex') for (const x of cells) { const bad = guardRegex(x); if (bad) problems.push(`${where}.${c.name}: "${x}" fails the regex guard (${bad})`); }
+    });
+    if (Object.keys(t).some(k => !['name', 'description', 'columns', 'rows'].includes(k))) problems.push(`${where}: unknown keys`);
+  }
+  return problems;
+}
+
 // A case file entry: the fields the UI reads, a window, ranges inside the window, chapters that exist, a data file and
 // the digest of its events. The digest is how the validator proves an earlier case's events did not move.
 export function validateCase(c, chapterIds, data) {
@@ -136,11 +163,13 @@ export function validateCase(c, chapterIds, data) {
   return problems;
 }
 
-export function validate({ cases, chapters, chapterCase, casebook, lists }, datasets) {
+export function validate({ cases, chapters, chapterCase, casebook, lists, tables }, datasets) {
   const problems = [];
   if (casebook !== undefined) problems.push(...validateCasebookContent(casebook));
   if (lists !== undefined) problems.push(...validateLists(lists));
-  const ctx = ctxFor({ lists });
+  if (tables !== undefined) problems.push(...validateTables(tables));
+  if (lists && tables && lists.lists?.some(l => tables.tables?.some(t => t.name === l.name))) problems.push('lists.json and tables.json share a name; a learner could not tell %name from %name.column');
+  const ctx = ctxFor({ lists, tables });
   const ids = new Set();
   // Accept a single dataset (earlier branches) as the first case's.
   const sets = datasets?.events ? { [cases[0].id]: datasets } : datasets ?? {};

@@ -28,6 +28,20 @@ export const GROUPED = Object.freeze({
 const UNITS = { m: 60, minute: 60, minutes: 60, h: 3600, hour: 3600, hours: 3600, d: 86400, day: 86400, days: 86400 };
 const LIST_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
+// Data tables arrive from content as [{ name, columns: [{ name, type }], rows: [[...]] }]; the parser reads a Map of
+// table name to a Map of column name to { type, items } (the column's values, read down the rows).
+export function indexTables(raw) {
+  if (raw instanceof Map) return raw;
+  const out = new Map();
+  for (const t of Array.isArray(raw) ? raw : []) {
+    if (!t || typeof t.name !== 'string' || !LIST_NAME.test(t.name) || !Array.isArray(t.columns) || !Array.isArray(t.rows)) continue;
+    const cols = new Map();
+    t.columns.forEach((c, i) => { if (c && typeof c.name === 'string' && LIST_NAME.test(c.name) && LIST_TYPES.includes(c.type)) cols.set(c.name, { type: c.type, items: t.rows.map(r => String(r?.[i] ?? '')) }); });
+    out.set(t.name, { name: t.name, columns: cols });
+  }
+  return out;
+}
+
 // Reference lists arrive from content as [{ name, type, items }] or as a name-keyed object; the parser reads a Map.
 export function indexLists(raw) {
   if (raw instanceof Map) return raw;
@@ -83,10 +97,13 @@ export function lex(text) {
       push({ kind: 'op', value: v, pos: start }); continue;
     }
     if (c === '%') {
-      // %list_name: a reference list (Google: "Use reference lists").
+      // %list_name: a reference list; %table_name.column_name: a data table column (Google: "Use reference lists and
+      // data tables in YARA-L 2.0").
       let v = ''; i++; while (i < text.length && /[A-Za-z0-9_]/.test(text[i])) v += text[i++];
       if (!LIST_NAME.test(v)) invalid('BAD_LIST_NAME', start);
-      push({ kind: 'list', value: v, pos: start }); continue;
+      let column = null;
+      if (text[i] === '.') { i++; column = ''; while (i < text.length && /[A-Za-z0-9_]/.test(text[i])) column += text[i++]; if (!LIST_NAME.test(column)) invalid('BAD_LIST_NAME', start); }
+      push({ kind: 'list', value: v, column, pos: start }); continue;
     }
     if (c === '|') unsupported('LOOKS_LIKE_KQL', start);
     if (c === '#') unsupported('COUNT_CHARACTER', start);
@@ -114,9 +131,9 @@ export function lex(text) {
 }
 
 export function parseSearch(text, ctx = {}) {
-  const lists = indexLists(ctx.lists);
-  const ts = lex(text); let p = 0, atoms = 0, listRefs = 0;
-  const q = { filter: null, bindings: {}, eventVar: null, match: null, outcomes: [], condition: null, dedup: null, order: [], limit: null, lists: [] };
+  const lists = indexLists(ctx.lists), tables = indexTables(ctx.tables);
+  const ts = lex(text); let p = 0, atoms = 0; const listRefs = { all: 0, regex: 0, cidr: 0 };
+  const q = { filter: null, bindings: {}, eventVar: null, match: null, outcomes: [], condition: null, dedup: null, order: [], limit: null, lists: [], tables: [] };
   const peek = (k = 0) => ts[p + k];
   const kw = (t, w) => t && t.kind === 'word' && t.value.toLowerCase() === w;
   const take = w => { if (kw(peek(), w)) { p++; return true; } return false; };
@@ -157,6 +174,8 @@ export function parseSearch(text, ctx = {}) {
     const t = ts[p++];
     if (!t) invalid('EXPECTED_VALUE', text.length);
     if (t.kind === 'word' && /^[A-Z_]+$/.test(t.value)) invalid('UNQUOTED_ENUM', { pos: t.pos, word: t.value });
+    // field = %table.column is the rule-engine data-table join; Search tests membership with in.
+    if (t.kind === 'list') unsupported('LIST_AS_VALUE', { pos: t.pos, name: t.column ? `${t.value}.${t.column}` : t.value });
     if (!['string', 'number', 'regex'].includes(t.kind)) invalid('EXPECTED_VALUE', t.pos);
     return t;
   };
@@ -189,9 +208,12 @@ export function parseSearch(text, ctx = {}) {
         let keyword = null; if (take('cidr')) keyword = 'cidr'; else if (take('regex')) keyword = 'regex';
         const lt = ts[p++]; if (!lt || lt.kind !== 'list') invalid('EXPECTED_LIST', lt?.pos ?? text.length);
         const nocase = take('nocase');
-        if (++listRefs > LIMITS.listRefs) invalid('TOO_MANY_LISTS', inPos);
+        // Search limits per query (Google, verified 2026-10-18): at most 7 in statements, 4 of them regex, 2 cidr.
+        if (++listRefs.all > LIMITS.listRefs) invalid('TOO_MANY_LISTS', inPos);
+        if (keyword === 'regex' && ++listRefs.regex > LIMITS.regexListRefs) invalid('TOO_MANY_REGEX_LISTS', inPos);
+        if (keyword === 'cidr' && ++listRefs.cidr > LIMITS.cidrListRefs) invalid('TOO_MANY_CIDR_LISTS', inPos);
         atom();
-        const node = { type: 'inlist', field: left, list: lt.value, keyword, nocase, pos: lt.pos };
+        const node = { type: 'inlist', field: left, list: lt.value, column: lt.column, keyword, nocase, pos: lt.pos };
         return negate ? { type: 'not', child: node } : node;
       }
       const opTok = ts[p++];
@@ -293,12 +315,22 @@ export function parseSearch(text, ctx = {}) {
     if (n.child) return typeCheck(n.child);
     if (n.type === 'inlist') {
       n.field = resolve(n.field, 'filter'); const ft = exprType(n.field);
-      const list = lists.get(n.list); if (!list) invalid('UNKNOWN_LIST', { pos: n.pos, name: n.list, known: [...lists.keys()] });
-      if (n.keyword && n.keyword !== list.type) invalid('LIST_TYPE_MISMATCH', { pos: n.pos, name: n.list, listType: list.type, keyword: n.keyword });
-      if (!n.keyword && list.type !== 'string') invalid('LIST_TYPE_MISMATCH', { pos: n.pos, name: n.list, listType: list.type, keyword: null });
-      if (list.type === 'cidr') { if (ft !== 'ip') invalid('LIST_NEEDS_IP', { pos: n.pos, name: n.list }); if (n.nocase) invalid('NOCASE_ON_CIDR_LIST', n.pos); }
-      else if (ft === 'number') invalid('LIST_ON_NUMBER', { pos: n.pos, name: n.list });
-      n.listType = list.type; n.items = list.items.slice(); n.ftype = ft; if (!q.lists.includes(n.list)) q.lists.push(n.list);
+      let list, label = n.list;
+      if (n.column) {
+        // %table.column: a data table column, typed like a list. Unknown table and unknown column are named apart.
+        label = `${n.list}.${n.column}`;
+        const table = tables.get(n.list); if (!table) invalid('UNKNOWN_TABLE', { pos: n.pos, name: n.list, known: [...tables.keys()] });
+        list = table.columns.get(n.column); if (!list) invalid('UNKNOWN_TABLE_COLUMN', { pos: n.pos, name: label, known: [...table.columns.keys()] });
+        if (!q.tables.includes(n.list)) q.tables.push(n.list);
+      } else {
+        list = lists.get(n.list); if (!list) invalid('UNKNOWN_LIST', { pos: n.pos, name: n.list, known: [...lists.keys()], tables: [...tables.keys()] });
+        if (!q.lists.includes(n.list)) q.lists.push(n.list);
+      }
+      if (n.keyword && n.keyword !== list.type) invalid('LIST_TYPE_MISMATCH', { pos: n.pos, name: label, listType: list.type, keyword: n.keyword });
+      if (!n.keyword && list.type !== 'string') invalid('LIST_TYPE_MISMATCH', { pos: n.pos, name: label, listType: list.type, keyword: null });
+      if (list.type === 'cidr') { if (ft !== 'ip') invalid('LIST_NEEDS_IP', { pos: n.pos, name: label }); if (n.nocase) invalid('NOCASE_ON_CIDR_LIST', n.pos); }
+      else if (ft === 'number') invalid('LIST_ON_NUMBER', { pos: n.pos, name: label });
+      n.listType = list.type; n.items = list.items.slice(); n.ftype = ft;
       return;
     }
     if (n.type !== 'cmp') return;
