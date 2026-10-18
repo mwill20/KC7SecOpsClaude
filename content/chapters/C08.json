@@ -542,9 +542,8 @@
     {
       "id": "C08-M08",
       "kind": "read",
-      "brief": "casebook",
       "title": "Handoff, week two",
-      "beat": "06:05. Same desk, same pad. Write the handoff for a case whose first line is that last week's handoff was right and not enough.",
+      "beat": "06:05. Same desk, same pad. Write the first version of the handoff for a case whose first line is that last week's handoff was right and not enough. On Monday, chapters 9 and 10 will join the facts and add the owners; this ticket is what Dez reads on Saturday morning.",
       "question": "What goes in the second handoff, and what did the first one teach?",
       "concept": {
         "title": "Facts, hypotheses, gaps, again",

@@ -404,7 +404,7 @@ function missionPage(m) {
   // The Entities panel: the entity fields, how many directory records are valid in this case's window, and the two
   // ways to read them: an entity-only query, and the event-to-entity join written as rules document it.
   const ents = CTX.entities; const nUsers = ents.filter(e => e['graph.metadata.entity_type'] === 'USER').length, nAssets = ents.length - nUsers;
-  const entitiesPanel = el('details', { class: 'fields entities' }, el('summary', { text: `Entities (${nUsers} users, ${nAssets} assets)` }),
+  const entitiesPanel = el('details', { class: 'entities' }, el('summary', { text: `Entities (${nUsers} users, ${nAssets} assets)` }),
     el('p', { class: 'small muted', style: 'margin:8px 0' }, 'Entity context is the station directory: who owns an account, who owns a host, what each is for. In Google SecOps, entity data is queried in Search with graph.entity.* fields and each record is valid over a time range; this desk shows the records valid in this case\'s window. Query them alone (', el('code', { text: 'graph.metadata.entity_type = "ASSET"' }), ') or join an event to its entity with two variables: ', el('code', { text: '$e.principal.user.userid = $uid' }), ' and ', el('code', { text: '$u.graph.entity.user.userid = $uid' }), ', then match: $uid. The join is the form documented for rules; this trainer runs it against the bundled directory. Verify both in a tenant.'),
     el('ul', {}, Object.entries(ENTITY_FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))),
     el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'graph.entity.hostname and graph.entity.ip are accepted as the names of the asset fields. Role, criticality and remote_access values are the station\'s own labels.' }));

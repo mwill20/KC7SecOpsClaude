@@ -121,13 +121,14 @@
     {
       "id": "week-after",
       "title": "The week after",
-      "tagline": "The password is reset, the task is gone, the range is blocked. Did the fix hold?",
+      "tagline": "The password is reset, the task is gone, the range is blocked. Did the fix hold, and is the path one story?",
       "role": "You are back at the signal desk for the membership drive, one week after Pledge Night. Odalys applied every item on your Contain and Eradicate lists. You still have read access to Search and nothing else.",
-      "summary": "One week later, at the same station, after the fix. Subtler, quieter, and the question is whether the fix held.",
+      "summary": "One week later, at the same station, after the fix. Subtler, quieter, and the question is whether the fix held; then, on Monday, whether the events are one story and who owns the hosts they touched.",
       "opening": [
         "Friday, 18:00, the membership drive. The pledge-desk password was reset on Saturday morning, the PledgeSync task and its folder were removed, AUTOMATION-01 was rebuilt, and the gateway now blocks 203.0.113.0/24. Dez also wrote an allowlist of sponsor domains before lunch, by copying every sponsor-looking name out of last week's logs, so the station could tune out the known-good and see what was left.",
         "Nothing airs that should not. No burst of failures, no encoded PowerShell, no forty-eight-megabyte upload. At 05:40 Odalys asks the only question that matters a week after an incident: did the fix hold? She wants it answered the way last week's brief was answered: from the records, with the records.",
-        "The station has twelve hours of its own logs again. The attacker, if they came back, had a week to read the same brief you wrote."
+        "The station has twelve hours of its own logs again. The attacker, if they came back, had a week to read the same brief you wrote.",
+        "On Monday morning the ticket is still open. Before it closes, Odalys wants two things the Friday brief could not give her: proof that the gateway login and the file server are one story, written as a query someone can rerun, and the station directory beside every row, so each item of the fix has an owner."
       ],
       "people": [
         {
@@ -175,7 +176,11 @@
         },
         {
           "name": "The allowlist",
-          "note": "sponsor_domains, a reference list written in a hurry. Also admin_accounts, blocked_ranges and station_lan: see the Lists panel on the desk."
+          "note": "station_allowlist, a data table migrated from a reference list written in a hurry; also privileged_accounts, gateway_blocks and lookalike_shapes, and the legacy lists they replace. See the Lists and tables panel on the desk."
+        },
+        {
+          "name": "The directory",
+          "note": "The station's entity context: users with titles, roles and remote access, assets with owners and criticality, each record valid over a time range. See the Entities panel on the desk."
         }
       ],
       "window": {
@@ -217,11 +222,13 @@
       ],
       "chapters": [
         "C07",
-        "C08"
+        "C08",
+        "C09",
+        "C10"
       ],
       "data": "events-week-after.json",
-      "closedAt": "06:10",
-      "digest": "c1dc6befb490364b470eaa9eca77e67d5b09fcf201b6b63c9d6aef23c3f677fc"
+      "closedAt": "Monday, 09:40",
+      "digest": "c7b7e9eff42e93a6be5d882a81ca6a0caf3d4e165cceb960a209feba4833470b"
     }
   ],
   "boundary": "Everything here is fiction: the station, the people, the logs, the addresses. Nothing runs against a real SIEM. Do not type real workplace values into this site; practise the shape of the query here and use real values only inside tools your employer authorizes."

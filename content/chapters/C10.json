@@ -1,0 +1,565 @@
+{
+  "id": "C10",
+  "title": "Who owns this host",
+  "subtitle": "Entity context: ownership, criticality and status beside the events, and which findings change when it arrives",
+  "intro": "Every row so far named an account and a host and nothing else. The station knows more: who owns PLEDGE-DESK-01, what FS-01 is for, that marco.vela was terminated on the Monday after Pledge Night, that lena.ostrowski was given write access to the membership share that same week. In Google SecOps that knowledge is entity data, queried in Search with graph.entity.* fields, each record valid over a time range. This trainer bundles a small station directory and shows the version that was valid in this case's window; the Entities panel on the desk lists the fields. This chapter reads the directory on its own, joins events to it with the form documented for rules, and asks the only question that matters about context: which findings change when it is added, and which do not.",
+  "concepts": [
+    "An entity record is context with a validity interval: the directory as it stood on the night, not as it stands today",
+    "graph.entity.user.* and graph.entity.asset.* are queried like events; graph.metadata.entity_type says which kind of record a row is",
+    "An event joins its entity through a shared placeholder: $e.principal.user.userid = $uid and $u.graph.entity.user.userid = $uid; the record valid at the event's time is the one that joins",
+    "A terminated account in the directory and a login by that account in the events are two facts; the directory says what should be true, the event says what happened",
+    "Title is what a person is called; role and remote_access are what the account may do; findings change when the join puts them beside the events"
+  ],
+  "recap": [
+    "Query the station directory with graph.metadata.entity_type and graph.entity.* fields and read a record's validity interval",
+    "Join an event to its user or asset through a shared placeholder, and say why the form is rule-context syntax to verify in a tenant",
+    "Find a terminated account that still appears in events and write the fact without the blame, with the asset owner named for the fix",
+    "Revisit title against privilege with role and remote_access beside the run-as and gateway tables, and say which rows the context changed",
+    "Put an owner and a criticality beside every host the remote session reached, and name that owner in the Remediation and the handoff"
+  ],
+  "missions": [
+    {
+      "id": "C10-M01",
+      "kind": "read",
+      "title": "Context is a second dataset",
+      "beat": "Monday, later. Odalys slides a printed page across the desk: the station directory, as Dez exported it on Saturday. Owners, roles, who may work from home, which accounts are shared. 'Put this next to the rows,' she says. 'Then tell me which of your findings change.'",
+      "question": "What is entity context, how is it queried, and what can it change?",
+      "concept": {
+        "title": "The directory as it stood that night",
+        "text": "Entity data is what the organisation knows about its accounts and assets outside the event stream: a user's title, department, manager, employment status, account type, roles; an asset's address, owner, purpose, criticality. Google's statistics page shows it queried in Search with graph.entity.* fields (graph.entity.hostname != \"\", match: graph.entity.ip) and says entity records are valid over a time range. That interval is the point: a record says what the directory believed between two dates, so the join picks the version valid at the event's time, not the version on screen today. This trainer bundles a small directory with two versions of the records that changed after Pledge Night and shows the version valid in this case's window. The Entities panel on the desk lists the fields."
+      },
+      "explain": [
+        {
+          "part": "graph.metadata.entity_type = \"ASSET\"",
+          "meaning": "An entity-only query: the directory's asset records, one row each, with the interval they were valid for. USER returns the accounts."
+        },
+        {
+          "part": "$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\nmatch:\n  $uid",
+          "meaning": "The event-to-entity join: an event variable and an entity variable sharing a placeholder. This is the form Google documents for rules; the trainer runs it here against the bundled directory and labels it so. An entity join takes no over window: the record valid at the event's time is the one that joins."
+        },
+        {
+          "part": "graph.entity.user.employment_status · graph.entity.user.attribute.roles.name · graph.entity.user.attribute.labels.remote_access",
+          "meaning": "Status, role and the station's own label for who may use the gateway. Title is what a person is called; these are what the account may do."
+        },
+        {
+          "part": "graph.entity.asset.attribute.labels.owner · graph.entity.asset.attribute.labels.criticality",
+          "meaning": "Who answers for a host and how much it matters. The Remediation list needs the first; the order of the list needs the second."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez says the directory was exported on Saturday, so it cannot describe Friday night. What is the right response?",
+        "options": [
+          {
+            "id": "A",
+            "label": "He is right, so the directory is out of scope: context that postdates the events can only mislead, and the brief should stay with the rows until a Friday export of the same directory turns up"
+          },
+          {
+            "id": "B",
+            "label": "Each record carries the interval it was valid for; use the version valid on Friday night, and record the export date and the maintainer as a gap"
+          },
+          {
+            "id": "C",
+            "label": "The export date does not matter, because titles and owners at a small station do not change often enough to affect a one-night investigation"
+          }
+        ],
+        "correct": "B",
+        "why": "Entity records are valid over a range, and the join uses the one valid at the event's time. The directory still has a maintainer and a lag (it said ACTIVE about a host who had been let go a week earlier); that is a gap to write down, not a reason to throw the context away."
+      },
+      "clue": "Odalys taps the printout. 'Saturday's version, not Friday's. Mind the dates.' The Entities panel shows the records valid in this case's window: twelve users, eleven assets, and two of each with a version that changed on the Monday after Pledge Night.",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: the station directory is a bundled snapshot with validity intervals; who maintains it, how quickly it follows HR and asset changes, and whether a tenant's entity graph would carry the same fields are not visible here. Why it matters: on Pledge Night the directory still said ACTIVE about an account the login log said was disabled.",
+        "mustInclude": [
+          "directory"
+        ]
+      },
+      "caveat": "In a tenant, entity data arrives through context parsers and the entity graph, with its own field list and its own lag. The graph.entity.* names here mirror UDM entity nouns as the team reads them; the roles, criticality and remote_access values are the station's own labels. Verify both against your tenant before a brief depends on them."
+    },
+    {
+      "id": "C10-M02",
+      "kind": "watch",
+      "title": "Every host and its owner",
+      "beat": "Start with the directory alone. One row per asset: hostname, address, purpose, owner, criticality, and the interval the record was valid for. Find the file server.",
+      "question": "Which assets does the directory hold, and who owns FS-01?",
+      "concept": {
+        "title": "An entity query reads records, not events",
+        "text": "graph.metadata.entity_type = \"ASSET\" returns the directory's asset records valid in this case's window, rendered with their validity interval first. There is no timestamp column because an entity is not something that happened; it is something that was true between two dates. dedup, match and outcome work on these rows as they do on events. Read the owner and criticality columns: they are what the Remediation list and the handoff were missing."
+      },
+      "explain": [
+        {
+          "part": "graph.metadata.entity_type = \"ASSET\"",
+          "meaning": "Asset records only. USER would return the accounts. Both kinds carry graph.metadata.* fields."
+        },
+        {
+          "part": "valid (UTC)",
+          "meaning": "The interval the record was valid for. STUDIO-B's record starts on the Monday after Pledge Night: it changed hands that day."
+        },
+        {
+          "part": "asset.owner · asset.criticality",
+          "meaning": "The station's labels. Three hosts are HIGH: the playout PC, the file server, the gateway, and the directory server itself."
+        }
+      ],
+      "starter": "graph.metadata.entity_type = \"ASSET\"",
+      "reference": "graph.metadata.entity_type = \"ASSET\"",
+      "hints": [
+        "Run it as written. Eleven records. Read the owner column.",
+        "Find the row whose hostname is FS-01 and read its owner.",
+        "FS-01, 10.9.4.50, FILE_SERVER, owner odalys.reyes, criticality HIGH, valid all year. The station manager answers for the file server; the engineer answers for the playout PC, the gateway and the directory server."
+      ],
+      "answer": {
+        "prompt": "Who is the owner of FS-01 (the asset.owner value)?",
+        "value": "odalys.reyes",
+        "check": {
+          "type": "field",
+          "field": "graph.entity.asset.attribute.labels.owner",
+          "where": {
+            "graph.entity.asset.hostname": "FS-01"
+          }
+        }
+      },
+      "call": {
+        "prompt": "The owner of the file server is the station manager who asked for the brief. Hal says that is a conflict and the Remediation should name the engineer instead. What belongs in the list?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The engineer, because he will do the work and the owner field is an administrative label that does not decide who acts on a host"
+          },
+          {
+            "id": "B",
+            "label": "Nobody by name: a Remediation item carries an owner role, and the directory's owner column is context for the brief, not an assignment the analyst is entitled to make"
+          },
+          {
+            "id": "C",
+            "label": "The directory's owner, as the role that answers for the host, with the engineer as the hands; the brief names the role and the directory names the person"
+          }
+        ],
+        "correct": "C",
+        "why": "An owner is who answers for a host, not who types the commands. The Remediation item carries the owner role; the directory says which person holds it tonight. Both go in the handoff, and a conflict of interest is a sentence for Odalys's board, not a reason to rewrite the directory."
+      },
+      "clue": "Eleven assets. Four HIGH: AUTOMATION-01 and VPN-GW-01 and DC-01 owned by dez.okafor, FS-01 owned by odalys.reyes. Two LOW desks, one each for Lena and Hal. And STUDIO-B, which belonged to marco.vela until the Monday after Pledge Night and to kenji.mori since.",
+      "logIt": {
+        "kind": "pivot",
+        "prompt": "Write a Pivot: for every host the remote session (10.9.4.200) reached, read the owner and criticality from the directory and put them beside the row, so the Remediation list can be ordered by criticality and each item can name an owner. Say why: a list of hosts without owners is a list nobody acts on.",
+        "mustInclude": [
+          "FS-01"
+        ]
+      },
+      "caveat": "In a tenant, asset context comes from an asset inventory or a CMDB through a context parser, and the owner field may be an email, a group or empty. The query is the same; the data quality is the first thing to check."
+    },
+    {
+      "id": "C10-M03",
+      "kind": "build",
+      "title": "Accounts the station let go",
+      "beat": "The directory knows who no longer works here. Ask it: which user records say the account is terminated? Then remember what the login log said about one of them on Pledge Night.",
+      "question": "Which accounts does the directory mark as terminated?",
+      "concept": {
+        "title": "employment_status is what should be true",
+        "text": "graph.entity.user.employment_status is the directory's word on an account: ACTIVE or TERMINATED. It is what should be true of the account; the login log is what happened. On Pledge Night the directory still said ACTIVE about the overnight host the station had let go, and the login log said Account disabled three times from Studio B. The record valid now says TERMINATED, from the Monday after. Both are facts with dates, and the gap between them is the lag of a small station's paperwork."
+      },
+      "explain": [
+        {
+          "part": "graph.metadata.entity_type = \"USER\"",
+          "meaning": "User records only."
+        },
+        {
+          "part": "graph.entity.user.employment_status = \"___\"",
+          "meaning": "The gap: the status the question asks for, an enum in double quotes like any other."
+        },
+        {
+          "part": "valid (UTC)",
+          "meaning": "Read when the record began. The termination record starts on the Monday after Pledge Night, not on the day the station let him go."
+        }
+      ],
+      "starter": "graph.metadata.entity_type = \"USER\"\ngraph.entity.user.employment_status = \"___\"",
+      "reference": "graph.metadata.entity_type = \"USER\"\ngraph.entity.user.employment_status = \"TERMINATED\"",
+      "hints": [
+        "The gap is an employment status. The Entities panel names the field; the values here are ACTIVE and TERMINATED.",
+        "Fill the gap with TERMINATED.",
+        "graph.metadata.entity_type = \"USER\"\ngraph.entity.user.employment_status = \"TERMINATED\""
+      ],
+      "answer": {
+        "prompt": "Which userid is in the record your query returns?",
+        "value": "marco.vela",
+        "check": {
+          "type": "field",
+          "field": "graph.entity.user.userid",
+          "index": 0
+        }
+      },
+      "call": {
+        "prompt": "The record says TERMINATED from the Monday after Pledge Night; the Pledge Night login log said Account disabled three times a week earlier. Which sentence is the fact?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The account was disabled before the directory recorded the termination: two systems, two dates, both recorded, and the gap between them is the station's lag"
+          },
+          {
+            "id": "B",
+            "label": "The directory is wrong and should be corrected to the day the station let him go, so the brief can cite a single date and the two systems stop disagreeing in front of the board"
+          },
+          {
+            "id": "C",
+            "label": "The login log is wrong, since the directory is the system of record and an ACTIVE account cannot report Account disabled"
+          }
+        ],
+        "correct": "A",
+        "why": "Neither system is wrong; they recorded different things at different times. The identity system disabled the account on his last day; the directory caught up on the Monday after. Write both dates. A brief that edits one to match the other has invented a fact."
+      },
+      "clue": "One record: marco.vela, Overnight Host, Programming, manager kenji.mori, TERMINATED, role NONE, valid from the Monday after Pledge Night. On Pledge Night the directory said ACTIVE while the login log said Account disabled. The paperwork took a week.",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: the directory marks marco.vela TERMINATED from 2026-03-16 while the login log reported Account disabled on Pledge Night a week earlier; which system disabled the account, when, and whether any other access (studio door code, shared drives) was removed is not visible in Search. Why it matters: a terminated account that can still be tried is a door.",
+        "mustInclude": [
+          "marco.vela"
+        ]
+      },
+      "caveat": "In a tenant, employment status comes from the HR or identity source the context parser reads, and its vocabulary is that source's. Check the field's actual values before you filter on a word you expect."
+    },
+    {
+      "id": "C10-M04",
+      "kind": "build",
+      "title": "A terminated account in the login log",
+      "beat": "Join the events to the directory: every login by an account whose record says terminated. Fill in the key that ties the event's account to the entity's account.",
+      "question": "Which terminated accounts appear in tonight's login events, from where, and with what result?",
+      "concept": {
+        "title": "The join form documented for rules, run against the directory",
+        "text": "$e is an event, $u is an entity record. $e.principal.user.userid = $uid and $u.graph.entity.user.userid = $uid make the account the join key; match: $uid groups by it. There is no window: the entity record valid at the event's time is the one that joins, so an event on Friday night meets Friday night's directory. Google documents this join for rules; this trainer runs it here against the bundled records and labels it as rule-context syntax. One row comes back, and it is the account the station let go, trying a door from Studio B."
+      },
+      "explain": [
+        {
+          "part": "$u.graph.entity.user.employment_status = \"TERMINATED\"",
+          "meaning": "Filter the entity side: records that say terminated."
+        },
+        {
+          "part": "$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid",
+          "meaning": "The join key, the gap to fill: the event's account and the entity's account are the same placeholder."
+        },
+        {
+          "part": "match:\n  $uid",
+          "meaning": "Group by the account. No over window on an entity join: the interval does the time matching."
+        },
+        {
+          "part": "$hosts = array_distinct($e.principal.hostname)\n$result = array_distinct($e.security_result.action)",
+          "meaning": "Where the attempts came from and whether they worked. The directory says the host belongs to someone else now."
+        }
+      ],
+      "starter": "$e.metadata.event_type = \"USER_LOGIN\"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = ___\n$u.graph.entity.user.employment_status = \"TERMINATED\"\nmatch:\n  $uid\noutcome:\n  $n = count($e.metadata.id)\n  $hosts = array_distinct($e.principal.hostname)\n  $first = earliest($e.metadata.event_timestamp)\n  $result = array_distinct($e.security_result.action)",
+      "reference": "$e.metadata.event_type = \"USER_LOGIN\"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\n$u.graph.entity.user.employment_status = \"TERMINATED\"\nmatch:\n  $uid\noutcome:\n  $n = count($e.metadata.id)\n  $hosts = array_distinct($e.principal.hostname)\n  $first = earliest($e.metadata.event_timestamp)\n  $result = array_distinct($e.security_result.action)",
+      "hints": [
+        "The gap is the join placeholder: the entity's userid must be set to the same $name the event's userid was set to.",
+        "Fill the gap with $uid.",
+        "$e.metadata.event_type = \"USER_LOGIN\"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\n$u.graph.entity.user.employment_status = \"TERMINATED\"\nmatch:\n  $uid\noutcome:\n  $n = count($e.metadata.id)\n  $hosts = array_distinct($e.principal.hostname)\n  $first = earliest($e.metadata.event_timestamp)\n  $result = array_distinct($e.security_result.action)"
+      ],
+      "answer": {
+        "prompt": "What clock time is in the $first column (HH:MM, UTC)?",
+        "value": "23:50",
+        "also": [
+          "23:50:05"
+        ],
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$first",
+          "format": "hhmm"
+        }
+      },
+      "call": {
+        "prompt": "The attempts came from STUDIO-B, which the directory now assigns to the music director. Hal says that settles who typed the password. What goes in the brief?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The fact and the owner: a terminated account was tried twice from STUDIO-B and failed; the host's owner is named so the fix has an owner, and who typed is a hypothesis"
+          },
+          {
+            "id": "B",
+            "label": "The music director, since the directory assigns him the host and the attempts happened on it, which is as close to a keyboard as logs get"
+          },
+          {
+            "id": "C",
+            "label": "Nothing about the host, since a studio is a shared room and naming it would point at whoever happens to own it in the directory on the day the brief is read"
+          }
+        ],
+        "correct": "A",
+        "why": "Ownership is who answers for the host, which is exactly what the fix needs. It is not who was in the room. Chapter 1's rule has not changed with context added: the record names an account and a host; the person is a hypothesis."
+      },
+      "clue": "One row: marco.vela, two attempts from STUDIO-B at 23:50 and 23:52, both FAIL, Account disabled. The account was terminated in the directory on the Monday after Pledge Night and someone in Studio B still tried it on Friday. The directory says Studio B is Kenji's now; that is the name the fix needs, not the name the blame wants.",
+      "logIt": {
+        "kind": "remediation",
+        "list": "harden",
+        "prompt": "Write a Harden item that names an owner: clear the terminated account's saved credentials and profile from STUDIO-B, review who holds the studio door code, and confirm the account is disabled in the identity system as well as the directory. Answers: an Evidence entry for the two attempts (records evt-20972 and evt-20973; add one if none fits). Owner role: asset owner, kenji.mori per the directory. Urgency: this week.",
+        "mustInclude": [
+          "STUDIO-B",
+          "kenji.mori"
+        ]
+      },
+      "caveat": "In a rule, the same join is a detection: a login by an account the entity graph marks terminated, with the join written exactly like this and no window. Test it against a quiet week first; a stale directory fires on everyone whose paperwork is late."
+    },
+    {
+      "id": "C10-M05",
+      "kind": "solo",
+      "title": "Title against privilege, with the directory",
+      "beat": "Chapter 8 found two run-as attempts to svc-playout and told them apart by the action column. Put the directory beside them: each account's title and role next to its attempt, so the brief can say what the account was allowed to do and what it tried.",
+      "question": "For each account that tried to run as svc-playout, what title and role does the directory give it, and did the attempt work?",
+      "concept": {
+        "title": "Role is what the account may do; title is what the person is called",
+        "text": "Join the run-as events to the user records and bring graph.entity.user.title and graph.entity.user.attribute.roles.name into the outcomes. Two rows: a Volunteer Engineer whose role is STATION_ADMIN, ALLOW; a Membership Coordinator whose role is MEMBERSHIP_SHARE_EDITOR, FAIL. The second row is the one the chapter-1 lesson predicted: a title that sounds like access and a role that is not. The directory turns \"should not have that privilege\" from a guess into a column."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "$e.metadata.event_type = \"USER_LOGIN\"\n$e.target.user.userid = \"svc-playout\"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\nmatch:\n  $uid\noutcome:\n  $title = array_distinct($u.graph.entity.user.title)\n  $role = array_distinct($u.graph.entity.user.attribute.roles.name)\n  $result = array_distinct($e.security_result.action)\n  $n = count($e.metadata.id)",
+      "hints": [
+        "An event variable $e: USER_LOGIN with target.user.userid svc-playout, principal.user.userid set to $uid. An entity variable $u: graph.entity.user.userid set to $uid. match: $uid. Outcomes: array_distinct of $u.graph.entity.user.title, of $u.graph.entity.user.attribute.roles.name, of $e.security_result.action, and a count of $e.metadata.id.",
+        "match:\n  $uid\noutcome:\n  $title = array_distinct($u.graph.entity.user.title)\n  $role = array_distinct($u.graph.entity.user.attribute.roles.name)\n  $result = array_distinct($e.security_result.action)\n  $n = count($e.metadata.id)",
+        "$e.metadata.event_type = \"USER_LOGIN\"\n$e.target.user.userid = \"svc-playout\"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\nmatch:\n  $uid\noutcome:\n  $title = array_distinct($u.graph.entity.user.title)\n  $role = array_distinct($u.graph.entity.user.attribute.roles.name)\n  $result = array_distinct($e.security_result.action)\n  $n = count($e.metadata.id)"
+      ],
+      "answer": {
+        "prompt": "What is in the $role cell for lena.ostrowski?",
+        "value": "MEMBERSHIP_SHARE_EDITOR",
+        "check": {
+          "type": "cell",
+          "row": {
+            "graph.entity.user.userid = principal.user.userid": "lena.ostrowski"
+          },
+          "column": "$role",
+          "format": "list"
+        }
+      },
+      "call": {
+        "prompt": "The directory gave the membership coordinator write access to the membership share the Monday after Pledge Night, and the remote session wrote an export there on Friday. What does the join change in the brief?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Nothing: the export was already a fact, and whether the account had permission to write it is a question for HR, not for the handoff"
+          },
+          {
+            "id": "B",
+            "label": "The export was authorised, because the account's role covers the share, so the file-server findings move from the incident to the baseline and the export becomes a permitted use"
+          },
+          {
+            "id": "C",
+            "label": "The export was within the account's role and the run-as was not; the finding sharpens to a credential used for exactly what it was allowed to do, plus one attempt beyond it"
+          }
+        ],
+        "correct": "C",
+        "why": "Context does not clear the export; it explains why it succeeded. The role made the share writable to whoever held the credential, and the one thing the role did not cover failed. That sentence belongs in the determination and in the Harden list beside the share's access review."
+      },
+      "clue": "dez.okafor: Volunteer Engineer, STATION_ADMIN, ALLOW. lena.ostrowski: Membership Coordinator, MEMBERSHIP_SHARE_EDITOR, FAIL. The role granted on the Monday after Pledge Night is the reason members-export.zip could be written; the role's edge is where the attacker's run-as stopped.",
+      "logIt": {
+        "kind": "hypothesis",
+        "prompt": "Write or update a Hypothesis, status supported: the remote session used the lena.ostrowski credential for what its role (MEMBERSHIP_SHARE_EDITOR) allowed on the membership share and failed at the one privilege the role does not grant, running as svc-playout. Supporting refs: the run-as denial and the file-server evidence. Test next: the share's own audit log.",
+        "mustInclude": [
+          "MEMBERSHIP_SHARE_EDITOR",
+          "svc-playout"
+        ]
+      },
+      "caveat": "In a tenant, roles may live in several systems and the entity graph may carry only some of them; a role that is absent from the graph is not a role the account lacks. Say which source the role column came from."
+    },
+    {
+      "id": "C10-M06",
+      "kind": "build",
+      "title": "Where the session went, with owners",
+      "beat": "Chapter 7 listed the remote session's three destinations. Two were outside the station and one was the file server. Join the session's connections to the asset records so each inside destination carries its owner and criticality, and watch the outside ones fall away.",
+      "question": "Which station hosts did the remote session connect to, who owns each, and how critical is it?",
+      "concept": {
+        "title": "An address no asset owns is the outside",
+        "text": "Join the session's connections to asset records on the destination address: $e.target.ip = $ip and $a.graph.entity.asset.ip = $ip. Only addresses the directory knows become rows, so 198.51.100.77 and 203.0.113.44 are not in the table; they are the outside, and the join says so by omission. What remains is FS-01 with its owner and HIGH beside it, four connections. The Remediation item for the file server now has a name on it."
+      },
+      "explain": [
+        {
+          "part": "$e.principal.ip = \"10.9.4.200\"\n$e.target.ip = $ip",
+          "meaning": "The remote session's connections, keyed by where they went."
+        },
+        {
+          "part": "$a.graph.entity.asset.ip = $ip",
+          "meaning": "The gap to fill: the asset record whose address matches. An address the directory does not hold joins nothing."
+        },
+        {
+          "part": "$owner = array_distinct($a.graph.entity.asset.attribute.labels.owner)\n$criticality = array_distinct($a.graph.entity.asset.attribute.labels.criticality)",
+          "meaning": "Who answers for the host and how much it matters, read from the entity side of the join."
+        }
+      ],
+      "starter": "$e.metadata.event_type = \"NETWORK_CONNECTION\"\n$e.principal.ip = \"10.9.4.200\"\n$e.target.ip = $ip\n$a.graph.entity.asset.ip = ___\nmatch:\n  $ip\noutcome:\n  $host = array_distinct($a.graph.entity.asset.hostname)\n  $owner = array_distinct($a.graph.entity.asset.attribute.labels.owner)\n  $criticality = array_distinct($a.graph.entity.asset.attribute.labels.criticality)\n  $n = count($e.metadata.id)",
+      "reference": "$e.metadata.event_type = \"NETWORK_CONNECTION\"\n$e.principal.ip = \"10.9.4.200\"\n$e.target.ip = $ip\n$a.graph.entity.asset.ip = $ip\nmatch:\n  $ip\noutcome:\n  $host = array_distinct($a.graph.entity.asset.hostname)\n  $owner = array_distinct($a.graph.entity.asset.attribute.labels.owner)\n  $criticality = array_distinct($a.graph.entity.asset.attribute.labels.criticality)\n  $n = count($e.metadata.id)",
+      "hints": [
+        "The gap is the join placeholder: the asset's address must be set to the same $name the connection's target address was set to.",
+        "Fill the gap with $ip.",
+        "$e.metadata.event_type = \"NETWORK_CONNECTION\"\n$e.principal.ip = \"10.9.4.200\"\n$e.target.ip = $ip\n$a.graph.entity.asset.ip = $ip\nmatch:\n  $ip\noutcome:\n  $host = array_distinct($a.graph.entity.asset.hostname)\n  $owner = array_distinct($a.graph.entity.asset.attribute.labels.owner)\n  $criticality = array_distinct($a.graph.entity.asset.attribute.labels.criticality)\n  $n = count($e.metadata.id)"
+      ],
+      "answer": {
+        "prompt": "What is in the $criticality cell for 10.9.4.50?",
+        "value": "HIGH",
+        "check": {
+          "type": "cell",
+          "row": {
+            "graph.entity.asset.ip = target.ip": "10.9.4.50"
+          },
+          "column": "$criticality",
+          "format": "list"
+        }
+      },
+      "call": {
+        "prompt": "Chapter 7's dedup listed three destinations; this join lists one. A colleague says the join lost two findings. What happened to them?",
+        "options": [
+          {
+            "id": "A",
+            "label": "They were dropped by a bug in the join, since every connection should produce a row whether or not the directory knows the address, and the missing rows mean evidence was discarded"
+          },
+          {
+            "id": "B",
+            "label": "They joined nothing because no asset owns them: the join sorted the destinations into inside and outside, and the outside two stay in chapter 7's evidence"
+          },
+          {
+            "id": "C",
+            "label": "They were deduplicated away, because the two outside addresses share a criticality value and dedup keeps the first of each"
+          }
+        ],
+        "correct": "B",
+        "why": "A join returns pairs. An address with no asset record has no pair, and that absence is information: it is not ours. The two outside destinations are already in the Evidence tab from chapter 7 with their own records; this table is about what the session reached inside."
+      },
+      "clue": "One row: 10.9.4.50, FS-01, owner odalys.reyes, criticality HIGH, four connections. The two outside addresses joined nothing, which is the directory's way of saying they are not the station's. The file server now has a name beside it.",
+      "logIt": {
+        "kind": "timeline",
+        "prompt": "Add a Timeline entry: 20:11 UTC, the remote session (10.9.4.200) makes its first connection to FS-01 (10.9.4.50, criticality HIGH, owner odalys.reyes per the directory), record evt-20211. Reference the Evidence entry that holds the session's FS-01 activity, or add one for this record first.",
+        "mustInclude": [
+          "20:11",
+          "HIGH"
+        ]
+      },
+      "caveat": "In a tenant, the asset graph may hold the address under several records (DHCP leases, scanners, the CMDB) with overlapping intervals; a join can return more than one owner for one address. When it does, the brief says so instead of picking one."
+    },
+    {
+      "id": "C10-M07",
+      "kind": "solo",
+      "title": "Which findings change",
+      "beat": "Chapter 7's gateway table had three accounts and needed the people's own word to tell them apart. The directory has a label for exactly that: remote_access. Join the gateway successes to the user records and keep the accounts the directory says may not work from home.",
+      "question": "Which account succeeded at the gateway although the directory says it has no remote access, and from where?",
+      "concept": {
+        "title": "Context turns a baseline into a filter",
+        "text": "In chapter 7 the three gateway accounts were a list and Dez and Odalys said they would be remote. The directory says the same thing as data: graph.entity.user.attribute.labels.remote_access is yes for both of them and no for the membership coordinator. Join the gateway successes to the records and filter the entity side on no: one row, two sessions, one outside address. The finding did not change; what changed is that it no longer rests on two people's word. That is what context is for: not new facts, but facts that stand on records instead of conversations."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "$e.metadata.event_type = \"USER_LOGIN\"\n$e.target.hostname = \"VPN-GW-01\"\n$e.security_result.action = \"ALLOW\"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\n$u.graph.entity.user.attribute.labels.remote_access = \"no\"\nmatch:\n  $uid\noutcome:\n  $title = array_distinct($u.graph.entity.user.title)\n  $n = count($e.metadata.id)\n  $from = array_distinct($e.principal.ip)",
+      "hints": [
+        "An event variable $e: USER_LOGIN at target.hostname VPN-GW-01 with action ALLOW, principal.user.userid set to $uid. An entity variable $u: graph.entity.user.userid set to $uid and graph.entity.user.attribute.labels.remote_access = \"no\". match: $uid. Outcomes: array_distinct of the title, a count of $e.metadata.id, array_distinct of $e.principal.ip.",
+        "$u.graph.entity.user.attribute.labels.remote_access = \"no\"\nmatch:\n  $uid\noutcome:\n  $title = array_distinct($u.graph.entity.user.title)\n  $n = count($e.metadata.id)\n  $from = array_distinct($e.principal.ip)",
+        "$e.metadata.event_type = \"USER_LOGIN\"\n$e.target.hostname = \"VPN-GW-01\"\n$e.security_result.action = \"ALLOW\"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\n$u.graph.entity.user.attribute.labels.remote_access = \"no\"\nmatch:\n  $uid\noutcome:\n  $title = array_distinct($u.graph.entity.user.title)\n  $n = count($e.metadata.id)\n  $from = array_distinct($e.principal.ip)"
+      ],
+      "answer": {
+        "prompt": "What address is in the $from cell of the row?",
+        "value": "198.51.100.77",
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$from",
+          "format": "list"
+        }
+      },
+      "call": {
+        "prompt": "With the directory joined in, which of the week-two findings changed and which did not?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The gateway finding is now unnecessary, since the directory alone shows who may work remotely and the events add nothing to a policy that already exists"
+          },
+          {
+            "id": "B",
+            "label": "The facts stayed; their support changed: the gateway row rests on a label instead of two conversations, the export on a role, the fix on named owners, and the terminated account is a new row"
+          },
+          {
+            "id": "C",
+            "label": "Everything changed, because context reassigns responsibility: the owners in the directory are now the accountable parties and the determination should name each of them beside the host they own"
+          }
+        ],
+        "correct": "B",
+        "why": "Context rarely changes what happened. It changes what the brief can stand on, and it adds the one row only the directory could have shown (the terminated account). Accountability for a host is a role in the Remediation list, not a verdict in the determination."
+      },
+      "clue": "One row: lena.ostrowski, Membership Coordinator, remote_access no, two gateway successes from 198.51.100.77. The same finding as chapter 7, now resting on a record instead of on what Dez and Odalys told you in the corridor. Odalys reads it and nods once. 'Write it that way.'",
+      "logIt": {
+        "kind": "determination",
+        "prompt": "Update the Determination (it stays confirmed, confidence high) so the summary stands on the directory as well as the events: the credential that reached FS-01 belongs to an account the directory marks remote_access no, the export was within the role the account was given on 2026-03-16, and the run-as beyond that role failed. Keep the deciding refs and add the join evidence.",
+        "mustInclude": [
+          "remote_access",
+          "198.51.100.77"
+        ]
+      },
+      "caveat": "A label such as remote_access is only as good as the process that sets it. In a tenant, find out who maintains it and how often before a detection depends on it; a stale yes hides the attacker and a stale no fires on the engineer."
+    },
+    {
+      "id": "C10-M08",
+      "kind": "read",
+      "brief": "casebook",
+      "title": "Handoff, with owners",
+      "beat": "Monday, 09:40. The week-two ticket is still open on Dez's desk. Rewrite it with what the two Monday chapters added: the joins that make the path one story, and the owners and roles that make the fix someone's job. Then compare your casebook with the model.",
+      "question": "What does the final handoff say that the Friday handoff could not?",
+      "concept": {
+        "title": "The same columns, with a spine and names",
+        "text": "The facts are the Friday facts, now joined: gateway then file server, lookup then connection, login then export, each with a key and a window a second analyst can rerun. The hypotheses rest on roles and labels, not conversations. The gaps name the two things no query can reach: the tenant's answer about over in Search, and the directory's own maintenance. The remediation items each carry an owner from the directory. The handoff is the ticket an engineer can close."
+      },
+      "explain": [
+        {
+          "part": "Facts",
+          "meaning": "18:58 lures from harborlight-sponsors.example to lena.ostrowski and priya.nair, ALLOW. 19:12 PLEDGE-DESK-01 resolves the lookalike and connects to 198.51.100.77 within a second. 20:03 lena.ostrowski succeeds at VPN-GW-01 from 198.51.100.77 while a desk session from 18:20 is active; the directory marks the account remote_access no. 20:11 the session logs in to FS-01 (criticality HIGH, owner odalys.reyes), eight minutes after the gateway. 20:04 to 05:49 forty lookups of files.harborlight-sponsors.example each paired with a connection to 198.51.100.77 within five minutes. 23:50 and 23:52 two failed logins by marco.vela, terminated in the directory since 2026-03-16, from STUDIO-B (owner kenji.mori). 02:14 second gateway success. 02:31 run-as svc-playout on FS-01 denied; the account's role is MEMBERSHIP_SHARE_EDITOR, not STATION_ADMIN. 02:52 members-export.zip written on FS-01, thirty-eight minutes after the gateway. 03:40 6.4 MB sent to 198.51.100.77. Dez: gateway 21:00, run-as svc-playout on AUTOMATION-01 21:05, ALLOW, role STATION_ADMIN."
+        },
+        {
+          "part": "Hypotheses",
+          "meaning": "Lena entered her password into the lookalike portal at 19:12 and the credential was used from 198.51.100.77 by someone who is not Lena. The session used the account for what its share role allowed and failed at the one privilege the role does not grant. The fifteen-minute pairs are a beacon. Someone with access to Studio B tried the terminated host's old password; who is unknown."
+        },
+        {
+          "part": "Gaps",
+          "meaning": "Which files the four FS-01 connections read, and whether the 6.4 MB was the export. Lena's own account of 19:12. The server behind 198.51.100.77. Whether the tenant runs match: $key over 1h in Search, as the conditions page shows, or refuses it, as the statistics page says. Who maintains the directory and how late it runs; whether the terminated account is disabled in the identity system as well. Who was in Studio B at 23:50."
+        },
+        {
+          "part": "Determination",
+          "meaning": "Confirmed incident, high confidence. A second phished, named credential, belonging to an account the directory marks as having no remote access, reached the file server through a range and a server the first remediation did not cover, wrote an export within the role the account had been given on 2026-03-16, and failed at the one privilege beyond that role. The fix held for each item it covered and was too narrow."
+        },
+        {
+          "part": "Remediation",
+          "meaning": "Contain: block 198.51.100.77/32 at VPN-GW-01 (owner dez.okafor), disable lena.ostrowski and end its sessions. Eradicate: remove the lure from Priya's inbox; delete the week-one rows from station_allowlist; verify FS-01 beyond the export (owner odalys.reyes). Recover: tell the members whose data is in the export once the share's audit says what it held; confirm with Lena. Harden: MFA at the gateway (owner dez.okafor); the lookalike_shapes table at the mail gateway; share auditing and an access review of MEMBERSHIP_SHARE_EDITOR on FS-01 (owner odalys.reyes); clear the terminated account's profile from STUDIO-B and review the studio door code (owner kenji.mori); confirm marco.vela is disabled in the identity system; finish the list-to-table migration with a source column before July 2027; a thirty-day baseline of the two-door join and the gateway-to-file-server join."
+        },
+        {
+          "part": "Handoff",
+          "meaning": "Problem: a second phished, named credential with no remote-access entitlement reached the file server through a range and a server the first remediation did not cover, and a terminated account was tried from a studio host. Assets and accounts: FS-01 (odalys.reyes), VPN-GW-01 and AUTOMATION-01 (dez.okafor), PLEDGE-DESK-01 (lena.ostrowski), STUDIO-B (kenji.mori), lena.ostrowski, marco.vela, the tables station_allowlist and gateway_blocks. Controls: the Harden list, each item with its owner. Detections, in words: a gateway success by an account whose directory record says remote_access no; a gateway success followed within an hour by a file-server login or a file written by the same account; a lookalike lookup paired with a connection to the same address within five minutes from the same host; a login by an account the directory marks terminated; a run-as by an account whose role is not STATION_ADMIN. Acceptance: each join written as a rule fires on Friday's records replayed and stays quiet on a normal drive night and on Dez's maintenance; every Remediation item is closed by its named owner; the directory's lag is measured and written down. Open: the share audit, the export contents, Lena, the server, Studio B, the tenant's answer on over in Search."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez asks whether the ticket should still carry the Friday facts, since Monday's joins say the same things with more words. What belongs in the final handoff?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The joined facts with their keys and windows, each still citing the Friday records, so the engineer can rerun the join and open the record it rests on"
+          },
+          {
+            "id": "B",
+            "label": "Only the joins, since a join supersedes the single events it was built from and two versions of one fact invite argument from anyone who reads the ticket closely"
+          },
+          {
+            "id": "C",
+            "label": "Only the Friday facts, since the tenant has not confirmed that over runs in Search and a ticket should not rest on an unverified shape"
+          }
+        ],
+        "correct": "A",
+        "why": "A join is a claim built on records; the records are what make it checkable. Keep the record IDs under every joined fact, say what the key and window were, and put the tenant check in Gaps. A ticket that cannot be reopened to its records is a story again."
+      },
+      "clue": "Odalys signs the ticket and hands it to Dez with the directory printout clipped behind it. 'Owners on every line this time.' Dez reads the Harden list to the end, finds his own name three times and Kenji's once, and starts with the gateway.",
+      "logIt": {
+        "kind": "handoff",
+        "prompt": "Rewrite the Handoff ticket. Press Assemble from casebook, then edit: the problem statement names the credential and the terminated account; affected assets list FS-01, VPN-GW-01, PLEDGE-DESK-01 and STUDIO-B with their owners from the directory; detection ideas in words include the gateway-to-file-server join, the lookup-to-connection pair, the terminated-account login and the remote_access check; acceptance criteria say each join fires on Friday's records and stays quiet on a normal night; open questions include the tenant's answer on over in Search.",
+        "mustInclude": [
+          "FS-01",
+          "kenji.mori",
+          "odalys.reyes"
+        ]
+      },
+      "caveat": "This case is fiction. The Monday habit is not: a brief is joined facts with their records, resting on context whose maintainer you have named, with an owner on every item of the fix. The next course writes the detections this ticket describes."
+    }
+  ]
+}

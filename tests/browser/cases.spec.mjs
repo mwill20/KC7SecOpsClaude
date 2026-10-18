@@ -9,18 +9,18 @@ test('Two cases: the home page switches between case files, chapter 7 runs again
   const tabs = page.getByRole('navigation', { name: 'Cases' }).getByRole('link');
   await expect(tabs).toHaveCount(2);
   await expect(tabs.nth(0)).toHaveAttribute('aria-label', 'Case 1, Static on Pier Nine: 0 of 49 missions complete');
-  await expect(tabs.nth(1)).toHaveAttribute('aria-label', 'Case 2, The week after: 0 of 16 missions complete');
+  await expect(tabs.nth(1)).toHaveAttribute('aria-label', 'Case 2, The week after: 0 of 33 missions complete');
   await expect(page.locator('h1')).toHaveText('Static on Pier Nine');
   await expect(page.locator('a.chapter-card')).toHaveCount(6);
   await tabs.nth(1).click();
   await expect(page).toHaveURL(/#case\/week-after$/);
   await expect(page.locator('h1')).toHaveText('The week after');
-  await expect(page.locator('a.chapter-card')).toHaveCount(2);
+  await expect(page.locator('a.chapter-card')).toHaveCount(4);
   await expect(page.locator('a.chapter-card .num').first()).toHaveText('07');
   await expect(page.getByRole('link', { name: 'Open the case →' })).toHaveAttribute('href', '#C07-M01');
   await expect(page.locator('.people')).toContainText('Lena Ostrowski');
-  // The top bar carries eight chapters; chapter 7 belongs to case 2.
-  await expect(page.locator('#chapterprog .chap')).toHaveCount(8);
+  // The top bar carries ten chapters; chapters 7 to 10 belong to case 2.
+  await expect(page.locator('#chapterprog .chap')).toHaveCount(10);
   await page.goto('#C07');
   await expect(page.locator('.crumbs')).toContainText('Case file 2: The week after');
   await expect(page.locator('h1')).toHaveText('Baselines and first sightings');
@@ -71,21 +71,21 @@ test('Two cases: the home page switches between case files, chapter 7 runs again
   await cb.getByRole('button', { name: 'Add entry' }).click();
   await expect(cb.locator('.cbstatus')).toContainText('Record evt-00039 is not in the dataset.');
   await page.keyboard.press('Escape');
-  // The second case's closed page lists its own sixteen missions and names its own casebook; the first case's page still lists forty-nine.
+  // The second case's closed page lists its own thirty-three missions and names its own casebook; the first case's page still lists forty-nine.
   await page.goto('#closed/week-after');
   await expect(page.locator('h1')).toHaveText('The handoff is not written yet');
-  await expect(page.locator('.list li')).toHaveCount(15);
-  await expect(page.locator('.skills .skill')).toHaveCount(2);
+  await expect(page.locator('.list li')).toHaveCount(32);
+  await expect(page.locator('.skills .skill')).toHaveCount(4);
   await expect(page.locator('.closedbook .cbname-title')).toHaveText('Did the fix hold');
   await expect(page.getByRole('link', { name: 'Next open mission →' })).toHaveAttribute('href', '#C07-M01');
   await page.goto('#closed');
   await expect(page.locator('.list li')).toHaveCount(49);
   await expect(page.locator('.closedbook .cbname-title')).toHaveText('Unnamed investigation');
-  // Chapter 8's lists mission names the bundled list and runs the regex-list query against case 2.
+  // Chapter 8's lookalike mission runs the regex data-table column against case 2.
   await page.goto('#C08-M02');
-  await page.locator('textarea.editor').fill('metadata.event_type = "EMAIL_TRANSACTION"\nnetwork.email.from in regex %lookalike_patterns');
+  await page.locator('textarea.editor').fill('metadata.event_type = "EMAIL_TRANSACTION"\nnetwork.email.from in regex %lookalike_shapes.pattern');
   await page.getByRole('button', { name: 'Check query' }).click();
   await expect(page.locator('.desk .feedback')).toContainText('Query correct');
   await expect(page.locator('.results .summary')).toContainText('3 events');
-  await expect(page.locator('#topscore')).toHaveText('110 / 5,620 pts');
+  await expect(page.locator('#topscore')).toHaveText('110 / 6,970 pts');
 });
