@@ -2,8 +2,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { root, loadContent, loadData } from './lib.mjs';
+import { runtimeFiles } from './files.mjs';
 
-export const runtimeFiles = ['index.html', 'styles.css', 'app.js', 'bundle.js', 'engine/catalog.js', 'engine/safety.js', 'engine/parser.js', 'engine/executor.js', 'engine/grader.js', 'ui/messages.js', 'ui/progress.js', 'ui/render.js'];
+export { runtimeFiles };
 const dist = path.join(root, 'dist');
 fs.rmSync(dist, { recursive: true, force: true });
 for (const f of runtimeFiles) {

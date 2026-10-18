@@ -19,7 +19,7 @@ npm run verify                           # data → content validation → unit 
 npm start                                # serves dist/ at http://127.0.0.1:4180
 ```
 
-`npm run verify` must finish with `8 passed` from Playwright after `# fail 0` from `node --test`. If it does not, do not use the build.
+`npm run verify` must finish with `22 passed` from Playwright after `# fail 0` from `node --test` and `artifact check passed` from the build. If it does not, do not use the build.
 
 ## Scripts
 
@@ -28,10 +28,11 @@ npm start                                # serves dist/ at http://127.0.0.1:4180
 | `npm run data` | Regenerates `data/events.json` (1,010 fictional UDM events, fixed seed). |
 | `npm run validate:content` | Runs every reference query, proves every authored answer against the data, proves every Build starter fails until completed. |
 | `npm test` | Unit tests: parser, executor, grader, content, progress store, CSS contrast tokens. |
-| `npm run build` | Copies the allowlisted runtime files into `dist/` and writes `dist/bundle.js` (content + data). |
-| `npm run test:browser` | Playwright tests against `dist/` served by `tools/serve.mjs` on port 4187. Build first. |
+| `npm run build` | Copies the allowlisted runtime files into `dist/`, writes `dist/bundle.js` (content + data), then runs `tools/check-artifact.mjs`. |
+| `npm run check:artifact` | Re-runs the artifact check on the current `dist/` without rebuilding. |
+| `npm run test:browser` | Playwright tests against `dist/` served by `tools/serve.mjs`: once at the root on port 4187, once under `/KC7SecOpsClaude/` on port 4188. Build first. |
 | `npm run verify` | All of the above, in order. |
-| `npm start` | Local preview on 127.0.0.1:4180 (`PIER9_PORT` overrides). |
+| `npm start` | Local preview on 127.0.0.1:4180 (`PIER9_PORT` overrides; `PIER9_BASE=/KC7SecOpsClaude/` mounts it under that prefix). Serves what is in `dist/`; build first. |
 
 ## Using a Chromium you already have
 
@@ -45,7 +46,7 @@ PIER9_CHROMIUM=/opt/pw-browsers/chromium npm run verify
 
 ## Hosting
 
-Not decided (see `docs/threat-models/THREAT_MODEL.md`, open items). Any static host that serves `dist/` as-is works. The CSP is a `<meta>` tag, so host headers add to it rather than replace it; `frame-ancestors` and HSTS can only be set by the host.
+Any static host that serves `dist/` as-is works. A GitHub Pages workflow and what the owner has to do by hand are in [DEPLOYMENT.md](DEPLOYMENT.md); whether and where to publish is still the owner's decision (see `docs/threat-models/THREAT_MODEL.md`, open items). The CSP is a `<meta>` tag, so host headers add to it rather than replace it; `frame-ancestors` and HSTS can only be set by the host.
 
 ## Uninstall
 

@@ -16,13 +16,15 @@ npx playwright install --with-deps chromium   # once; or set PIER9_CHROMIUM to a
 npm run verify
 ```
 
-That regenerates the fictional dataset, validates the content against it, runs the unit tests, builds `dist/` and runs the browser tests against the build. See [docs/INSTALLATION.md](docs/INSTALLATION.md) and [docs/USAGE.md](docs/USAGE.md). Then:
+That regenerates the fictional dataset, validates the content against it, runs the unit tests, builds `dist/`, checks the artifact against the runtime allowlist and runs the browser tests against the build at the root and under `/KC7SecOpsClaude/`. See [docs/INSTALLATION.md](docs/INSTALLATION.md) and [docs/USAGE.md](docs/USAGE.md). Then:
 
 ```bash
 npm start
 ```
 
 and open http://127.0.0.1:4180. Everything runs in the page; the server only serves static files on loopback.
+
+To publish `dist/` on GitHub Pages, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): the workflow in `.github/workflows/pages.yml` builds, checks and uploads `dist/` only, and the owner enables Pages by hand.
 
 ## What you do
 
@@ -52,10 +54,10 @@ data/events.json  generated fictional UDM events (1,010)
 site/engine/      parser → executor → grader (the YARA-L Search subset)
 site/ui/          messages, progress store, DOM helpers
 site/app.js       the single-page app
-tools/            gen-data, validate-content, build, serve
-tests/unit/       engine, content, progress and CSS-contrast tests (node --test)
-tests/browser/    Playwright tests against dist/ (keyboard, time range, hints, drill-down, 320 px, reduced motion, CSP)
-docs/             INSTALLATION.md, USAGE.md, EVALUATION.md, LIMITATIONS.md, threat-models/THREAT_MODEL.md
+tools/            gen-data, validate-content, build, check-artifact, serve, files (runtime allowlist)
+tests/unit/       engine, content, progress, CSS-contrast and artifact-allowlist tests (node --test)
+tests/browser/    Playwright tests against dist/ at the root and under a subpath (keyboard, time range, hints, drill-down, 320 px, reduced motion, CSP)
+docs/             INSTALLATION.md, USAGE.md, DEPLOYMENT.md, EVALUATION.md, LIMITATIONS.md, threat-models/THREAT_MODEL.md
 ```
 
 ## Supported YARA-L Search subset
@@ -67,8 +69,8 @@ Not implemented (reported as unsupported): `dedup`, arrays, joins across event v
 
 ## Verification status
 
-- `npm test`: 35 unit tests pass, including should-fail cases for the parser, grader, content, progress store, CSS contrast tokens, analyst-call guessability and the example-ID feedback.
-- `npm run test:browser`: 11 Playwright tests pass in Chromium against `dist/`: a keyboard-only Build mission end to end, time-range change, hint reveal, record drill-down, 320 px width without horizontal overflow, reduced motion, zero CSP violations across routing, structural accessibility checks (names, focus order, headings, live regions, skip link), starter-gap and example-ID feedback with the keyboard check shortcut, the top-bar chapter progress and recap card, and the case-closed page in both states.
+- `npm test`: 41 unit tests pass, including should-fail cases for the parser, grader, content, progress store, CSS contrast tokens, analyst-call guessability, the example-ID feedback and the release artifact (stray files, weakened CSP, absolute references, non-fictional identifiers).
+- `npm run test:browser`: 11 Playwright tests pass in Chromium against `dist/`, each run twice (at the origin root and under `/KC7SecOpsClaude/`, the GitHub Pages project-site shape): a keyboard-only Build mission end to end, time-range change, hint reveal, record drill-down, 320 px width without horizontal overflow, reduced motion, zero CSP violations across routing, structural accessibility checks (names, focus order, headings, live regions, skip link), starter-gap and example-ID feedback with the keyboard check shortcut, the top-bar chapter progress and recap card, and the case-closed page in both states.
 - An accessibility pass fixed sixteen findings; the list, the method and the mutation checks are in [docs/EVALUATION.md](docs/EVALUATION.md), along with the learner play-through and its friction log.
 - **Not** compiled or executed in any Google SecOps tenant. Google's own pages disagree on `condition:` in Search; chapter 6 says so.
 - One browser engine only; no session with a real screen reader.
