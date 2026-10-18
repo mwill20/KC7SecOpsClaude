@@ -5,12 +5,48 @@
   "intro": "It is 05:40. Hal still wants Marco's name in the brief. Odalys wants the timeline. You have one query shape left to learn, the one that turns 'seven failures' into 'seven failures inside five minutes', and then you have to write down what you know in a way that survives being read by someone angry.",
   "concepts": ["Time buckets group by when as well as by whom", "A threshold is a question, not a verdict", "Hand off facts, hypotheses and gaps separately"],
   "recap": [
-    "Bucket a count by account and by five-minute window",
+    "Bucket a count by the hour to locate a burst, then by account and five-minute window to identify it",
     "Filter grouped rows with a condition threshold and say what the threshold means",
+    "Build an actor's timeline from one key with no event type, and read the absences as evidence",
     "Stack four proven conditions until one record anchors the timeline",
+    "Tie every contain, eradicate, recover and harden item to a record, in that order",
     "Hand off facts, hypotheses and gaps in separate columns"
   ],
   "missions": [
+    {
+      "id": "C06-M05",
+      "kind": "build",
+      "title": "Failures by the hour",
+      "beat": "Fourteen failures across twelve hours. Spread evenly, that is a station full of tired volunteers. Bunched, it is something else. Put the failures into one-hour buckets and read the night as a bar chart before you zoom in.",
+      "question": "How are the fourteen failed logins distributed across the hours of the night?",
+      "concept": {"title":"Buckets turn a list into a shape","text":"by 1h in the match section groups events by the clock hour they fell in, one row per hour that has any. The first pass over a timeline should be coarse: hours, not minutes. A burst shows up as one row much taller than its neighbours. Then you narrow the window, as the next mission does with five minutes, and the burst resolves into an account and an address."},
+      "explain": [
+        {"part":"match:\n  security_result.action by 1h","meaning":"A grouping key plus a one-hour window. The key is constant here (every row is FAIL), so the table is one row per hour."},
+        {"part":"window_start","meaning":"The desk adds this column: the bucket's opening time in UTC."},
+        {"part":"order:\n  $failures desc","meaning":"The busiest hour first."}
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"FAIL\"\nmatch:\n  security_result.action by ___\noutcome:\n  $failures = count(metadata.id)\norder:\n  $failures desc",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"FAIL\"\nmatch:\n  security_result.action by 1h\noutcome:\n  $failures = count(metadata.id)\norder:\n  $failures desc",
+      "hints": [
+        "The window is one hour. Durations are a number followed by a unit, with no space.",
+        "Fill the gap with 1h.",
+        "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"FAIL\"\nmatch:\n  security_result.action by 1h\noutcome:\n  $failures = count(metadata.id)\norder:\n  $failures desc"
+      ],
+      "answer": {"prompt":"How many failures are in the busiest hour (the top row)?","value":"8","check":{"type":"cell","row":0,"column":"$failures"}},
+      "call": {
+        "prompt": "The busiest hour holds more than half of the night's failures; the next busiest holds four, and two hours hold one each. What does the hour view prove, and what does it leave open?",
+        "options": [
+          {"id":"A","label":"It proves a password attack in the busiest hour; a bucket that tall on a quiet night needs no further resolution"},
+          {"id":"B","label":"It shows where to look: one hour is unlike the others. Who failed, from where and how close together is what the five-minute view answers next"},
+          {"id":"C","label":"It shows the night was ordinary: fourteen failures across four hours is within normal for eleven staff, and the burst is a table artefact"}
+        ],
+        "correct": "B",
+        "why": "Coarse buckets locate; fine buckets identify. The 19:00 hour also holds an ordinary mistyped password from Odalys, which the five-minute view separates from the seven that were not."
+      },
+      "clue": "Eight failures in the 19:00 hour, four in the 22:00 hour, one each at 01:00 and 03:00. The tall bar is the burst plus one stray mistype. The four at 22:00 are Marco's three and one other. The next mission puts a five-minute ruler on the tall bar.",
+      "logIt": {"kind":"evidence","prompt":"Log the hour view as evidence. Time: the whole night as a range. Observation: the 14 FAIL logins fall into four clock hours: 8 in the 19:00 hour, 4 in the 22:00 hour, 1 each in the 01:00 and 03:00 hours. Records: one failure from the 19:00 hour and one from the 22:00 hour (open the rows behind the burst; evt-00039 and evt-00387 are examples). Write the distribution; what it means is for the five-minute view.","mustInclude":["19:00","22:00","evt-00039|evt-00032|evt-00040|evt-00387|evt-00360"]},
+      "caveat": "Google's match windows are aligned to the clock in UTC. A burst that starts at 19:58 would be split across two hourly rows; read neighbours together before you call an hour quiet."
+    },
     {
       "id": "C06-M01",
       "kind": "watch",
@@ -79,6 +115,36 @@
       "caveat": "Why did Marco have building access a week after being let go? That is a finding for the station, not for this query."
     },
     {
+      "id": "C06-M06",
+      "kind": "solo",
+      "title": "Everything from one address",
+      "beat": "Build the attacker's own timeline in one query. Drop the event type entirely and ask for every event, of any kind, whose principal.ip is 198.51.100.23. Then read what is there, and what is not.",
+      "question": "What does the outside address appear in tonight, across every event type?",
+      "concept": {"title":"A timeline is one filter with no event type","text":"Most queries start with metadata.event_type. A timeline query leaves it out on purpose: one key, every event type, in time order. The absences are evidence too. If an address appears only in logins, the actor did not run processes or make connections as that address; after the login they are someone else in the logs, an internal host and an account, and the timeline continues under that key."},
+      "explain": [],
+      "starter": "",
+      "reference": "principal.ip = \"198.51.100.23\"",
+      "hints": [
+        "One condition and nothing else: the attacker address in principal.ip. No event type, so every type is searched.",
+        "principal.ip = \"198.51.100.23\" on its own line.",
+        "principal.ip = \"198.51.100.23\""
+      ],
+      "answer": {"prompt":"How many events carry that principal.ip, of any type?","value":"8","check":{"type":"count"}},
+      "call": {
+        "prompt": "Every row is a USER_LOGIN through VPN-GW-01; there is no process, DNS or connection event from the address. Why, and what does the timeline do next?",
+        "options": [
+          {"id":"A","label":"The sensors missed the attacker's traffic, so the network and endpoint logs for the night are incomplete and must be flagged as a gap before anything else"},
+          {"id":"B","label":"After the VPN login the actor is inside: their activity is logged under the internal host AUTOMATION-01 and the account pledge-desk, so the timeline pivots to those keys"},
+          {"id":"C","label":"The address only ever guessed passwords; the success at 19:21 was a coincidence by a legitimate user, and the attacker never got past the gateway"}
+        ],
+        "correct": "B",
+        "why": "An outside address stops at the gateway. From 19:30 the same actor is 10.9.4.40 and pledge-desk in every other log; the timeline is one story told under three keys, and the handoff should say which key applies when."
+      },
+      "clue": "Eight events, all logins, 19:05:10 to 19:21:04. Then silence from that address, because the attacker no longer needed it: from 19:30 they are pledge-desk on AUTOMATION-01. The timeline changes key and keeps going.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 19:21. Fact: 198.51.100.23 appears in eight events tonight, all USER_LOGIN through VPN-GW-01 as pledge-desk, seven FAIL from 19:05:10 and one ALLOW at 19:21:04; it appears in no other event type. Evidence ref: the # of your burst evidence. Write the absence as part of the fact.","mustInclude":["19:21","198.51.100.23","VPN-GW-01|no other|only"]},
+      "caveat": "In a tenant, the same timeline would include the gateway's own flow records and possibly the attacker's address in target.ip for responses. The grouped field ip would catch both roles."
+    },
+    {
       "id": "C06-M03",
       "kind": "solo",
       "title": "Capstone: when did they get in?",
@@ -107,6 +173,38 @@
       "clue": "19:21:04. Eleven minutes after the last guess. Nine minutes before the playout PC. The whole night hangs on that one second, and you can show it.",
       "logIt": {"kind":"determination","prompt":"Write the Determination: confirmed incident, confidence high. Deciding refs: the burst and the 19:21:04 success, the click, the PledgeSync folder and the upload. Summary, two sentences: an outside party used the pledge-desk credential, taken through a lookalike sponsor portal, to persist on AUTOMATION-01, take the donor list and air the 03:10 segment. The person is unidentified; Marco's attempts failed against a disabled account.","mustInclude":["19:21","pledge-desk"]},
       "caveat": "Timestamps are UTC here. Real sources mix zones and clock drift; normalize before you build a timeline."
+    },
+    {
+      "id": "C06-M07",
+      "kind": "read",
+      "title": "Contain, eradicate, recover, harden",
+      "beat": "05:55. Before the handoff, the plan. Odalys needs four lists, each item tied to a record someone can reopen: what to cut off now, what to remove, what to put back, and what to change so it does not happen on the next pledge night. Read the four lists against the evidence that justifies them.",
+      "question": "Which remediation goes in which list, and which evidence does each item answer?",
+      "concept": {"title":"Every action answers a record","text":"Containment stops the bleeding and buys time; it is justified by what is still happening. Eradication removes what the attacker left; it is justified by what you found. Recovery puts the station back on air; it is justified by what was damaged. Hardening changes the conditions that let the night happen; it is justified by how the attacker got in. An item with no evidence reference is an opinion, and a list with one missing phase is a plan that will be rerun."},
+      "explain": [
+        {"part":"Contain","meaning":"Block egress to 203.0.113.0/24 at the gateway (the beacons were still running at 05:50: cadence evidence, first and last lookups). Isolate AUTOMATION-01 from the network (the task fires every ten minutes: PledgeSync evidence). Reset the pledge-desk password and end its sessions (the credential is in use from outside: burst evidence, 19:21 success)."},
+        {"part":"Eradicate","meaning":"Disable and remove the PledgeSync task and sync.ps1, stage.bin and the staged files in C:\\ProgramData\\PledgeSync (task event evt-00141, the curl launch, the folder evidence). Remove the lure from the two inboxes that did not click (lure evidence: odalys.reyes and the pledge-desk mailbox). Treat the encoded command as unknown until decoded (the -enc Gap)."},
+        {"part":"Recover","meaning":"Rebuild AUTOMATION-01 from a known-good image rather than cleaning it, restore the schedule and verify the 06:30 news airs (the --inject launch and segment.wav). Tell the donors whose names were read on air, and the board, what left the building: the 48 MB upload five minutes after donors_export.zip (upload evidence). Confirm Dez's 20:15 restart with Dez and close that Gap."},
+        {"part":"Harden","meaning":"MFA and lockout after more than three failures in five minutes on VPN-GW-01 (burst evidence). Named accounts in place of the shared pledge-desk login (the account-is-not-person Gap). PowerShell script-block logging and an alert on hidden plus encoded (the 19:33 launch). An egress allowlist for the playout PC (cadence evidence) and partner-domain allowlisting at the mail gateway (lure and real-sponsor evidence)."},
+        {"part":"Order","meaning":"Contain before eradicate: removing the task while the credential still works invites it back. Eradicate before recover: a rebuilt machine that keeps the shared password is a rebuilt target. Harden last and longest; its items become the handoff's proposed controls."}
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez offers to delete the PledgeSync task right now, before anything else, because it is the thing that keeps calling home. What is the right call?",
+        "options": [
+          {"id":"A","label":"Let him; eradication is the fastest way to stop the beacons, and the password and the gateway block can follow once the task is gone"},
+          {"id":"B","label":"Wait for the morning and the full board before touching anything, since changing the machine now would destroy evidence the investigation still needs"},
+          {"id":"C","label":"Contain first: block the range and reset the shared password, then remove the task; a working credential would let the task be recreated the moment it is deleted"}
+        ],
+        "correct": "C",
+        "why": "Order is part of the plan. The task is a symptom of a credential that still works and a path that is still open; close those, then remove what they left. Preserve the task definition and the folder before deletion for the record."
+      },
+      "clue": "Four lists, every item pointing at a record. Odalys reads the Contain list first and reaches for the phone. The rest of the plan survives the morning because each line says why.",
+      "logIt": {"kind":"remediation","list":"recover","prompt":"Write a Recover item: rebuild AUTOMATION-01 from a known-good image and verify the 06:30 news airs on schedule, then notify the donors whose names were read on air and the board about the donor list that left at 02:10. Answers: your upload evidence and your PledgeSync folder evidence. Owner role: station manager with the volunteer engineer. Urgency: today.","mustInclude":["AUTOMATION-01","donor|donors"]},
+      "caveat": "Real incident response follows the organisation's plan and its legal and notification duties. The four lists are the shape; the content and the order of notification are decided by people with authority you do not have at 05:55."
     },
     {
       "id": "C06-M04",

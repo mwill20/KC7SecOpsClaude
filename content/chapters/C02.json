@@ -6,8 +6,10 @@
   "concepts": ["Regex matches part of a string unless you anchor it", "nocase is a word you add, not a setting", "A DNS lookup proves a visit, not a password", "principal acts; target is acted on"],
   "recap": [
     "Match part of a string with a regex and switch case off with nocase",
-    "Anchor a pattern to the end of a sender address to catch a whole domain",
-    "Pivot from an email link to the DNS lookup that followed it",
+    "Anchor a pattern to the start or the end and say which shape you meant",
+    "Read the gateway's action as its decision, not as the truth about a message",
+    "Build a baseline from the real sender before judging the lookalike",
+    "Pivot from an email link to the DNS lookup that followed it, and list every name a desk asked for",
     "Search the target role when the account was acted on rather than acting"
   ],
   "missions": [
@@ -79,6 +81,103 @@
       "caveat": "The gateway marked these ALLOW. A delivered message is not a safe message; action records the gateway's decision, not the truth."
     },
     {
+      "id": "C02-M08",
+      "kind": "solo",
+      "title": "What legitimate looks like",
+      "beat": "Before you chase the fake, look at the real thing. Harbor Light Sponsors is the station's actual sponsor; its domain is harborlightsponsors.example. Pull every message from that domain and read what a legitimate sponsor email looks like tonight, so the lookalike has something to be compared with.",
+      "question": "How many messages came from the real sponsor domain, and what do they carry?",
+      "concept": {"title":"Baseline first","text":"A lookalike only looks like something. Before you can say a message is off, you need the real one beside it: who sends, when, with what subject, and whether it carries a link. The end-anchored sender pattern from the last mission works for any domain; point it at the real one and the baseline falls out of the rows."},
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from = /harborlightsponsors\\.example$/",
+      "hints": [
+        "Same shape as the lookalike query: the email event type and an end-anchored regex on network.email.from, with the real domain in it.",
+        "network.email.from = /harborlightsponsors\\.example$/ under the EMAIL_TRANSACTION filter. Escape the dot.",
+        "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from = /harborlightsponsors\\.example$/"
+      ],
+      "answer": {"prompt":"How many messages did the real sponsor domain send?","value":"2","check":{"type":"count"}},
+      "call": {
+        "prompt": "Open both real-sponsor records and compare them with a portal message. Which difference is the one worth writing down?",
+        "options": [
+          {"id":"A","label":"The real messages arrived earlier in the evening, and attackers prefer to send at the busiest moment, so timing alone separates them"},
+          {"id":"B","label":"The real messages carry no link and come from a domain the station already corresponds with; the portal messages carry a login link from a domain nobody has mailed before"},
+          {"id":"C","label":"The real messages went to two people and the portal messages to three, so the wider distribution is what marks the lookalike as a campaign"}
+        ],
+        "correct": "B",
+        "why": "Timing and recipient counts vary from night to night. A known sender with no link against an unknown sender with a login link is the difference a gateway rule, and an analyst, can act on."
+      },
+      "clue": "Two messages, 18:05 and 18:06, from reads@harborlightsponsors.example, subject \"Final sponsor read list for Pledge Night\", to Tomas and Odalys, target.url blank. Thirty-four minutes later a domain with \"partners\" in it sends three messages with a login link. The real sponsor never asked anyone to sign in to anything.",
+      "logIt": {"kind":"remediation","list":"harden","prompt":"Write a Harden item: add the station's real partner domains, harborlightsponsors.example among them, to a gateway allowlist, and flag or hold mail from newly seen domains whose names resemble a partner (pier9-partners.example is the example to cite). Answers: your lure evidence. Owner role: IT lead or mail administrator. Urgency: this week.","mustInclude":["harborlightsponsors.example","pier9-partners.example"]},
+      "caveat": "Real sponsors do send links. The baseline is specific to this station; build yours from your own mail log before you write a rule that quarantines partners."
+    },
+    {
+      "id": "C02-M05",
+      "kind": "watch",
+      "title": "The one the gateway caught",
+      "beat": "The mail gateway did stop something tonight. Not the sponsor portal. Pull every message it quarantined and compare what it caught with what it let through.",
+      "question": "What did the gateway quarantine tonight, and what did it deliver?",
+      "concept": {"title":"action is a decision, not a verdict","text":"security_result.action on an EMAIL_TRANSACTION is what the gateway did: ALLOW delivered it, QUARANTINE held it, BLOCK dropped it. The gateway decided on reputation and patterns it already knew. A coupon from a bulk mailer trips those; a freshly registered lookalike with a clean link does not. ALLOW on the lure is the gateway's opinion at 18:40, and it was wrong."},
+      "explain": [
+        {"part":"security_result.action = \"QUARANTINE\"","meaning":"The enum value for held mail. Uppercase, in quotes, like every action."},
+        {"part":"network.email.from","meaning":"Open the row and read who sent what the gateway caught. Then compare it with the portal message, which was allowed."}
+      ],
+      "starter": "metadata.event_type = \"EMAIL_TRANSACTION\"\nsecurity_result.action = \"QUARANTINE\"",
+      "reference": "metadata.event_type = \"EMAIL_TRANSACTION\"\nsecurity_result.action = \"QUARANTINE\"",
+      "hints": [
+        "Run it. Then change QUARANTINE to ALLOW and look for the portal messages in the longer table.",
+        "Open the quarantined row and read network.email.from, network.email.subject and target.url.",
+        "One message: a weekend audio-gear coupon from deals@discount-mailer.example to kenji.mori at 23:10, with a tracking link. The three portal messages were ALLOW."
+      ],
+      "answer": {"prompt":"What is network.email.from on the quarantined message?","value":"deals@discount-mailer.example","check":{"type":"field","field":"network.email.from","index":0}},
+      "call": {
+        "prompt": "The gateway held a coupon and delivered the sponsor-portal lure. What does that tell you about using action as evidence?",
+        "options": [
+          {"id":"A","label":"Action records the gateway's decision with the information it had; a delivered message can still be the one that mattered"},
+          {"id":"B","label":"The gateway is misconfigured and its log cannot be trusted for this case; the email evidence should be left out of the brief"},
+          {"id":"C","label":"The coupon was the real threat and the portal message was collateral; quarantine decisions are made on content the analyst cannot see"}
+        ],
+        "correct": "A",
+        "why": "A gateway catches what it recognises. The lure was new, well formed and pointed at a clean domain, so it passed. The log is still right about what happened; it is wrong about what mattered."
+      },
+      "clue": "Caught: a coupon for audio gear, 23:10, bulk mailer, held. Delivered: three messages from pier9-partners.example at 18:40 with a login link. Reputation filters know bulk mailers. They do not know a domain registered for one night.",
+      "logIt": {"kind":"evidence","prompt":"Log the gateway's decisions as evidence. Time: 23:10. Observation: one EMAIL_TRANSACTION tonight carries QUARANTINE, a coupon from deals@discount-mailer.example to kenji.mori; the three portal messages from pier9-partners.example at 18:40 carry ALLOW. Records: the quarantined message (open it, press Add to Casebook). Where to find it: security_result.action on EMAIL_TRANSACTION.","mustInclude":["QUARANTINE|quarantine","evt-00409"]},
+      "caveat": "Gateways map their verdicts to UDM actions differently; some log a quarantine as BLOCK. Check the mapping for your mail source before you count by action."
+    },
+    {
+      "id": "C02-M06",
+      "kind": "build",
+      "title": "Anchor the start, not the end",
+      "beat": "Both the real sponsor and the lookalike put the words 'Pledge Night' in their subject lines. Where the words sit is the difference. The real message ends with them; the lure begins with them. Anchor your pattern to the start of the subject and see which messages come back.",
+      "question": "Which messages have a subject that begins with \"Pledge Night\"?",
+      "concept": {"title":"^ and $ are positions, not characters","text":"^ matches the start of the string and $ the end. /^Pledge Night/ keeps only subjects that open with the phrase; /Pledge Night$/ keeps only subjects that close with it; /Pledge Night/ keeps both. Same words, three different sets of rows. Anchoring is how you turn \"contains\" into \"is shaped like\", and it is also what keeps a pattern fast."},
+      "explain": [
+        {"part":"/^Pledge Night/","meaning":"The caret anchors to the start. \"Pledge Night sponsor portal: ...\" matches; \"Final sponsor read list for Pledge Night\" does not."},
+        {"part":"/Pledge Night$/","meaning":"For comparison: the dollar anchors to the end and returns the real sponsor's two messages instead."},
+        {"part":"no nocase","meaning":"Both senders capitalised the phrase the same way, so the match can stay exact on case."}
+      ],
+      "starter": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.subject = /___Pledge Night/",
+      "reference": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.subject = /^Pledge Night/",
+      "hints": [
+        "You want subjects that start with the phrase. The anchor for the start of a string goes before the first character of the pattern.",
+        "Fill the gap with ^ so the pattern reads /^Pledge Night/.",
+        "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.subject = /^Pledge Night/"
+      ],
+      "answer": {"prompt":"What is network.email.from on the first matching message?","value":"sponsorships@pier9-partners.example","check":{"type":"field","field":"network.email.from","index":0}},
+      "call": {
+        "prompt": "Swap the caret for a dollar at the end of the pattern and the table changes to the real sponsor's messages. What does that teach about regex in evidence?",
+        "options": [
+          {"id":"A","label":"That anchors are optional decoration; the same two senders would separate just as well with the unanchored pattern and a glance at the sender column"},
+          {"id":"B","label":"That position carries meaning: where a phrase sits in a subject separated the lure from the real thing, and the pattern should say which you meant"},
+          {"id":"C","label":"That the dollar anchor is the safer default for subjects, because attackers front-load urgent words and legitimate senders do not"}
+        ],
+        "correct": "B",
+        "why": "The unanchored pattern returns five rows and leaves the sorting to you. An anchored pattern states the shape you were looking for, so the result is the evidence and not a pile to sift."
+      },
+      "clue": "Three subjects begin with \"Pledge Night\": the three portal messages at 18:40. Two end with it: the real read list at 18:05 and 18:06. The lure borrowed the sponsor's words and put them first, where a busy treasurer reads.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 18:05. Fact: the real sponsor, reads@harborlightsponsors.example, sent \"Final sponsor read list for Pledge Night\" at 18:05 and 18:06 with no link; at 18:40 pier9-partners.example sent three messages whose subject begins with \"Pledge Night\" and carries a login link. Evidence ref: the # of your lure evidence.","mustInclude":["18:05","18:40","harborlightsponsors.example|real sponsor"]},
+      "caveat": "Google warns that a pattern beginning with .* forces a slow scan. A leading ^ is the opposite: it lets the engine stop at the first character that does not fit."
+    },
+    {
       "id": "C02-M03",
       "kind": "build",
       "title": "Who opened the link?",
@@ -111,6 +210,40 @@
       "clue": "PLEDGE-DESK-02, 18:52, logged in as hal.brunner. Two small HTTPS connections to 203.0.113.44 follow within a minute: a page load and a form post. Thirteen minutes later, someone outside starts guessing the pledge-desk password. At 19:21 they stop guessing.",
       "logIt": {"kind":"evidence","prompt":"Log the click as evidence. Time: 18:52 to 18:53. Observation: PLEDGE-DESK-02, signed in as hal.brunner, resolved pier9-partners.example at 18:52:30, then made two small HTTPS connections to 203.0.113.44. Records: the DNS lookup and at least one connection. Write what the records show (a resolution and two connections); a password being typed is a hypothesis, not an observation.","mustInclude":["18:52","PLEDGE-DESK-02","evt-00015"]},
       "caveat": "Browsers resolve names from prefetch and cache. In real data one lookup can be a hover, not a click. Corroborate with connections and logins."
+    },
+    {
+      "id": "C02-M07",
+      "kind": "build",
+      "title": "Every name Hal's desk asked for",
+      "beat": "PLEDGE-DESK-02 resolved the lookalike at 18:52. What else did that desk look up tonight? List every name it asked DNS for, with a count per name, and separate the ordinary evening from the one lookup that was not.",
+      "question": "How many different names did PLEDGE-DESK-02 resolve tonight, and which one does not belong?",
+      "concept": {"title":"Benign is the background, not the absence of rows","text":"A workstation resolves dozens of names in an evening: the weather widget, the CDN, the pledge software, the mail host. Grouping by the name turns that stream into a short list you can read in one pass. The lookalike is one row among eight; it stands out not by count but because nothing else on the pier corresponds with it."},
+      "explain": [
+        {"part":"match:\n  network.dns.questions.name","meaning":"One row per name asked for."},
+        {"part":"$lookups = count(metadata.id)","meaning":"How many times the desk asked for each."},
+        {"part":"order:\n  $lookups desc","meaning":"The routine names float to the top; the one-off lookups sit at the bottom."}
+      ],
+      "starter": "metadata.event_type = \"NETWORK_DNS\"\nprincipal.hostname = \"PLEDGE-DESK-02\"\nmatch:\n  ___\noutcome:\n  $lookups = count(metadata.id)\norder:\n  $lookups desc",
+      "reference": "metadata.event_type = \"NETWORK_DNS\"\nprincipal.hostname = \"PLEDGE-DESK-02\"\nmatch:\n  network.dns.questions.name\noutcome:\n  $lookups = count(metadata.id)\norder:\n  $lookups desc",
+      "hints": [
+        "The grouping key is the field that holds the name asked for. You used it in the last mission's filter.",
+        "Put network.dns.questions.name under match.",
+        "metadata.event_type = \"NETWORK_DNS\"\nprincipal.hostname = \"PLEDGE-DESK-02\"\nmatch:\n  network.dns.questions.name\noutcome:\n  $lookups = count(metadata.id)\norder:\n  $lookups desc"
+      ],
+      "answer": {"prompt":"How many rows does the table have (different names)?","value":"8","check":{"type":"count"}},
+      "call": {
+        "prompt": "Seven of the names are the station's usual services and one is the lookalike, asked for once. How do you tell them apart without a reputation feed?",
+        "options": [
+          {"id":"A","label":"By count: a name asked for once is suspicious and names asked for several times are safe, so sort ascending and take the bottom row"},
+          {"id":"B","label":"By correspondence: the ordinary names match services the station uses and other desks also resolve; the lookalike matches an email nobody expected and no other desk asked for it"},
+          {"id":"C","label":"You cannot; without a reputation feed every name is equally unknown and the list should be sent to the vendor for classification before it goes in the brief"}
+        ],
+        "correct": "B",
+        "why": "Counts mislead both ways: time.sync.example was also asked for once. What separates the lookalike is that it corresponds to the lure and to nothing else on the pier."
+      },
+      "clue": "Eight names. weather.harborcast.example seven times, the CDN, the pledge software, updates, mail, streaming and the time server once or a few times each, and pier9-partners.example once, at 18:52:30, twelve minutes after the lure arrived. Everything else on the list is also resolved by other desks tonight. That one is not.",
+      "logIt": {"kind":"gap","prompt":"Log a Gap: DNS shows that PLEDGE-DESK-02 asked for pier9-partners.example once; there is no proxy or browser log, so what page loaded and whether a form was submitted is not visible. Why it matters: the password leaving through the portal is the hypothesis the whole case rests on, and only the connection sizes in chapter 4 corroborate it.","mustInclude":["pier9-partners.example","proxy|browser|page"]},
+      "caveat": "Real resolvers cache. One lookup can stand for many visits, and a visit can leave no lookup at all if the name was cached from earlier. Treat DNS counts as a floor."
     },
     {
       "id": "C02-M04",

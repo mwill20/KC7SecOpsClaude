@@ -5,9 +5,10 @@
   "intro": "Every ten minutes since 19:40, AUTOMATION-01 has asked the same question of DNS and made the same small connection. That rhythm is a scheduled task talking to whoever owns 203.0.113.44. Network events carry direction: principal is the side that started it, target is the side that answered. Read them that way and the night's traffic tells its own story.",
   "concepts": ["Regular intervals are a signature", "CIDR notation names a range of addresses", "Parentheses decide what OR applies to", "sent_bytes is from the principal's point of view"],
   "recap": [
-    "Recognise a fixed interval in a count as a beacon, not a person",
+    "Recognise a fixed interval in a count as a beacon, not a person, and read it by the hour with by 1h",
+    "Read sent and received bytes together to tell a page load from a form post from a check-in",
     "Test an IP field against a CIDR range with net.ip_in_range_cidr",
-    "Wrap an OR in parentheses so it stays inside the event-type filter",
+    "Wrap an OR in parentheses, or use the grouped field ip, so either end of the wire is one condition",
     "Compare bytes as numbers and read the direction from the principal's side"
   ],
   "missions": [
@@ -46,6 +47,39 @@
       "caveat": "Beacons in the wild add jitter and rotate names. A clean ten-minute cadence is a teaching case, not a promise."
     },
     {
+      "id": "C04-M07",
+      "kind": "watch",
+      "title": "A page load and a form post",
+      "beat": "Before the rhythm, the click. Hal's desk made two connections to 203.0.113.44 within seventy seconds of resolving the lookalike. Read their byte counts in both directions and work out which was the page arriving and which was the password leaving.",
+      "question": "What do the two PLEDGE-DESK-02 connections to the attacker address look like, byte for byte?",
+      "concept": {"title":"Direction is in the numbers","text":"A browser loading a page sends a small request and receives a large response: sent small, received large. Submitting a form sends the form and gets back a short acknowledgement or redirect: sent larger than received. Two connections, seconds apart, with the ratio flipped between them, is what a login page followed by a login attempt looks like from the outside of the encryption."},
+      "explain": [
+        {"part":"principal.hostname = \"PLEDGE-DESK-02\"\ntarget.ip = \"203.0.113.44\"","meaning":"Hal's desk talking to the attacker address. Nothing else on the pier did until 19:40."},
+        {"part":"network.sent_bytes / network.received_bytes","meaning":"From the principal's point of view: what the desk sent, what it got back. Compare the two rows."}
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.hostname = \"PLEDGE-DESK-02\"\ntarget.ip = \"203.0.113.44\"",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.hostname = \"PLEDGE-DESK-02\"\ntarget.ip = \"203.0.113.44\"",
+      "hints": [
+        "Run it. Two rows. Open each and read network.sent_bytes and network.received_bytes.",
+        "In the first row the desk received far more than it sent. In the second, the ratio is reversed.",
+        "18:52:31: sent 1,840, received 22,310 (a page arriving). 18:53:40: sent 2,210, received 1,180 (a form leaving)."
+      ],
+      "answer": {"prompt":"How many bytes did the second connection send (network.sent_bytes)?","value":"2210","also":["2,210"],"check":{"type":"field","field":"network.sent_bytes","index":1}},
+      "call": {
+        "prompt": "Two connections: the first received twelve times what it sent, the second sent almost twice what it received. What does the pair show, and what does it not?",
+        "options": [
+          {"id":"A","label":"It shows a page was loaded and something was submitted a minute later; it does not show what was typed, which stays a hypothesis"},
+          {"id":"B","label":"It shows the pledge-desk password was entered on the fake portal; the byte sizes are the proof the brief has been waiting for"},
+          {"id":"C","label":"It shows nothing, because HTTPS hides the content and byte counts from a flow sensor are too noisy to read a direction from"}
+        ],
+        "correct": "A",
+        "why": "Sizes and direction are readable through encryption and they fit a login form exactly. The content is not readable, so the password is inferred from what happened next, not observed here."
+      },
+      "clue": "Page in at 18:52:31, form out at 18:53:40. Thirteen minutes later the guessing starts from outside and ends in a success. Nobody saw the password leave. Everything around that minute says it did.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 18:53. Fact: PLEDGE-DESK-02 sent 2,210 bytes to 203.0.113.44 and received 1,180 at 18:53:40, seventy seconds after a connection that received 22,310 and sent 1,840; the shape of a page load followed by a form post. Evidence ref: the # of your click evidence (it carries the DNS lookup and at least one of these connections).","mustInclude":["18:53","203.0.113.44"]},
+      "caveat": "A real login page loads scripts, images and fonts over several connections. The two-row version here is the shape stripped to its direction; expect dozens of rows in a real proxy log."
+    },
+    {
       "id": "C04-M02",
       "kind": "build",
       "title": "Connections into the attacker's range",
@@ -79,6 +113,39 @@
       "caveat": "The range here is from RFC 5737 documentation space and belongs to nobody. Never put a real indicator from work into a public trainer."
     },
     {
+      "id": "C04-M05",
+      "kind": "build",
+      "title": "Small both ways",
+      "beat": "Beacons are the opposite of a download. The task checks in, says almost nothing, hears almost nothing back, and sleeps. Pull every connection to the attacker address that sent less than a thousand bytes and look at what came back.",
+      "question": "How many of the connections to 203.0.113.44 are small enough to be check-ins?",
+      "concept": {"title":"received_bytes and sent_bytes together name the pattern","text":"A page load receives much more than it sends. An upload sends much more than it receives. A beacon does neither: a few hundred bytes out, a few hundred back, over and over. Reading both fields on the same row tells you which of the three you are looking at. A numeric comparison on sent_bytes is how you cut the heartbeats away from the one connection that was not one."},
+      "explain": [
+        {"part":"network.sent_bytes < 1000","meaning":"A numeric comparison. Bytes are plain numbers; no quotes."},
+        {"part":"network.received_bytes","meaning":"Open a row: a few hundred bytes back each time. Compare with the 18:52 page load, which received over twenty thousand."}
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip = \"203.0.113.44\"\nnetwork.sent_bytes ___ 1000",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip = \"203.0.113.44\"\nnetwork.sent_bytes < 1000",
+      "hints": [
+        "You want connections that sent fewer bytes than the threshold. The operator is a comparison, not an equals.",
+        "Fill the gap with < so the line reads network.sent_bytes < 1000.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip = \"203.0.113.44\"\nnetwork.sent_bytes < 1000"
+      ],
+      "answer": {"prompt":"How many connection events match?","value":"62","check":{"type":"count"}},
+      "call": {
+        "prompt": "Every small connection sent between about 820 and 980 bytes and received between about 380 and 460. Three connections to the same address fall outside the cut. What are they?",
+        "options": [
+          {"id":"A","label":"Retries of failed beacons, which send more because they include the queued check-ins the task could not deliver earlier"},
+          {"id":"B","label":"The two connections from Hal's desk at 18:52 and 18:53, and the 48 MB upload from the playout PC at 02:10"},
+          {"id":"C","label":"Noise from the sensor: flow logs occasionally merge two beacons into one record, which doubles the byte counts"}
+        ],
+        "correct": "B",
+        "why": "Sixty-two heartbeats, all alike. The three that are not alike are the three moments that mattered: the page, the form and the theft."
+      },
+      "clue": "Sixty-two connections under a thousand bytes out, each a few hundred back, ten minutes apart from 19:40 to 05:50. Sixty-five to the address in all. The other three are the click, the form and the upload.",
+      "logIt": {"kind":"evidence","prompt":"Log the beacon shape as evidence. Time: 19:40 to 05:50. Observation: 62 NETWORK_CONNECTION events from AUTOMATION-01 to 203.0.113.44:443 each sent under 1,000 bytes and received a few hundred; the remaining three connections to that address are the two from PLEDGE-DESK-02 and the 48 MB upload. Records: the first small connection (open it, press Add to Casebook). Write the sizes; \"beacon\" stays the hypothesis.","mustInclude":["62","203.0.113.44","evt-00151|evt-00163|evt-00176"]},
+      "caveat": "Real beacons vary their size and timing on purpose. Thresholds found on one night are a starting point for a rule, not the rule."
+    },
+    {
       "id": "C04-M03",
       "kind": "build",
       "title": "Either end of the wire",
@@ -110,6 +177,69 @@
       "clue": "Twenty-one connections. Nineteen are the evening's ordinary browsing and mail. Two are the 18:52 and 18:53 connections to 203.0.113.44 that followed the phishing link. Hal's machine is a victim's machine, not the attacker's.",
       "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 18:52. Fact: PLEDGE-DESK-02 (10.9.4.22, hal.brunner) resolved pier9-partners.example and connected to 203.0.113.44 twice; its other 19 connections tonight are ordinary browsing and mail. Evidence ref: the # of your click evidence. A timeline entry points at evidence; it never stands alone.","mustInclude":["18:52","PLEDGE-DESK-02|10.9.4.22"]},
       "caveat": "principal.ip and target.ip are repeated fields in real UDM. This trainer models one value each; the docs cover how repeated values and negation interact."
+    },
+    {
+      "id": "C04-M06",
+      "kind": "build",
+      "title": "Either end, in one token",
+      "beat": "The streaming CDN at 192.0.2.120 is what the playout PC listens to all night, and other desks reach it too. Odalys wants every connection that touched it, either as the side that started it or the side that answered. Last mission you wrote the OR by hand; this time use the grouped field ip.",
+      "question": "How many connection events involved 192.0.2.120 in either role?",
+      "concept": {"title":"A grouped field is an OR you did not have to write","text":"ip = \"192.0.2.120\" expands to principal.ip = \"192.0.2.120\" OR target.ip = \"192.0.2.120\", parentheses included. One token, no precedence trap. The price is speed: the engine checks every member field. Use the grouped form when you genuinely do not know which side the address sits on, and the explicit field when you do."},
+      "explain": [
+        {"part":"ip = \"192.0.2.120\"","meaning":"Google's grouped field for addresses. Covers principal.ip and target.ip in this dataset."},
+        {"part":"(principal.ip = \"192.0.2.120\" OR target.ip = \"192.0.2.120\")","meaning":"The hand-written equivalent from the last mission. Both forms pass here because they return the same evidence."}
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\n___ = \"192.0.2.120\"",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nip = \"192.0.2.120\"",
+      "hints": [
+        "The grouped field for addresses is two letters long and is listed in the About page's supported subset.",
+        "Fill the gap with ip, no dots, no role.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\nip = \"192.0.2.120\""
+      ],
+      "answer": {"prompt":"How many connection events match?","value":"74","check":{"type":"count"}},
+      "call": {
+        "prompt": "Your count for the CDN is higher than the 65 connections into the attacker range, and seven machines reached it. Does that make the CDN the bigger lead?",
+        "options": [
+          {"id":"A","label":"Yes; the address with the most connections from the most machines is where an analyst starts, and the attacker range can wait"},
+          {"id":"B","label":"No; every machine on the pier streams from it, the bytes flow inward, and that is what a shared service looks like, which is why it is the baseline and not the lead"},
+          {"id":"C","label":"Neither; both addresses are on port 443 and the counts are close enough that only a reputation feed can rank them"}
+        ],
+        "correct": "B",
+        "why": "Breadth is what benign infrastructure looks like: many machines, many connections, data coming in. The attacker address had two machines, data going out, and a clock."
+      },
+      "clue": "Seventy-four connections touched the CDN, from seven machines, data flowing in. Sixty-five touched the attacker address, from two machines, data flowing out on one of them. The grouped field asked the same question either way; the shape of the answer is what differs.",
+      "logIt": {"kind":"remediation","list":"harden","prompt":"Write a Harden item: give AUTOMATION-01 an egress allowlist of the services it needs (the streaming CDN at 192.0.2.120 and the vendor update host) and alert on any new destination. Answers: your cadence evidence and your beacon-shape evidence. Owner role: network engineer. Urgency: this week.","mustInclude":["AUTOMATION-01","192.0.2.120|allowlist"]},
+      "caveat": "Google's grouped ip field spans more members than the two modelled here, and its behaviour with negation and repeated fields is documented separately. Read that page before you rely on != with a grouped field."
+    },
+    {
+      "id": "C04-M08",
+      "kind": "solo",
+      "title": "Beacons by the hour",
+      "beat": "Sixty-two is a total. The board will ask whether it ever stopped. Count the connections from the playout PC to the attacker address in one-hour buckets and read the rhythm as a table.",
+      "question": "Across how many clock hours did the playout PC check in with the attacker address?",
+      "concept": {"title":"by 1h puts the clock in the grouping key","text":"A match section can group by a field and by a time window at once: by 1h adds one row per hour, fixed on the clock. A regular task shows up as the same number in every full hour; a break in the rhythm, or an hour with one connection too many, is a row that reads differently from its neighbours. Read down the column, not across it."},
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.hostname = \"AUTOMATION-01\"\ntarget.ip = \"203.0.113.44\"\nmatch:\n  principal.hostname by 1h\noutcome:\n  $beacons = count(metadata.id)",
+      "hints": [
+        "Filter to connections from AUTOMATION-01 to 203.0.113.44, then group by the hostname with a one-hour window, and count.",
+        "match:\n  principal.hostname by 1h\noutcome:\n  $beacons = count(metadata.id) under the three filter lines.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.hostname = \"AUTOMATION-01\"\ntarget.ip = \"203.0.113.44\"\nmatch:\n  principal.hostname by 1h\noutcome:\n  $beacons = count(metadata.id)"
+      ],
+      "answer": {"prompt":"How many rows does the table have (hours with at least one connection)?","value":"11","check":{"type":"count"}},
+      "call": {
+        "prompt": "Every full hour shows six connections, the first hour two, and one hour shows seven. What is the seventh?",
+        "options": [
+          {"id":"A","label":"A retry after a dropped beacon; tasks on a ten-minute schedule occasionally fire twice when the previous run overlaps"},
+          {"id":"B","label":"The 02:10 upload: six heartbeats plus the one connection that carried the donor list, in the same hour, to the same address"},
+          {"id":"C","label":"A rounding effect of fixed clock buckets, which can put a 59-second connection into the next hour and inflate it"}
+        ],
+        "correct": "B",
+        "why": "Six per hour is the ten-minute task. The hour with seven holds the one connection that was not a heartbeat; the bucket found it without anyone reading sizes."
+      },
+      "clue": "Eleven hours, 19:00 to 05:00. Two in the first partial hour, then six, six, six, every hour until morning, except the 02:00 hour, which has seven. The rhythm never stopped. One beat in it was the theft.",
+      "logIt": {"kind":"hypothesis","prompt":"Log a Hypothesis, status supported: the connections from AUTOMATION-01 to 203.0.113.44 are automated check-ins from the PledgeSync task, six per hour from 20:00 to 05:00 with no gap, and the 02:00 hour's seventh connection is the upload. Supporting refs: your cadence evidence and your beacon-shape evidence. Supported means you cite them.","mustInclude":["six|6","02:00|02:10"]},
+      "caveat": "Google's match windows are fixed on the clock, as here. A burst that straddles an hour boundary is split across two rows; read neighbouring rows together."
     },
     {
       "id": "C04-M04",

@@ -30,7 +30,9 @@ export function deriveAnswer(mission, events) {
   if (c.type === 'cell') {
     const row = typeof c.row === 'number' ? r.rows[c.row] : r.rows.find(x => Object.entries(c.row).every(([k, v]) => x[k] === v));
     const col = typeof c.column === 'number' ? r.columns[c.column] : c.column;
-    return String(row?.[col]);
+    // format "hhmm": the cell holds a timestamp in seconds (min/max on metadata.event_timestamp.seconds) and the
+    // learner answers with the clock time.
+    return c.format === 'hhmm' ? hhmm(row?.[col]) : String(row?.[col]);
   }
   throw new Error('unknown check type ' + c.type);
 }
@@ -53,6 +55,11 @@ export function validateLogIt(li, where, eventIds) {
   return problems;
 }
 
+// Chapter density, KC7-like: at least DENSITY.min missions per chapter and at most DENSITY.maxDesk of them with a query
+// desk (Watch, Build, Your turn). Read missions carry no desk and frame the chapter, so they sit outside the ceiling.
+// Every chapter after the first needs DENSITY.solo Your-turn missions; the first chapter may have one.
+export const DENSITY = Object.freeze({ min: 7, maxDesk: 8, solo: 2, soloFirst: 1 });
+
 export function validate({ case: caseFile, chapters }, data) {
   const problems = [];
   const ids = new Set();
@@ -61,6 +68,13 @@ export function validate({ case: caseFile, chapters }, data) {
     if (!ch.id || !ch.title || !Array.isArray(ch.missions)) problems.push(`${ch.id}: chapter shape`);
     // The chapter-end recap card needs three to six plain-language "you can now" lines.
     if (!Array.isArray(ch.recap) || ch.recap.length < 3 || ch.recap.length > 6 || ch.recap.some(r => typeof r !== 'string' || r.length < 12)) problems.push(`${ch.id}: recap needs 3 to 6 lines`);
+    if (Array.isArray(ch.missions)) {
+      const desk = ch.missions.filter(m => m.kind !== 'read').length, solo = ch.missions.filter(m => m.kind === 'solo').length;
+      if (ch.missions.length < DENSITY.min) problems.push(`${ch.id}: density: ${ch.missions.length} missions, needs at least ${DENSITY.min}`);
+      if (desk > DENSITY.maxDesk) problems.push(`${ch.id}: density: ${desk} missions with a query desk, at most ${DENSITY.maxDesk}`);
+      const needSolo = chapters.indexOf(ch) === 0 ? DENSITY.soloFirst : DENSITY.solo;
+      if (solo < needSolo) problems.push(`${ch.id}: density: ${solo} Your-turn missions, needs at least ${needSolo}`);
+    }
     for (const m of ch.missions) {
       const where = `${m.id}`;
       if (ids.has(m.id)) problems.push(`${where}: duplicate id`); ids.add(m.id);

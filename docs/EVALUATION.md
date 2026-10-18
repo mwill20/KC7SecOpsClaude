@@ -1,15 +1,15 @@
 # Evaluation: what was tested and how
 
-Last run 2026-10-18 on the Casebook branch. Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked.
+Last run 2026-10-18 on the density branch (49 missions). Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked.
 
 ## Summary
 
 | Layer | Tool | Count | Result |
 |---|---|---|---|
 | Dataset generation | `tools/gen-data.mjs` | 1,010 events | deterministic (fixed seed), `data/events.json` unchanged by this work |
-| Content validation | `tools/validate-content.mjs` | 26 missions | every reference runs; every authored answer proven against the data; every Build starter fails until completed; every `logIt` block has a kind in the enum, a prompt, a non-empty `mustInclude`, and record IDs that exist |
-| Unit tests | `node --test` | 58 | pass (41 from the earlier branches + 17 for the Casebook branch, see below) |
-| Browser tests | Playwright 1.64.1, Chromium | 17 | pass (11 + 6 for the Casebook branch), each run at the root and under `/KC7SecOpsClaude/` |
+| Content validation | `tools/validate-content.mjs` | 49 missions | every reference runs; every authored answer proven against the data; every Build starter fails until completed; every `logIt` block has a kind in the enum, a prompt, a non-empty `mustInclude`, and record IDs that exist; every chapter has 7 or more missions, at most 8 with a query desk, and two Your-turn missions (one in chapter 1) |
+| Unit tests | `node --test` | 59 | pass (41 from the earlier branches + 17 for the Casebook branch + 1 for the density branch, see below) |
+| Browser tests | Playwright 1.64.1, Chromium | 18 | pass (11 + 6 for the Casebook branch + 1 for the density branch), each run at the root and under `/KC7SecOpsClaude/` |
 | Mutation checks on the new tests | manual, see below | 4 + 5 | each mutation failed the intended test |
 
 Environment for the recorded run: Linux, Node 22.22.0 (npm warns against `engines: >=24` but runs), Chromium build 1194 driven through `PIER9_CHROMIUM` because the container could not download Playwright's own build 1248. A clean CI run should instead do `npx playwright install --with-deps chromium` on Node 24; nothing in the tests depends on the Chromium build.
@@ -178,6 +178,66 @@ Applied, run, reverted:
 
 - Learning effect of keeping the casebook: nobody outside the project has written one.
 - Quality of entries: the check is structural by design; see `docs/LIMITATIONS.md`.
-- `Ctrl`+`Shift`+`N` in a real Chrome: the browser reserves it for an incognito window and the page never sees it. The test harness dispatches the key to the page, so the test passes where a Chrome user would need the button. Documented in `docs/USAGE.md` and `docs/LIMITATIONS.md`; the owner may want a different combination.
+- The casebook shortcut was `Ctrl`+`Shift`+`N` on this branch, which Chrome reserves for an incognito window; the density branch changed it to `Alt`+`Shift`+`C` everywhere (see below).
 - Clipboard behaviour outside Chromium with permission granted; the fallback text in the Handoff tab is what a refusing browser shows.
 - Same environment as before: Node 22 with an existing Chromium build, one engine, no assistive technology session.
+
+## Density pass
+
+Branch `cloud/density`, 2026-10-18. What a learner notices: every chapter is now seven to eleven missions long (49 in all, up from 26), with at least two Your-turn missions per chapter after the first; a **mission map** strip at the top of each chapter page (one linked segment per mission, coloured by kind and filled as it completes, with a legend); the Casebook shortcut is `Alt`+`Shift`+`C` (Chrome reserved the old `Ctrl`+`Shift`+`N`); min/max cells on a timestamp read as UTC clock times with the raw seconds beside them; and each chapter's recap lines now match what the longer chapter teaches. The course total went from 2,235 to 4,355 points. No change to `data/`, `tools/gen-data.mjs`, the engine, any existing reference query, answer value or scoring value.
+
+### New missions, by chapter
+
+| Chapter | New mission | Kind | Teaches | Log it |
+|---|---|---|---|---|
+| 1 | C01-M07 Hal spells it in capitals | Build | exact string match vs `nocase` on an account ID; zero rows is not an error | Timeline (22:41 Marco) |
+| 1 | C01-M08 Same question, other role | Build | `target.user.userid != ""`: the acted-on account | Hypothesis (open) |
+| 1 | C01-M09 Pivot to the playout PC | Your turn | pivot from account to host; every login on AUTOMATION-01 | Timeline (19:30) |
+| 1 | C01-M10 Spot the wrong query | Read | three queries for one question; the unparenthesised OR returns 17, not 7 | Pivot |
+| 2 | C02-M08 What legitimate looks like | Your turn | the real sponsor domain as a baseline | Remediation / Harden |
+| 2 | C02-M05 The one the gateway caught | Watch | `security_result.action = "QUARANTINE"`: the coupon held, the lure delivered | Evidence |
+| 2 | C02-M06 Anchor the start, not the end | Build | `/^Pledge Night/` (3 lures) vs `/Pledge Night$/` (2 real) vs unanchored (5) | Timeline (18:05) |
+| 2 | C02-M07 Every name Hal's desk asked for | Build | group DNS by name on PLEDGE-DESK-02: seven benign names, one lookalike | Gap |
+| 3 | C03-M05 Three accounts, one machine | Watch | launches per account on AUTOMATION-01: 39 / 5 / 1 | Evidence |
+| 3 | C03-M06 Who launched the launcher | Build | parent (`principal.process`) vs child (`target.process`): cmd.exe → PowerShell | Timeline (19:33) |
+| 3 | C03-M07 The download | Your turn | `curl.exe` and its command line, 19:36:40 | Evidence |
+| 3 | C03-M08 The injection | Build | `playout_ctl.exe --inject --slot 0310`, 03:02:15 | Timeline (03:02) |
+| 4 | C04-M07 A page load and a form post | Watch | the two PLEDGE-DESK-02 connections by size and direction | Timeline (18:53) |
+| 4 | C04-M05 Small both ways | Build | `network.sent_bytes < 1000`: 62 beacons, three outliers | Evidence |
+| 4 | C04-M06 Either end, in one token | Build | grouped field `ip` vs explicit OR; the CDN at 74 connections from seven hosts | Remediation / Harden |
+| 4 | C04-M08 Beacons by the hour | Your turn | `by 1h`: six per hour, seven in the 02:00 hour | Hypothesis (supported) |
+| 5 | C05-M04 First and last | Build | `min`/`max` on `metadata.event_timestamp.seconds`, answered as HH:MM | Timeline (05:50) |
+| 5 | C05-M05 The quiet end of the list | Build | `asc` vs `desc` and what `limit` then keeps | Gap |
+| 5 | C05-M06 Three numbers per destination | Watch | three outcomes per row: count, count_distinct, sum | Evidence |
+| 5 | C05-M07 How many, how many different | Your turn | `count` 102 vs `count_distinct` 2 on the same field | Remediation / Recover |
+| 6 | C06-M05 Failures by the hour | Build | `by 1h` on all FAIL logins: 8 / 4 / 1 / 1 | Evidence |
+| 6 | C06-M06 Everything from one address | Your turn | one key, no event type: 8 logins, no other event type | Timeline (19:21) |
+| 6 | C06-M07 Contain, eradicate, recover, harden | Read | the four lists with evidence refs and their order | Remediation / Recover |
+
+Kinds across the course: 10 Watch, 22 Build, 12 Your turn, 5 Read. Log it kinds added: 8 Timeline, 6 Remediation (3 Harden, 2 Recover, beside the existing Contain and Eradicate items), 5 Evidence, 2 Hypothesis, 2 Gap, 1 Pivot. Timeline and Remediation were the under-fed tabs (2 and 4 missions) and now have 10 and 8 missions feeding them.
+
+### Method
+
+Every candidate reference was run against `data/events.json` before a word was written, and every number in a beat, clue, hint or call prompt was taken from those rows. Each new mission was then played through the real grader with a script (`gradeQuery`, `gradeAnswer`, `gradeCall`): the starter as shipped (every Build starter reports its `___` gap), two or three plausible wrong attempts, the third hint (passes on every Build and Your-turn mission), the derived answer and its accepted alternatives, the correct and a wrong analyst call, and whether the Log it prompt or clue names every token the check will demand. Three new missions were then played in Chromium (browser test 18): C05-M04 end to end with the clock-time cells, C01-M10 as a Read mission, and C06-M06 with a too-narrow query first.
+
+### Friction log
+
+| # | Where | What a learner would say | What changed |
+|---|---|---|---|
+| D1 | C01-M09 call prompt | The prompt said "the first minute after 19:30", which is the answer the box had just asked for. | Reworded; test C7 (prompt must not restate the answer) now covers 49 missions and passes. |
+| D2 | C05-M04 results table | `$first` and `$last` showed as `1,773,430,805`; nobody reads a brief in epoch seconds. | Outcomes computed as `min`/`max` on `metadata.event_timestamp.seconds` render as `03-13 19:40:05 (1773430805)`; the answer check gained `format: "hhmm"` so the validator derives `19:40` from the cell. A plain `sum` column still renders as a number (browser test 18). |
+| D3 | C06-M05 | Typing `by 1 h` with a space is reported as *The time window after by is not valid*. | Left alone; the message names the window and the hint says "no space". |
+| D4 | C03-M06 | A path pattern typed with one backslash before `cmd` instead of two runs and *misses events* with example IDs, but nothing says the backslash count is why. | Left alone; C03-M01's caveat ("count the backslashes first") is two missions earlier. Candidate for an engine hint in session 3. |
+| D5 | Chapter pages | With eleven missions in chapter 1 the list alone no longer showed where you were. | The mission map strip: 11 linked segments on chapter 1, kinds in a legend, `done`/`partial` states, accessible names that read "Mission 2, Open the login log, Watch one, complete". |
+| D6 | Several Build missions | As before, differently shaped queries pass by execution: `"marco.vela"` in lower case passes the `nocase` mission, `target.ip = "192.0.2.120"` passes the grouped-field mission (the CDN is only ever a target), `/0310/` on the command line passes the injection mission, `over every 1h` passes the `by 1h` mission. | Documented grading model; the concept cards carry the teaching. |
+| D7 | Spec vs chapter 1 | The brief asked for 7 to 8 missions per chapter and four additions to chapter 1, which make eleven. | The validator rule counts desk missions (Watch, Build, Your turn) against the ceiling of 8 and leaves Read missions, which have no desk, outside it; chapter 1's three Read missions frame the chapter. Minimum 7 in total. Test C10 proves the thin, fat and no-Your-turn cases fail. |
+
+### Left for session 3
+
+- A timestamp helper (`timestamp.get_hour` and friends) would let C05-M04 ask for the hour directly; the engine reports those functions as unsupported, so the mission reads the clock from the formatted cell instead.
+- `dedup`, arrays and multi-event joins are still unsupported and no new mission depends on them.
+
+### Not verified
+
+- Learning effect of the longer chapters: nobody outside the project has played the 49-mission course.
+- `Alt`+`Shift`+`C` on Windows layouts where `Alt`+`Shift` switches input language, and on macOS layouts where it types a character; the handler matches the physical key, and the button remains the fallback.
