@@ -161,7 +161,7 @@ test('No horizontal overflow at 320 px on the home, chapter, mission, results an
   const page = await context.newPage();
   const overflow = () => page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth);
   for (const hash of ['', '#C01', `#${BUILD}`, '#about']) {
-    await page.goto('/' + hash);
+    await page.goto('./' + hash);
     await expect(page.locator('h1')).toBeVisible();
     expect(await overflow(), hash || 'home').toBeLessThanOrEqual(0);
   }
@@ -198,9 +198,9 @@ test('Reduced motion: no transitions, animations or smooth scrolling anywhere on
   await context.close();
 });
 
-test('Zero CSP violations, console errors or non-loopback requests across routing and every interaction', async ({ page }) => {
+test('Zero CSP violations, console errors or non-loopback requests across routing and every interaction', async ({ page, baseURL }) => {
   const log = await instrument(page);
-  await page.goto('/');
+  await page.goto('./');
   await expect(page.locator('h1')).toHaveText('Static on Pier Nine');
   await page.getByRole('link', { name: 'Open the case →' }).click();
   await expect(page).toHaveURL(/#C01-M01$/);
@@ -225,7 +225,7 @@ test('Zero CSP violations, console errors or non-loopback requests across routin
   await page.getByRole('checkbox').uncheck();
   expect(await log.csp()).toEqual([]);
   expect(log.errors).toEqual([]);
-  expect([...log.hosts]).toEqual(['127.0.0.1:4187']);
+  expect([...log.hosts]).toEqual([new URL(baseURL).host]);
   const csp = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
   expect(csp).toContain("connect-src 'none'");
 });
@@ -373,9 +373,9 @@ test('Case-closed page: lists what is left while the case is open, and the three
 
   // Closed: every mission recorded as complete through the same validated store a real run writes to.
   const ctx = await browser.newContext(); const page = await ctx.newPage();
-  const ids = await (async () => { const p = await ctx.newPage(); await p.goto('/'); const r = await p.evaluate(async () => { const { CONTENT } = await import('./bundle.js'); return CONTENT.chapters.flatMap(c => c.missions.map(m => [m.id, m.kind])); }); await p.close(); return r; })();
+  const ids = await (async () => { const p = await ctx.newPage(); await p.goto('./'); const r = await p.evaluate(async () => { const { CONTENT } = await import('./bundle.js'); return CONTENT.chapters.flatMap(c => c.missions.map(m => [m.id, m.kind])); }); await p.close(); return r; })();
   await seedProgress(page, ids);
-  await page.goto('/');
+  await page.goto('./');
   await expect(page.locator('#topscore')).toHaveText('1,970 / 1,970 pts');
   await expect(page.locator('#chapterprog .chap.done')).toHaveCount(6);
   await page.getByRole('link', { name: 'Read the case-closed handoff →' }).click();

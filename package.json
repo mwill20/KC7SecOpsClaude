@@ -10,7 +10,8 @@
     "data": "node tools/gen-data.mjs",
     "validate:content": "node tools/validate-content.mjs",
     "test": "node --test tests/unit/*.test.mjs",
-    "build": "node tools/build.mjs",
+    "build": "node tools/build.mjs && node tools/check-artifact.mjs",
+    "check:artifact": "node tools/check-artifact.mjs",
     "start": "node tools/serve.mjs",
     "verify": "npm run data && npm run validate:content && npm test && npm run build && npm run test:browser",
     "test:browser": "playwright test"
