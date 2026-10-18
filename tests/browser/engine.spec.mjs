@@ -27,7 +27,7 @@ test('Engine v2 on the desk: the Lists panel names the bundled lists and where t
   await expect(page.locator('.results .summary')).toContainText(/\d+ events/);
   await run('target.ip in %blocked_ranges');
   await expect(feedback).toHaveClass(/bad/);
-  await expect(feedback).toContainText('Will not run: The keyword after in must match the list type.');
+  await expect(feedback).toContainText('Will not run: The keyword after in must match the list or column type.');
   await run('target.ip in cidr %no_such_list');
   await expect(feedback).toContainText('That reference list does not exist in this trainer.');
   // A data table column runs in the same form; an unknown column is named apart from an unknown table.
