@@ -196,7 +196,7 @@ test('C11 the bundled reference lists validate and resolve from a query; should-
   assert.ok(bad({ name: '9lives' }).some(p => p.includes('bad name')));
   assert.ok(validateLists({ lists: [{ name: 'x', type: 'string', description: 'a dozen characters', items: ['a'] }, { name: 'x', type: 'string', description: 'a dozen characters', items: ['b'] }] }).some(p => p.includes('duplicate name')));
   // every new engine code reads as two plain-language parts
-  for (const code of ['TIMEZONE_UNSUPPORTED', 'UNKNOWN_LIST', 'LIST_TYPE_MISMATCH', 'DEDUP_KEY_NOT_GROUPED', 'TIME_AGGREGATE_NEEDS_TIMESTAMP', 'CONDITION_ON_ARRAY', 'ORDER_ON_ARRAY', 'STRING_FN_NEEDS_STRING', 'CONCAT_NEEDS_ARGS', 'TOO_MANY_LISTS']) { assert.equal(MESSAGES[code].length, 2, code); assert.ok(MESSAGES[code][1].length > 20, code); }
+  for (const code of ['TIMEZONE_UNSUPPORTED', 'UNKNOWN_LIST', 'LIST_TYPE_MISMATCH', 'DEDUP_KEY_NOT_GROUPED', 'TIME_AGGREGATE_NEEDS_TIMESTAMP', 'CONDITION_ON_ARRAY', 'ORDER_ON_ARRAY', 'STRING_FN_NEEDS_STRING', 'CONCAT_NEEDS_ARGS', 'TOO_MANY_LISTS', 'TOO_MANY_REGEX_LISTS', 'TOO_MANY_CIDR_LISTS', 'UNKNOWN_TABLE', 'UNKNOWN_TABLE_COLUMN', 'LIST_AS_VALUE', 'UNJOINED_VARIABLE', 'BARE_FIELD_IN_JOIN', 'MATCH_KEY_NOT_SHARED', 'OUTCOME_NEEDS_VARIABLE', 'NON_EXISTENCE', 'TOO_MANY_EVENT_VARS', 'OVER_NEEDS_KEY', 'UNKNOWN_EVENT_VAR', 'MULTI_EVENT_NEEDS_MATCH']) { assert.equal(MESSAGES[code].length, 2, code); assert.ok(MESSAGES[code][1].length > 20, code); }
   assert.match(describe('TIMEZONE_UNSUPPORTED', { zone: 'America/Los_Angeles' }).title, /\(America\/Los_Angeles\)/);
   assert.match(describe('TIMEZONE_UNSUPPORTED', {}).fix, /UTC/);
 });

@@ -40,6 +40,11 @@ export const ACTIONS = Object.freeze(['ALLOW', 'BLOCK', 'FAIL', 'QUARANTINE', 'U
 // the docs write them.
 export const ALIASES = Object.freeze({ 'metadata.event_timestamp': 'metadata.event_timestamp.seconds' });
 export const TIMESTAMP_FIELD = 'metadata.event_timestamp.seconds';
+// Entity records (Part C) carry their own timestamp; the time functions and earliest/latest accept either.
+export const ENTITY_TIMESTAMP_FIELD = 'graph.metadata.event_metadata.event_timestamp.seconds';
+export const TIMESTAMP_FIELDS = Object.freeze([TIMESTAMP_FIELD, ENTITY_TIMESTAMP_FIELD]);
+// Entity fields are the graph.* paths (Google: statistics page, graph.entity.hostname and graph.entity.ip examples).
+export const isEntityField = f => typeof f === 'string' && f.startsWith('graph.');
 
 // Outcome aggregates (Google: "Analyze search data with statistics"). array and array_distinct return lists, truncated
 // to 1,000 elements in Search; earliest and latest return timestamps.
@@ -102,4 +107,5 @@ export const LIMITS = Object.freeze({
   regexListRefs: 4,   // of which at most 4 may be `in regex` (rules: 5)
   cidrListRefs: 2,    // and at most 2 may be `in cidr` (rules: 5)
   dedupKeys: 4, concatArgs: 6,
+  eventVars: 2,       // event variables in one Search query: two, joined by shared placeholders; more is reported as not run here
 });

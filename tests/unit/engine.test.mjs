@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSearch, QueryError } from '../../site/engine/parser.js';
-import { execute } from '../../site/engine/executor.js';
+import { execute, MEMBERS as MEMBERS_SYM } from '../../site/engine/executor.js';
 import { runQuery, compareResults } from '../../site/engine/grader.js';
 import { guardRegex } from '../../site/engine/safety.js';
 
@@ -77,7 +77,8 @@ test('G4 other languages and rule syntax are reported as unsupported, not as wro
   fails('SecurityEvent | where EventID == 4625', 'LOOKS_LIKE_KQL', 'unsupported');
   fails('rule failed_logins { meta: }', 'LOOKS_LIKE_RULE', 'unsupported');
   fails('SELECT * FROM events', 'LOOKS_LIKE_SQL', 'unsupported');
-  fails('$e1.principal.hostname = "a" $e2.principal.hostname = "b"', 'MULTI_EVENT', 'unsupported');
+  fails('$e1.principal.hostname = "a" $e2.principal.hostname = "b"', 'UNJOINED_VARIABLE', 'invalid');
+  fails('$e1.principal.hostname = $h $e2.principal.hostname = $h $e3.principal.hostname = $h\nmatch:\n  $h', 'TOO_MANY_EVENT_VARS', 'unsupported');
   fails('principal.hostname = "x"\noption:\n  allow_zero_values = true', 'UNSUPPORTED_SECTION', 'unsupported');
   fails('principal.hostname = "x"\n$h = math.abs(target.port)', 'UNSUPPORTED_FUNCTION', 'unsupported');
 });
@@ -317,4 +318,65 @@ test('V5 data tables: %table.column in the three forms, with not and nocase; sho
   assert.equal(parseSearch(rep(4, 'principal.hostname in regex %shapes.pattern') + ' OR ' + rep(2, 'target.ip in cidr %blocks.range') + ' OR principal.hostname in %allow.domain', ctxT).tables.length, 3, 'exactly 7 = 4 regex + 2 cidr + 1 string is allowed');
   // without tables in the context every table is unknown
   failsL('principal.hostname in %allow.domain', 'UNKNOWN_TABLE');
+});
+
+// ---------- multi-event joins (Google: "Use conditions in search and dashboards", verified 2026-10-18) ----------
+const J = 'events:\n  $e1.metadata.event_type = "USER_LOGIN"\n  $e1.principal.user.userid = $u\n  $e2.metadata.event_type = "PROCESS_LAUNCH"\n  $e2.principal.user.userid = $u\n';
+test('V6 two event variables joined by a shared placeholder: over N pairs events within N of each other, by N buckets them, no window joins the whole range; outcomes read one variable each and #var counts it', () => {
+  const r = runL(J + 'match:\n  $u over 5m\noutcome:\n  $logins = count($e1.metadata.id)\n  $procs = array($e2.target.process.file.full_path)');
+  assert.deepEqual(r.columns, ['principal.user.userid', '$logins', '$procs']);
+  assert.deepEqual(r.rows, [{ 'principal.user.userid': 'bo', $logins: 1, $procs: ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.exe'] }]);
+  assert.deepEqual(r.rows[0][MEMBERS_SYM], ['e3', 'e5']); assert.deepEqual(r.joined, ['$e1', '$e2']); assert.equal(r.scanned, 5, 'four logins and one launch were read');
+  assert.equal(runL(J + 'match:\n  $u over 1m\noutcome:\n  $n = count($e1.metadata.id)').rows.length, 0, '200 seconds apart is outside a one-minute window');
+  assert.equal(runL(J + 'match:\n  $u over 1h\noutcome:\n  $n = count($e1.metadata.id)').rows.length, 1);
+  const bucketed = runL(J + 'match:\n  $u by 10m\noutcome:\n  $n = count($e2.metadata.id)');
+  assert.deepEqual(bucketed.columns, ['principal.user.userid', 'window_start', '$n']); assert.deepEqual(bucketed.rows, [{ 'principal.user.userid': 'bo', window_start: 1200, $n: 1 }]);
+  assert.equal(runL(J + 'match:\n  $u\noutcome:\n  $n = count($e1.metadata.id)').rows.length, 1, 'no window: the whole range');
+  // the join on hostname: a login followed by a connection from the same host, either order, written with a placeholder or directly
+  const H = '$e1.metadata.event_type = "USER_LOGIN"\n$e1.principal.hostname = $h\n$e2.metadata.event_type = "NETWORK_CONNECTION"\n$e2.principal.hostname = $h\nmatch:\n  $h over 1h\noutcome:\n  $first_login = earliest($e1.metadata.event_timestamp)\n  $to = array_distinct($e2.target.ip)\n  $n = count($e2.metadata.id)\norder:\n  $first_login';
+  const h = runL(H);
+  assert.deepEqual(h.rows.map(x => [x['principal.hostname'], x.$first_login, x.$to, x.$n]), [['PC-1', 1000, ['192.0.2.8'], 1], ['PC-2', 1400, ['203.0.113.44'], 1]]);
+  assert.deepEqual(h.timeCols, ['$first_login']);
+  const direct = runL('$e1.metadata.event_type = "USER_LOGIN"\n$e2.metadata.event_type = "NETWORK_CONNECTION"\n$e1.principal.hostname = $e2.principal.hostname\nmatch:\n  $e1.principal.hostname over 1h\noutcome:\n  $n = count($e2.metadata.id)');
+  assert.deepEqual(direct.rows.map(x => x['principal.hostname']), ['PC-1', 'PC-2']);
+  // condition: #var, $var as #var > 0, outcome comparisons, and/or
+  assert.equal(runL(J + 'match:\n  $u over 5m\noutcome:\n  $n = count($e1.metadata.id)\ncondition:\n  #e1 > 0 and #e2 >= 1').rows.length, 1);
+  assert.equal(runL(J + 'match:\n  $u over 5m\noutcome:\n  $n = count($e1.metadata.id)\ncondition:\n  $e1 and $e2').rows.length, 1);
+  assert.equal(runL(J + 'match:\n  $u over 5m\noutcome:\n  $n = count($e1.metadata.id)\ncondition:\n  #e1 > 1 or $n > 1').rows.length, 0);
+  assert.equal(runL(H.replace('order:\n  $first_login', 'condition:\n  #e2 > 0 and $n >= 1')).rows.length, 2);
+  // grading: differently named variables and placeholders are the same evidence
+  const ref = runQuery(J + 'match:\n  $u over 5m\noutcome:\n  $n = count($e2.metadata.id)', mini, null, ctx).result;
+  const alt = runQuery('$login.metadata.event_type = "USER_LOGIN"\n$login.principal.user.userid = $who\n$proc.metadata.event_type = "PROCESS_LAUNCH"\n$proc.principal.user.userid = $who\nmatch:\n  $who over 5m\noutcome:\n  $launches = count($proc.metadata.id)', mini, null, ctx).result;
+  assert.equal(compareResults(alt, ref).correct, true);
+  assert.equal(compareResults(runQuery(J + 'match:\n  $u over 1m\noutcome:\n  $n = count($e2.metadata.id)', mini, null, ctx).result, ref).reason, 'DIFFERENT_STATS');
+  assert.equal(compareResults(runQuery('metadata.event_type = "PROCESS_LAUNCH"\nmatch:\n  principal.user.userid\noutcome:\n  $n = count(metadata.id)', mini, null, ctx).result, ref).correct, true, 'a single-event table with the same rows is the same evidence; the grader compares tables, not shapes');
+});
+
+test('V6 should-fail: unjoined variables, a placeholder set twice by one event, #var on an unknown variable, over without a key, more than two variables, a bare field, a match key one event sets, an outcome without a variable, no match section, a non-existence condition, and #var outside a join', () => {
+  failsL('$e1.metadata.event_type = "USER_LOGIN"\n$e2.metadata.event_type = "PROCESS_LAUNCH"\nmatch:\n  $e1.principal.user.userid', 'UNJOINED_VARIABLE', 'invalid');
+  failsL('$e1.principal.hostname = $h\n$e1.target.hostname = $h\n$e2.principal.hostname = $h\nmatch:\n  $h', 'BINDING_DUPLICATE', 'invalid');
+  failsL('$e.principal.hostname = $h\n$e.target.hostname = $h\nmatch:\n  $h\noutcome:\n  $n = count(metadata.id)', 'BINDING_DUPLICATE', 'invalid');
+  failsL(J + 'match:\n  $u over 5m\noutcome:\n  $n = count($e1.metadata.id)\ncondition:\n  #e3 > 0', 'UNKNOWN_EVENT_VAR', 'invalid');
+  failsL(J + 'match:\n  over 1h\noutcome:\n  $n = count($e1.metadata.id)', 'OVER_NEEDS_KEY', 'invalid');
+  failsL('metadata.event_type = "USER_LOGIN"\nmatch:\n  by 5m\noutcome:\n  $n = count(metadata.id)', 'OVER_NEEDS_KEY', 'invalid');
+  failsL(J + '$e3.metadata.event_type = "NETWORK_CONNECTION"\n$e3.principal.user.userid = $u\nmatch:\n  $u over 1h', 'TOO_MANY_EVENT_VARS', 'unsupported');
+  failsL(J + 'security_result.action = "FAIL"\nmatch:\n  $u over 5m', 'BARE_FIELD_IN_JOIN', 'invalid');
+  failsL(J + 'match:\n  $e1.principal.hostname over 5m\noutcome:\n  $n = count($e1.metadata.id)', 'MATCH_KEY_NOT_SHARED', 'invalid');
+  failsL(J + '$e1.principal.hostname = $h\nmatch:\n  $h over 5m', 'MATCH_KEY_NOT_SHARED', 'invalid');
+  failsL(J + 'match:\n  $u over 5m\noutcome:\n  $n = count(metadata.id)', 'OUTCOME_NEEDS_VARIABLE', 'invalid');
+  failsL(J + 'match:\n  $u over 5m\noutcome:\n  $n = count_distinct($u)', 'OUTCOME_NEEDS_VARIABLE', 'invalid');
+  failsL(J + 'outcome:\n  $n = count($e1.metadata.id)', 'MULTI_EVENT_NEEDS_MATCH', 'invalid');
+  failsL(J + 'match:\n  $u over 5m\ncondition:\n  #e2 = 0', 'NON_EXISTENCE', 'unsupported');
+  failsL(J + 'match:\n  $u over 5m\ncondition:\n  not $e2', 'NON_EXISTENCE', 'unsupported');
+  failsL(J + 'match:\n  $u over 5m\ncondition:\n  #e1 > 0 and #e2 < 1', 'NON_EXISTENCE', 'unsupported');
+  failsL(J + 'match:\n  $u over 5m\ncondition:\n  $e1 >= 0', 'NON_EXISTENCE', 'unsupported');
+  failsL(J + 'match:\n  $u over 5m\noutcome:\n  $n = count($e1.metadata.id)\ncondition:\n  #e1 > "1"', 'CONDITION_NEEDS_NUMBER', 'invalid');
+  failsL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.user.userid\noutcome:\n  $n = count(metadata.id)\ncondition:\n  #e > 0', 'UNKNOWN_EVENT_VAR', 'invalid');
+  failsL('$e.metadata.event_type = "USER_LOGIN"\nmatch:\n  $e.principal.user.userid\noutcome:\n  $n = count(metadata.id)\ncondition:\n  #e > 0', 'COUNT_CHARACTER', 'unsupported');
+  failsL('#e1 > 0', 'COUNT_CHARACTER', 'unsupported');
+  failsL(J + '$u = "bo"\nmatch:\n  $u over 5m', 'SHARED_PLACEHOLDER_COMPARED', 'invalid');
+  failsL('($e1.metadata.event_type = "USER_LOGIN" OR $e2.metadata.event_type = "PROCESS_LAUNCH")\n$e1.principal.user.userid = $u\n$e2.principal.user.userid = $u\nmatch:\n  $u', 'MIXED_EVENT_VARS', 'unsupported');
+  failsL(J + 'match:\n  $u over 5m\ndedup:\n  $e1.principal.hostname', 'DEDUP_KEY_NOT_GROUPED', 'invalid');
+  // single-event behaviour is unchanged: over N stays the unsupported rule window, by N buckets
+  failsL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.hostname over 1h\noutcome:\n  $c = count(metadata.id)', 'OVER_WINDOW', 'unsupported');
 });

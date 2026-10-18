@@ -349,7 +349,7 @@ function missionPage(m) {
     const range = c.ranges.find(x => x.id === s.rangeId);
     const head = el('div', { class: 'summary' },
       el('span', { text: r.kind === 'events' ? `${fmtNum(r.count)} event${r.count === 1 ? '' : 's'}` : `${fmtNum(r.count)} row${r.count === 1 ? '' : 's'} · ${fmtNum(r.scanned)} events summarised` }),
-      el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') + (r.deduped ? ' · deduplicated' : '') }));
+      el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') + (r.deduped ? ' · deduplicated' : '') + (r.joined ? ` · joined ${r.joined.join(' and ')}` + (r.window ? r.window.kind === 'over' ? ` within ${fmtWindow(r.window.seconds)}` : ` by ${fmtWindow(r.window.seconds)} buckets` : '') : '') }));
     const raw = el('div', { hidden: true, role: 'region', 'aria-label': 'Full record', tabindex: -1 });
     // Opening a record moves focus into the region; closing it returns focus to the button that opened it.
     // Insert from results: the selected record's time and metadata.id go into the Evidence draft; the observation stays the learner's.
@@ -511,6 +511,9 @@ function briefCard(m) {
   paint(); onBookChangeAlso(paint);
   return box;
 }
+
+// A join window as the learner wrote it: 300 reads as 5m, 3600 as 1h, 86400 as 1d.
+const fmtWindow = s => (s % 86400 === 0 ? `${s / 86400}d` : s % 3600 === 0 ? `${s / 3600}h` : `${Math.round(s / 60)}m`);
 
 // Tells the learner where in their own results the answer is read from, without giving the value.
 function whereToRead(check) {
