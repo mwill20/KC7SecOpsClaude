@@ -4,8 +4,8 @@
     {
       "name": "sponsor_domains",
       "type": "string",
-      "description": "The sponsor and vendor domains the station wrote down after Pledge Night. Written in a hurry; wider than it should be.",
-      "items": ["harborlightsponsors.example", "pledgeware.example", "tunecast.example", "publicradio.example", "vendor.example", "harborcast.example", "sync.example", "pier9-partners.example"]
+      "description": "The names the station's machines are allowed to resolve, written in a hurry the morning after Pledge Night by copying every sponsor-looking name out of the week-one logs. Wider than it should be: read it to the end.",
+      "items": ["cdn.publicradio.example", "streaming.tunecast.example", "mail.harborlightsponsors.example", "harborlightsponsors.example", "updates.vendor.example", "time.sync.example", "weather.harborcast.example", "login.pledgeware.example", "pledgeware.example", "pier9-partners.example", "cdn-sync.pier9-partners.example"]
     },
     {
       "name": "admin_accounts",
@@ -16,20 +16,20 @@
     {
       "name": "blocked_ranges",
       "type": "cidr",
-      "description": "Ranges the gateway blocks after the first case.",
+      "description": "Ranges the gateway blocks since the first case.",
       "items": ["203.0.113.0/24"]
     },
     {
-      "name": "station_hosts",
-      "type": "string",
-      "description": "Hosts the station owns.",
-      "items": ["AUTOMATION-01", "PLEDGE-DESK-01", "PLEDGE-DESK-02", "STUDIO-A", "STUDIO-B", "NEWSROOM-03", "ENG-SHOP-01", "OPS-LAPTOP-07", "VPN-GW-01", "FS-01", "DC-01"]
+      "name": "station_lan",
+      "type": "cidr",
+      "description": "The station's own network, including the address pool the VPN gateway hands to remote sessions.",
+      "items": ["10.9.4.0/24"]
     },
     {
       "name": "lookalike_patterns",
       "type": "regex",
-      "description": "Shapes of lookalike domains seen against the station: a sponsor name with an extra word, or the station name with a hyphen.",
-      "items": ["^.*pier9-.*\\.example$", "^.*harborlight.*-.*\\.example$"]
+      "description": "Shapes of lookalike sender domains: a known sponsor's name with a hyphen pushed into it, or the station's name with a partner suffix.",
+      "items": ["pier9-[a-z]+\\.example$", "harborlight-[a-z]+\\.example$"]
     }
   ]
 }

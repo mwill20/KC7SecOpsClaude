@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseSearch } from '../site/engine/parser.js';
 import { execute } from '../site/engine/executor.js';
@@ -9,14 +10,22 @@ import { guardRegex, parseCidr } from '../site/engine/safety.js';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+// content/case.json holds a cases array; each case names its chapters and its data file. `case` is the first case
+// (the shape earlier branches used), `chapters` is every chapter in order across cases, and chapterCase maps a
+// chapter id to its case id.
 export function loadContent() {
   const caseFile = JSON.parse(fs.readFileSync(path.join(root, 'content', 'case.json'), 'utf8'));
-  const chapters = caseFile.chapters.map(id => JSON.parse(fs.readFileSync(path.join(root, 'content', 'chapters', id + '.json'), 'utf8')));
+  const cases = caseFile.cases;
+  const chapterCase = {};
+  const chapters = cases.flatMap(c => c.chapters.map(id => { chapterCase[id] = c.id; return JSON.parse(fs.readFileSync(path.join(root, 'content', 'chapters', id + '.json'), 'utf8')); }));
   const casebook = JSON.parse(fs.readFileSync(path.join(root, 'content', 'casebook.json'), 'utf8'));
   const lists = JSON.parse(fs.readFileSync(path.join(root, 'content', 'lists.json'), 'utf8'));
-  return { case: caseFile, chapters, casebook, lists };
+  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, boundary: caseFile.boundary };
 }
-export function loadData() { return JSON.parse(fs.readFileSync(path.join(root, 'data', 'events.json'), 'utf8')); }
+export function loadData(file = 'events.json') { return JSON.parse(fs.readFileSync(path.join(root, 'data', file), 'utf8')); }
+// Every case's dataset, keyed by case id.
+export function loadDatasets(content = loadContent()) { return Object.fromEntries(content.cases.map(c => [c.id, loadData(c.data)])); }
+export const digestOf = events => crypto.createHash('sha256').update(JSON.stringify(events)).digest('hex');
 
 const hhmm = s => new Date(s * 1000).toISOString().slice(11, 16);
 
@@ -48,7 +57,7 @@ export function deriveAnswer(mission, events, ctx = {}) {
 }
 
 // The casebook entry kinds a mission's "Log it" may ask for, and the four remediation lists. Mirrors site/ui/casebook.js.
-const LOGIT_KINDS = ['scope', 'evidence', 'timeline', 'hypothesis', 'pivot', 'gap', 'determination', 'remediation', 'handoff'];
+export const LOGIT_KINDS = ['scope', 'evidence', 'timeline', 'hypothesis', 'pivot', 'gap', 'determination', 'remediation', 'handoff'];
 const LOGIT_LISTS = ['contain', 'eradicate', 'recover', 'harden'];
 
 // logIt: { kind, prompt, mustInclude: [token|alternative, ...], list? }. Every token that looks like a record ID must
@@ -106,14 +115,44 @@ export function validateLists(raw) {
   return problems;
 }
 
-export function validate({ case: caseFile, chapters, casebook, lists }, data) {
+// A case file entry: the fields the UI reads, a window, ranges inside the window, chapters that exist, a data file and
+// the digest of its events. The digest is how the validator proves an earlier case's events did not move.
+export function validateCase(c, chapterIds, data) {
+  const problems = []; const where = `case ${c?.id ?? '?'}`;
+  if (!c || typeof c !== 'object') return ['case: shape'];
+  for (const k of ['id', 'title', 'tagline', 'role', 'summary', 'data', 'closedAt', 'digest']) if (typeof c[k] !== 'string' || !c[k]) problems.push(`${where}: ${k}`);
+  if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(c.id ?? '')) problems.push(`${where}: id must be a lower-case slug`);
+  if (!Array.isArray(c.opening) || c.opening.length < 2 || !Array.isArray(c.people) || !c.people.length || !Array.isArray(c.systems) || !c.systems.length) problems.push(`${where}: opening, people and systems`);
+  if (!c.window || Number.isNaN(Date.parse(c.window.start)) || Number.isNaN(Date.parse(c.window.end)) || Date.parse(c.window.end) <= Date.parse(c.window.start)) problems.push(`${where}: window`);
+  else {
+    const span = (Date.parse(c.window.end) - Date.parse(c.window.start)) / 1000;
+    if (!Array.isArray(c.ranges) || !c.ranges.length || c.ranges[0].id !== 'all' || c.ranges.some(r => !r.id || !r.label || r.start < 0 || r.end > span || r.end <= r.start)) problems.push(`${where}: ranges must start with "all" and sit inside the window`);
+    if (data && (data.window?.start !== Date.parse(c.window.start) / 1000 || data.window?.end !== Date.parse(c.window.end) / 1000)) problems.push(`${where}: data window differs from the case window`);
+    if (data && data.events.some(e => e['metadata.event_timestamp.seconds'] < data.window.start || e['metadata.event_timestamp.seconds'] > data.window.end)) problems.push(`${where}: an event lies outside the window`);
+  }
+  if (!Array.isArray(c.chapters) || !c.chapters.length || c.chapters.some(id => !chapterIds.has(id))) problems.push(`${where}: chapters must name existing chapter files`);
+  if (!data) problems.push(`${where}: no dataset`);
+  else if (digestOf(data.events) !== c.digest) problems.push(`${where}: events changed (digest ${digestOf(data.events).slice(0, 12)}… does not match case.json). Regenerate deliberately and update the digest, or restore the data.`);
+  return problems;
+}
+
+export function validate({ cases, chapters, chapterCase, casebook, lists }, datasets) {
   const problems = [];
   if (casebook !== undefined) problems.push(...validateCasebookContent(casebook));
   if (lists !== undefined) problems.push(...validateLists(lists));
   const ctx = ctxFor({ lists });
   const ids = new Set();
-  const eventIds = new Set(data.events.map(e => e['metadata.id']));
+  // Accept a single dataset (earlier branches) as the first case's.
+  const sets = datasets?.events ? { [cases[0].id]: datasets } : datasets ?? {};
+  const chapterIds = new Set(chapters.map(ch => ch.id));
+  if (!Array.isArray(cases) || !cases.length) problems.push('case.json: cases array');
+  for (const c of cases ?? []) problems.push(...validateCase(c, chapterIds, sets[c.id]));
+  if (new Set((cases ?? []).map(c => c.id)).size !== (cases ?? []).length) problems.push('case.json: duplicate case id');
+  const eventIdsOf = {}; for (const [id, d] of Object.entries(sets)) eventIdsOf[id] = new Set(d.events.map(e => e['metadata.id']));
   for (const ch of chapters) {
+    const caseId = chapterCase?.[ch.id] ?? cases[0].id; const data = sets[caseId];
+    if (!data) { problems.push(`${ch.id}: no dataset for case ${caseId}`); continue; }
+    const eventIds = eventIdsOf[caseId];
     if (!ch.id || !ch.title || !Array.isArray(ch.missions)) problems.push(`${ch.id}: chapter shape`);
     // The chapter-end recap card needs three to six plain-language "you can now" lines.
     if (!Array.isArray(ch.recap) || ch.recap.length < 3 || ch.recap.length > 6 || ch.recap.some(r => typeof r !== 'string' || r.length < 12)) problems.push(`${ch.id}: recap needs 3 to 6 lines`);
@@ -131,6 +170,7 @@ export function validate({ case: caseFile, chapters, casebook, lists }, data) {
       if (!m.call || !m.call.options?.some(o => o.id === m.call.correct)) problems.push(`${where}: call.correct not among options`);
       if (m.logIt !== undefined) problems.push(...validateLogIt(m.logIt, where, eventIds));
       if (m.brief !== undefined && (m.brief !== 'casebook' || m.kind !== 'read' || !['Facts', 'Hypotheses', 'Gaps', 'Determination', 'Remediation', 'Handoff'].every(part => m.explain?.some(e => e.part === part)))) problems.push(`${where}: brief must be "casebook" on a read mission whose explain carries all six brief sections`);
+      if (m.logIt?.kind === 'scope' && ch.missions.indexOf(m) > 1) problems.push(`${where}: a Scope Log it belongs to the first or second mission of a case's first chapter`);
       if (m.kind === 'read') { if (m.reference) problems.push(`${where}: read mission has a reference`); continue; }
       if (!m.reference) { problems.push(`${where}: missing reference`); continue; }
       const ref = runQuery(m.reference, data.events, null, ctx);
@@ -152,6 +192,17 @@ export function validate({ case: caseFile, chapters, casebook, lists }, data) {
       if (normalizeAnswer(derived) !== normalizeAnswer(m.answer.value)) problems.push(`${where}: authored answer "${m.answer.value}" but data says "${derived}"`);
     }
   }
-  if (new Set(caseFile.chapters).size !== chapters.length) problems.push('case.chapters mismatch');
+  const named = (cases ?? []).flatMap(c => c.chapters ?? []);
+  if (new Set(named).size !== chapters.length || named.length !== chapters.length) problems.push('case.chapters mismatch');
+  // Every case ends with exactly one brief mission (the handoff beside the model) in its last chapter, and each case's
+  // missions ask for every casebook entry kind, so a fresh casebook fills from Scope to Handoff.
+  for (const c of cases ?? []) {
+    const ms = chapters.filter(ch => (c.chapters ?? []).includes(ch.id)).flatMap(ch => ch.missions);
+    const briefs = ms.filter(m => m.brief === 'casebook');
+    if (briefs.length !== 1 || ms.at(-1)?.brief !== 'casebook') problems.push(`case ${c.id}: the last mission must be the one brief mission`);
+    const kinds = new Set(ms.map(m => m.logIt?.kind).filter(Boolean));
+    for (const k of LOGIT_KINDS) if (!kinds.has(k)) problems.push(`case ${c.id}: no mission asks for a ${k} entry`);
+    if (ms.findIndex(m => m.logIt?.kind === 'scope') > 1) problems.push(`case ${c.id}: the Scope must be asked for at the start`);
+  }
   return problems;
 }

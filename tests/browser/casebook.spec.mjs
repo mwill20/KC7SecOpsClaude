@@ -109,7 +109,7 @@ test('Insert from results drafts the evidence entry, the note check passes, Log 
   await expect(logit.locator('.feedback')).toHaveClass(/ok/);
   await expect(logit.locator('.feedback')).toContainText('Logged. Evidence #1 passes the structure check');
   await expect(page.locator('.scorebox')).toContainText('Casebook 10/10');
-  await expect(page.locator('#topscore')).toHaveText('70 / 4,355 pts');
+  await expect(page.locator('#topscore')).toHaveText('70 / 5,620 pts');
 
   // 5. Should-fail: a second entry with a claim word and no record fails with the claim rule and the records rule, in plain language.
   await page.keyboard.press('Alt+Shift+C');

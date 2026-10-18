@@ -1,0 +1,559 @@
+{
+  "id": "C07",
+  "title": "Baselines and first sightings",
+  "subtitle": "What normal looks like, when something new appears, and the hour it happened",
+  "intro": "A week after Pledge Night the station is quiet, which is the hardest state to investigate. Nothing is on fire. Odalys's question is whether the fix held, and the only honest way to answer it is to describe what normal looks like for this station, then look for the first time anything departs from it. This chapter gives you the four tools for that: one row per thing (dedup), every value a thing took (array_distinct), when it first and last appeared (earliest, latest), and the hour on the clock (timestamp.get_hour).",
+  "concepts": [
+    "A baseline is a description of normal that another analyst could rerun",
+    "dedup gives one row per distinct thing; it hides the count, so use it to list, not to measure",
+    "array_distinct shows every value a key took; first and last sightings come from earliest and latest",
+    "The hour on the clock is a field you compute, in UTC, and off-hours is a station-specific claim",
+    "A first sighting is a fact; what it means is a hypothesis until a record supports it"
+  ],
+  "recap": [
+    "Describe a baseline as a query another analyst can rerun, and say what it does not cover",
+    "Collapse a table to one row per account with dedup, and say why the count is gone",
+    "List every address an account signed in from with array_distinct and read the odd one out",
+    "Bracket an activity with earliest and latest and read both as UTC clock times",
+    "Compute the hour with timestamp.get_hour in UTC and defend what off-hours means at this station",
+    "Open a fresh casebook for a new case from the Scope onward, so the second week does not borrow the first week's facts"
+  ],
+  "missions": [
+    {
+      "id": "C07-M01",
+      "kind": "read",
+      "title": "The week after",
+      "beat": "Friday, 18:00. Odalys has your brief from last week on the desk, with ticks next to Contain and Eradicate. 'Did it hold?' she asks. 'Same rules as last time. From the records, with the records.' Hal is at the pledge desk and has not touched a link all week. Dez is at home, on the gateway, keeping an eye on the rebuilt playout PC.",
+      "question": "What does \"did the fix hold\" mean as a question an analyst can answer?",
+      "concept": {
+        "title": "A new case gets a new Scope",
+        "text": "The second week is not the first week with more rows. The suspects, the credential and the server have changed, so the facts you wrote last Friday are last Friday's facts. Open a fresh casebook for this case: name it, write the question in Odalys's words, the window, what is in scope (whether each remediation item still holds, and whether anything new departs from the station's normal) and what is out (naming a person, re-investigating last week). The Casebook drawer has a case switcher; make sure it says The week after before you write."
+      },
+      "explain": [
+        {
+          "part": "The fix, item by item",
+          "meaning": "Pledge-desk password reset: does pledge-desk succeed anywhere tonight? PledgeSync removed: does AUTOMATION-01 look up anything it should not? 203.0.113.0/24 blocked: does anything reach it, and what does the gateway say when something tries? Each is a query, and each query is a fact in the Scope."
+        },
+        {
+          "part": "The part the fix does not cover",
+          "meaning": "Last week's brief named the gaps: a second identity, a different range, a different host. A fix that held for what it covered can still be too narrow. The Scope should say that \"did it hold\" has two halves: the items applied, and whatever the items did not touch."
+        },
+        {
+          "part": "Baseline first",
+          "meaning": "Before you can see what is new you need a sentence that says what is normal: who signs in from where, which names the station resolves, what hours it keeps. This chapter builds that sentence one query at a time and keeps it in the Evidence tab."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez says the fix held because the playout PC was rebuilt and 'nothing has aired that shouldn't'. Which is the right response to put in the Scope?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Agree, and scope tonight to the playout PC only, since it was the target last week, the rebuild is the thing to verify, and nothing else has changed"
+          },
+          {
+            "id": "B",
+            "label": "Scope it as two halves: whether each applied item holds, and whether anything new departs from normal elsewhere"
+          },
+          {
+            "id": "C",
+            "label": "Reject the claim and scope tonight as a repeat of the full week-one investigation across every host and every account"
+          }
+        ],
+        "correct": "B",
+        "why": "A fix that held where it was applied can still be too narrow. The Scope names both halves so the brief can answer both, without rerunning last week."
+      },
+      "clue": "Odalys writes two lines on the pad: \"Items applied: pledge-desk, PledgeSync, the /24.\" and \"Everything else: what is normal, and what is new.\" The second line is where this week lives.",
+      "logIt": {
+        "kind": "scope",
+        "prompt": "Open the Casebook, switch the case to The week after, name the investigation, and write the Scope. Question asked: Odalys's question, in her words: did the fix hold? Requested by: Odalys Reyes. Time window: 18:00 to 06:00 UTC. In scope: whether each applied remediation item holds, and whether anything new departs from the station's normal. Out of scope: naming a person; re-investigating last week.",
+        "mustInclude": [
+          "Odalys",
+          "18:00",
+          "06:00"
+        ]
+      },
+      "caveat": "In a real tenant the second case would be a second case file, with its own ticket number and its own notebook. Borrowing last week's notebook is how last week's conclusions leak into this week's evidence."
+    },
+    {
+      "id": "C07-M02",
+      "kind": "watch",
+      "title": "One row per account at the gateway",
+      "beat": "Start with the door the attacker used last week: the gateway. Who succeeded through VPN-GW-01 tonight? You want names, not a count of sessions, so the table should have one row per account.",
+      "question": "Which accounts signed in successfully through the gateway tonight?",
+      "concept": {
+        "title": "dedup collapses a table to one row per distinct thing",
+        "text": "dedup names one or more fields and keeps a single row for each distinct combination of their values: the first in time for an event table. It answers \"which\" questions (which accounts, which hosts, which names) and hides \"how many\" (the other rows are gone, not counted). Google documents it as a section after the filter, and after match and outcome on a summary table. Use it to list; use match and count to measure."
+      },
+      "explain": [
+        {
+          "part": "target.hostname = \"VPN-GW-01\"",
+          "meaning": "Logins the gateway handled: the remote door."
+        },
+        {
+          "part": "security_result.action = \"ALLOW\"",
+          "meaning": "Only the ones that worked. The failures are a separate question."
+        },
+        {
+          "part": "dedup:\n  principal.user.userid",
+          "meaning": "One row per account, the earliest of each. Three rows, three accounts, however many sessions each had."
+        }
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\ntarget.hostname = \"VPN-GW-01\"\nsecurity_result.action = \"ALLOW\"\ndedup:\n  principal.user.userid",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.hostname = \"VPN-GW-01\"\nsecurity_result.action = \"ALLOW\"\ndedup:\n  principal.user.userid",
+      "hints": [
+        "Run it as written. The results bar says \"deduplicated\" and the count is the number of distinct accounts, not sessions.",
+        "Remove the dedup section and run again to see how many sessions those accounts had between them.",
+        "Three accounts: lena.ostrowski at 20:03 from 198.51.100.77, dez.okafor at 21:00, odalys.reyes at 23:30. Lena is the odd one: she is also at PLEDGE-DESK-01 all night."
+      ],
+      "answer": {
+        "prompt": "How many rows does the deduplicated table have (one per account)?",
+        "value": "3",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "The deduplicated table lists the accounts that succeeded at the gateway. Dez and Odalys work from home on drive nights. What does the table prove about lena.ostrowski?",
+        "options": [
+          {
+            "id": "A",
+            "label": "That her account was used from outside at 20:03; whether she was the one using it is a separate question"
+          },
+          {
+            "id": "B",
+            "label": "That she was phished, because she is the one account at the gateway that does not usually work from home"
+          },
+          {
+            "id": "C",
+            "label": "Nothing yet, because dedup drops the other sessions and a single surviving row cannot support any claim about an account until the full table is back"
+          }
+        ],
+        "correct": "A",
+        "why": "The row is a fact: the account succeeded from 198.51.100.77 at 20:03:21. \"She was phished\" is a story that explains it; it goes in Hypotheses until a record supports it. dedup hid the count, not the fact."
+      },
+      "clue": "Three accounts through the gateway. Two belong to people who told you they would be there. The third is the membership coordinator, who signed in at the pledge desk at 18:20 and again at 21:40 while her account was also arriving from outside.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the first gateway success you cannot explain: 20:03 UTC, lena.ostrowski through VPN-GW-01 from 198.51.100.77, hostname blank, record evt-20200. Source: this query with the dedup section removed, whole night. Observation: what the record shows, no verdict. Confidence high.",
+        "mustInclude": [
+          "198.51.100.77",
+          "20:03",
+          "evt-20200"
+        ]
+      },
+      "caveat": "In a tenant, dedup fields on a plain event query must be non-repeated, non-grouped fields or placeholders; a grouped field such as hostname is refused here too. Google's page says deduplication on a summary table happens after the outcomes are computed."
+    },
+    {
+      "id": "C07-M03",
+      "kind": "build",
+      "title": "Every address an account used",
+      "beat": "Lena is at her desk and her account is at the gateway. Before you call that odd, write down every address each account signed in from tonight, in one table, so the odd one out is visible next to the normal ones.",
+      "question": "From which addresses did each account sign in successfully tonight?",
+      "concept": {
+        "title": "array_distinct lists the values a key took",
+        "text": "count_distinct tells you how many different values a field had in a group. array_distinct hands you the values themselves, as a list in one cell, in the order they were first seen. Search cuts the list at 1,000 elements; the desk shows the first dozen and says how many there are. It is the right outcome when the question is \"which ones\" and the answer should sit beside the count."
+      },
+      "explain": [
+        {
+          "part": "match:\n  principal.user.userid",
+          "meaning": "One row per account that succeeded anywhere tonight."
+        },
+        {
+          "part": "$from = array_distinct(principal.ip)",
+          "meaning": "Every distinct source address for that account, first seen first."
+        },
+        {
+          "part": "$n = count(metadata.id)",
+          "meaning": "How many successes the row summarises, beside the list."
+        }
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"ALLOW\"\nmatch:\n  principal.user.userid\noutcome:\n  $from = ___(principal.ip)\n  $n = count(metadata.id)",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"ALLOW\"\nmatch:\n  principal.user.userid\noutcome:\n  $from = array_distinct(principal.ip)\n  $n = count(metadata.id)",
+      "hints": [
+        "The gap wants the aggregate that returns the distinct values as a list, not their number. count_distinct would give you a number.",
+        "Fill the gap with array_distinct.",
+        "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"ALLOW\"\nmatch:\n  principal.user.userid\noutcome:\n  $from = array_distinct(principal.ip)\n  $n = count(metadata.id)"
+      ],
+      "answer": {
+        "prompt": "What is in the $from cell for lena.ostrowski? Give the addresses separated by commas, in the order shown.",
+        "value": "10.9.4.21, 198.51.100.77, 10.9.4.200",
+        "also": [
+          "10.9.4.21 198.51.100.77 10.9.4.200"
+        ],
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.user.userid": "lena.ostrowski"
+          },
+          "column": "$from",
+          "format": "list"
+        }
+      },
+      "call": {
+        "prompt": "Lena's row lists her desk, an outside address and 10.9.4.200. Dez's row also lists an outside address. What makes Lena's list worth an Evidence entry and Dez's not?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Dez's outside address is on the station's approved list of home addresses, so the query tunes it out automatically and only Lena's row is left to read"
+          },
+          {
+            "id": "B",
+            "label": "Dez said he would be on the gateway; Lena was at her desk while her account arrived from outside, which the list shows"
+          },
+          {
+            "id": "C",
+            "label": "Lena's list is longer, and three addresses for one account in one night is above the threshold for an alert"
+          }
+        ],
+        "correct": "B",
+        "why": "The list is the baseline: desk, then gateway, then the gateway-assigned address. What makes Lena's odd is the other fact beside it, her desk logins at 18:20 and 21:40. Length is not evidence; simultaneity is."
+      },
+      "clue": "lena.ostrowski: 10.9.4.21 (her desk), then 198.51.100.77 (outside), then 10.9.4.200, the address the gateway hands a remote session. Her desk logins continue all night. Two places at once.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for Lena's address list: lena.ostrowski succeeded from 10.9.4.21 (PLEDGE-DESK-01) at 18:20 and 21:40 and from 198.51.100.77 at 20:03, with 10.9.4.200 following. Cite the desk login evt-20031 and the gateway login evt-20200. Source: this query, whole night. Observation: two source addresses in use at the same time, no verdict.",
+        "mustInclude": [
+          "lena.ostrowski",
+          "10.9.4.21",
+          "198.51.100.77"
+        ]
+      },
+      "caveat": "Google truncates array and array_distinct to 1,000 elements in Search and fewer in rules and dashboards; the distinct step runs before the cut. A list that reaches the cap is a list you should count instead."
+    },
+    {
+      "id": "C07-M04",
+      "kind": "build",
+      "title": "First and last sighting",
+      "beat": "An outside address appeared in a trusted account's row. Bracket it: when did 198.51.100.77 first appear anywhere in the station's logs tonight, and when did it last?",
+      "question": "When was 198.51.100.77 first and last seen tonight, as a source or a destination?",
+      "concept": {
+        "title": "earliest and latest are first-seen and last-seen",
+        "text": "Last week you used min and max on the timestamp's seconds. Google's statistics page documents two aggregates that say what they mean: earliest(metadata.event_timestamp) and latest(metadata.event_timestamp). The desk renders both as UTC clock times. A first sighting is the start of a story; a last sighting at the edge of the window means the story is not over."
+      },
+      "explain": [
+        {
+          "part": "ip = \"198.51.100.77\"",
+          "meaning": "The grouped field: principal.ip or target.ip. The address as a source at the gateway and as a destination from the desk both count."
+        },
+        {
+          "part": "$first = earliest(metadata.event_timestamp)",
+          "meaning": "The first record that mentions it, as a clock time."
+        },
+        {
+          "part": "$last = latest(metadata.event_timestamp)",
+          "meaning": "The last. No match section, so one row for the whole night."
+        }
+      ],
+      "starter": "ip = \"198.51.100.77\"\noutcome:\n  $first = ___(metadata.event_timestamp)\n  $last = latest(metadata.event_timestamp)\n  $n = count(metadata.id)",
+      "reference": "ip = \"198.51.100.77\"\noutcome:\n  $first = earliest(metadata.event_timestamp)\n  $last = latest(metadata.event_timestamp)\n  $n = count(metadata.id)",
+      "hints": [
+        "The aggregate that pairs with latest is the one that returns the first timestamp in the group.",
+        "Fill the gap with earliest.",
+        "ip = \"198.51.100.77\"\noutcome:\n  $first = earliest(metadata.event_timestamp)\n  $last = latest(metadata.event_timestamp)\n  $n = count(metadata.id)"
+      ],
+      "answer": {
+        "prompt": "What clock time is in the $first column (HH:MM, UTC)?",
+        "value": "19:12",
+        "also": [
+          "19:12:31"
+        ],
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$first",
+          "format": "hhmm"
+        }
+      },
+      "call": {
+        "prompt": "The first sighting is a connection from PLEDGE-DESK-01 to the address, fifty minutes before the account arrives from it at the gateway. What does the order tell you?",
+        "options": [
+          {
+            "id": "A",
+            "label": "That the address was a destination before it was a source: something on Lena's desk reached it first"
+          },
+          {
+            "id": "B",
+            "label": "That the attacker was already inside the station at 19:12 and the gateway login at 20:03 was a second, redundant entry made for persistence"
+          },
+          {
+            "id": "C",
+            "label": "That the two sightings are unrelated, since a desk connection and a gateway login are different event types"
+          }
+        ],
+        "correct": "A",
+        "why": "Outbound first, inbound later is the shape of a phish: the desk sends something to the address, then the address uses what it was sent. The order is a fact; the phish is the hypothesis it points at."
+      },
+      "clue": "First seen 19:12:31, as a destination from PLEDGE-DESK-01. Last seen 05:49:12, ten minutes before the data ends, as a destination from 10.9.4.200. Whatever started at 19:12 was still running when the night ended.",
+      "logIt": {
+        "kind": "timeline",
+        "prompt": "Add a Timeline entry: 19:12 UTC, PLEDGE-DESK-01 (10.9.4.21) connects to 198.51.100.77 on port 443, the first sighting of the address tonight. Reference the Evidence entry that holds Lena's address list, or add one for this connection (evt-20136) first.",
+        "mustInclude": [
+          "19:12"
+        ]
+      },
+      "caveat": "earliest and latest are documented for Search statistics with microsecond resolution; this trainer carries seconds. min and max on metadata.event_timestamp.seconds still work and still read as clock times."
+    },
+    {
+      "id": "C07-M05",
+      "kind": "watch",
+      "title": "The small hours",
+      "beat": "The drive runs all night, so \"after midnight\" is not odd at this station. \"After midnight at the gateway\" might be. Compute the hour from the timestamp and ask which gateway successes happened between 00:00 and 06:00.",
+      "question": "Which gateway logins succeeded between 00:00 and 06:00 UTC?",
+      "concept": {
+        "title": "The hour is a field you compute",
+        "text": "timestamp.get_hour(metadata.event_timestamp, \"UTC\") returns the hour of the event, 0 to 23, in the named zone. Google accepts any TZ database name; the trainer reads this dataset in UTC and says so if you ask for another zone. Off-hours is not a property of the clock, it is a claim about the station: here, membership staff work the desk until 06:00, so the only off-hours door is the gateway."
+      },
+      "explain": [
+        {
+          "part": "timestamp.get_hour(metadata.event_timestamp, \"UTC\") < 6",
+          "meaning": "Events whose UTC hour is 0 to 5: midnight to six."
+        },
+        {
+          "part": "target.hostname = \"VPN-GW-01\"",
+          "meaning": "Only the remote door. Desk logins after midnight are normal on a drive night; take the condition away and see twelve of them."
+        },
+        {
+          "part": "security_result.action = \"ALLOW\"",
+          "meaning": "Successes only."
+        }
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\ntarget.hostname = \"VPN-GW-01\"\nsecurity_result.action = \"ALLOW\"\ntimestamp.get_hour(metadata.event_timestamp, \"UTC\") < 6",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.hostname = \"VPN-GW-01\"\nsecurity_result.action = \"ALLOW\"\ntimestamp.get_hour(metadata.event_timestamp, \"UTC\") < 6",
+      "hints": [
+        "Run it as written, then remove the target.hostname line and run again: the desk logins after midnight are the baseline this query tunes out.",
+        "One row. Read its time column.",
+        "lena.ostrowski at 02:14:33 from 198.51.100.77, hostname blank. Her second remote session; her desk login at 01:08 and 03:22 bracket it."
+      ],
+      "answer": {
+        "prompt": "At what time (HH:MM, UTC) did the one gateway success after midnight happen?",
+        "value": "02:14",
+        "also": [
+          "02:14:33"
+        ],
+        "check": {
+          "type": "time",
+          "index": 0
+        }
+      },
+      "call": {
+        "prompt": "A colleague wants the rule to be \"any login between 00:00 and 06:00 is suspicious\". What is wrong with that at this station?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Nothing: off-hours is a standard detection and the station can tune out the desk logins afterwards by adding exceptions one at a time"
+          },
+          {
+            "id": "B",
+            "label": "The hours are wrong; the drive ends at 06:00, so the window should be the daytime, 06:00 to 18:00, when nobody is expected at the desk"
+          },
+          {
+            "id": "C",
+            "label": "Off-hours is a claim about the station, not the clock: desk logins after midnight are normal here, so the rule must name the door"
+          }
+        ],
+        "correct": "C",
+        "why": "The hour is a computed field; \"off-hours\" is the station's baseline applied to it. A rule that ignores the baseline fires on the membership coordinator twelve times a night and teaches everyone to ignore it."
+      },
+      "clue": "One gateway success after midnight: lena.ostrowski, 02:14:33, from the same outside address as 20:03. Her desk logins at 01:08 and 03:22 bracket it. Two sessions from outside, both while she is in the building.",
+      "logIt": {
+        "kind": "hypothesis",
+        "prompt": "Write a Hypothesis, status open: the lena.ostrowski credential is being used from 198.51.100.77 by someone who is not Lena. Supporting refs: your gateway and address-list evidence. Test next: what the remote session did from 10.9.4.200, and whether anything left her desk for the address before 20:03.",
+        "mustInclude": [
+          "lena.ostrowski",
+          "198.51.100.77"
+        ]
+      },
+      "caveat": "timestamp.get_hour, get_minute and get_date default to GMT in Google's docs when the zone is omitted. Write the zone anyway; a brief that says \"02:14\" without \"UTC\" will be read in someone's local time."
+    },
+    {
+      "id": "C07-M06",
+      "kind": "solo",
+      "title": "First seen, per pair",
+      "beat": "A baseline is not one query; it is a table someone can reread. Build the first-sighting table: for every account and source address that succeeded tonight, when was that pair first seen? Sort it by first sighting so the night reads top to bottom.",
+      "question": "When was each account-and-address pair first seen succeeding, in time order?",
+      "concept": {
+        "title": "First-seen tables are how analysts read a night",
+        "text": "Group by two keys, take earliest of the timestamp, count the rows, order by the earliest. Every line is a first sighting; a pair that appears for the first time in the middle of the night, from outside, for an account whose other pair started at 18:20, is the line you circle. The query is reusable: run it next week and the circled line should be gone."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"ALLOW\"\nmatch:\n  principal.user.userid, principal.ip\noutcome:\n  $first = earliest(metadata.event_timestamp)\n  $n = count(metadata.id)\norder:\n  $first",
+      "hints": [
+        "Filter successful USER_LOGIN events. Group by principal.user.userid and principal.ip together. Two outcomes: earliest of metadata.event_timestamp and a count. Order by the earliest.",
+        "match:\n  principal.user.userid, principal.ip\noutcome:\n  $first = earliest(metadata.event_timestamp)\n  $n = count(metadata.id)\norder:\n  $first",
+        "metadata.event_type = \"USER_LOGIN\"\nsecurity_result.action = \"ALLOW\"\nmatch:\n  principal.user.userid, principal.ip\noutcome:\n  $first = earliest(metadata.event_timestamp)\n  $n = count(metadata.id)\norder:\n  $first"
+      ],
+      "answer": {
+        "prompt": "When was the pair lena.ostrowski and 198.51.100.77 first seen (HH:MM, UTC)?",
+        "value": "20:03",
+        "also": [
+          "20:03:21"
+        ],
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.user.userid": "lena.ostrowski",
+            "principal.ip": "198.51.100.77"
+          },
+          "column": "$first",
+          "format": "hhmm"
+        }
+      },
+      "call": {
+        "prompt": "The table has thirteen pairs. Three of them are first seen from outside addresses, one each for Lena, Dez and Odalys. How do you tell the brief which one matters?",
+        "options": [
+          {
+            "id": "A",
+            "label": "All three, because any first sighting from outside is new by definition and the brief should list every one"
+          },
+          {
+            "id": "B",
+            "label": "Lena's, because her pair is the only outside one whose account also has a desk pair active across the same hours"
+          },
+          {
+            "id": "C",
+            "label": "None yet, since first sightings in a twelve-hour window are all first sightings and only a thirty-day baseline could separate them"
+          }
+        ],
+        "correct": "B",
+        "why": "The table is the baseline and the other facts decide. Dez and Odalys said they would be remote and have no desk pair tonight. Lena's account has a desk pair from 18:20 and an outside pair from 20:03, overlapping. A longer baseline would help; it is not required to read this one."
+      },
+      "clue": "Thirteen pairs. lena.ostrowski appears three times: from her desk at 18:20, from outside at 20:03, and from 10.9.4.200 at 20:11, the address the gateway gave the remote session. That last pair is where the session went next.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the remote session's first move: 20:11 UTC, lena.ostrowski succeeds from 10.9.4.200 to FS-01, summary Network logon, record evt-20210. Source: this query, or a filter on principal.ip = \"10.9.4.200\", whole night. Observation only.",
+        "mustInclude": [
+          "10.9.4.200",
+          "20:11",
+          "evt-20210"
+        ]
+      },
+      "caveat": "In a tenant, run the same first-seen table over thirty days and compare: a pair that appears tonight and never before is the finding; a pair that appears every Friday is the baseline."
+    },
+    {
+      "id": "C07-M07",
+      "kind": "solo",
+      "title": "The cadence by hour",
+      "beat": "The remote session at 10.9.4.200 talks to 198.51.100.77 all night. Last week's beacon ran every ten minutes; this one is quieter. Count its connections by the hour of the clock to see whether it ever stops.",
+      "question": "In how many distinct hours did 10.9.4.200 connect to 198.51.100.77?",
+      "concept": {
+        "title": "A placeholder can hold a computed value",
+        "text": "Set a placeholder from a function, $h = timestamp.get_hour(metadata.event_timestamp, \"UTC\"), and group by it. The column is named after the function so two analysts who write it the same way get the same table. A beacon shows up as a flat count across every hour; a person shows up as gaps."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.ip = \"10.9.4.200\"\ntarget.ip = \"198.51.100.77\"\n$h = timestamp.get_hour(metadata.event_timestamp, \"UTC\")\nmatch:\n  $h\noutcome:\n  $n = count(metadata.id)",
+      "hints": [
+        "Filter NETWORK_CONNECTION events from principal.ip 10.9.4.200 to target.ip 198.51.100.77. Set $h = timestamp.get_hour(metadata.event_timestamp, \"UTC\") in the filter, group by $h, count.",
+        "$h = timestamp.get_hour(metadata.event_timestamp, \"UTC\")\nmatch:\n  $h\noutcome:\n  $n = count(metadata.id)",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.ip = \"10.9.4.200\"\ntarget.ip = \"198.51.100.77\"\n$h = timestamp.get_hour(metadata.event_timestamp, \"UTC\")\nmatch:\n  $h\noutcome:\n  $n = count(metadata.id)"
+      ],
+      "answer": {
+        "prompt": "How many rows does the table have (one per hour with at least one connection)?",
+        "value": "10",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "Four connections an hour, every hour from 20:00 to 05:00, plus one much larger connection at 03:40. What is the right next move?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Pivot to what else 10.9.4.200 touched inside the station; a session that beacons out is doing something in"
+          },
+          {
+            "id": "B",
+            "label": "Pivot to the attacker's server by looking up 198.51.100.77 in an outside reputation service before anything else"
+          },
+          {
+            "id": "C",
+            "label": "Stop here and write the determination, since a fifteen-minute cadence over ten hours is proof of malware on its own and nothing else is needed"
+          }
+        ],
+        "correct": "A",
+        "why": "The cadence is a fact and a strong one. The session had an inside address too, and the FS-01 login at 20:11 says where it went. Outside lookups are a gap to record, not a pivot you can make from Search."
+      },
+      "clue": "Ten hours, four connections in each: a fifteen-minute cadence from 20:04 until the data ends. One connection at 03:40 sent 6.4 MB instead of six hundred bytes. The pivot is inward: the session logged in to FS-01 at 20:11.",
+      "logIt": {
+        "kind": "pivot",
+        "prompt": "Write a Pivot: what 10.9.4.200 did on FS-01 (10.9.4.50) between 20:11 and 03:40, and whether the 6.4 MB sent at 03:40 can be tied to a file on the membership share. Say why it is worth looking at: the remote session's only inside destination.",
+        "mustInclude": [
+          "FS-01|10.9.4.50"
+        ]
+      },
+      "caveat": "Grouping by a function is documented for Search and dashboards. In a rule, the same placeholder works in the events section; test it in your tenant before you depend on the column name."
+    },
+    {
+      "id": "C07-M08",
+      "kind": "build",
+      "title": "Where the session went",
+      "beat": "One row per destination the remote session touched. The session is 10.9.4.200; the question is where it went, not how often.",
+      "question": "Which destinations did 10.9.4.200 connect to, one row each?",
+      "concept": {
+        "title": "dedup on the destination lists the map",
+        "text": "dedup by target.ip on the session's connections gives one row per place it reached: the first time it reached each. Three rows is a map of the night: the outside server, the file server, and one address the gateway refused. The refused one is the fix, holding."
+      },
+      "explain": [
+        {
+          "part": "principal.ip = \"10.9.4.200\"",
+          "meaning": "The remote session's address inside the station."
+        },
+        {
+          "part": "dedup:\n  target.ip",
+          "meaning": "One row per destination, earliest first. Open the row with BLOCK."
+        }
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.ip = \"10.9.4.200\"\ndedup:\n  ___",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.ip = \"10.9.4.200\"\ndedup:\n  target.ip",
+      "hints": [
+        "The dedup key is the field that names where a connection went.",
+        "Fill the gap with target.ip.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\nprincipal.ip = \"10.9.4.200\"\ndedup:\n  target.ip"
+      ],
+      "answer": {
+        "prompt": "Which target.ip has the action BLOCK?",
+        "value": "203.0.113.44",
+        "check": {
+          "type": "field",
+          "field": "target.ip",
+          "where": {
+            "security_result.action": "BLOCK"
+          }
+        }
+      },
+      "call": {
+        "prompt": "Three destinations: the new outside server, FS-01, and last week's server with BLOCK. Which sentence belongs in the Gaps tab?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The gateway block on 203.0.113.0/24 held, so last week's server can be removed from the brief and the block lifted after the drive"
+          },
+          {
+            "id": "B",
+            "label": "Search shows that the session reached FS-01 four times, but not which files on the membership share it read or copied"
+          },
+          {
+            "id": "C",
+            "label": "The remote session used a gateway-assigned address, so none of its connections can be attributed to the lena.ostrowski account"
+          }
+        ],
+        "correct": "B",
+        "why": "The BLOCK is a fact for the Evidence tab, and a good one. The file-server rows show a connection, not a file; what left the share is the gap, and the 6.4 MB at 03:40 is why the gap matters."
+      },
+      "clue": "Three rows: 198.51.100.77 at 20:04, FS-01 at 20:11, and 203.0.113.44 at 20:20, BLOCK. The attacker tried last week's server; the gateway said no. The block held for the range it covers.",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: Search shows four connections from 10.9.4.200 to FS-01 (10.9.4.50) on port 445 and a file written on FS-01 at 02:52, but not which files on the membership share were read or what the 6.4 MB sent at 03:40 contained. Why it matters: it decides what the station tells its members.",
+        "mustInclude": [
+          "FS-01"
+        ]
+      },
+      "caveat": "A BLOCK event is the control reporting on itself. It proves the control fired once; it does not prove nothing else got through. Keep \"the fix held\" tied to the records that show it holding."
+    }
+  ]
+}

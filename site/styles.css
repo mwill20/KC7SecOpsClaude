@@ -38,6 +38,10 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 .app { max-width: 1400px; margin: 0 auto; padding: 20px; }
 .foot { max-width: 1400px; margin: 30px auto; padding: 0 20px 30px; color: var(--muted); font-size: 13px; }
 
+/* Case switcher on the home page: one tab per case, the current one outlined, a finished one green. */
+.cases ol { display: flex; flex-wrap: wrap; gap: 10px; list-style: none; margin: 0 0 14px; padding: 0; }
+.casetab { display: flex; flex-direction: column; gap: 2px; min-width: 180px; max-width: 100%; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); text-decoration: none; }
+.casetab.current { border-color: var(--teal); background: rgba(58,209,196,.08); } .casetab.done { border-color: var(--ok); } .casetab:hover { border-color: var(--teal); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
 .card + .card { margin-top: 14px; }
 .eyebrow { font: 600 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--teal); margin-bottom: 8px; }
