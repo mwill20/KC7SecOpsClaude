@@ -33,6 +33,8 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 .chapterprog .chap.partial .bar > span { background: var(--accent); } .chapterprog .chap.done { color: var(--ok); } .chapterprog .chap.done .bar > span { background: var(--ok); }
 .chapterprog .chap.current { border-color: var(--control); color: var(--text); } .chapterprog .chap:hover { color: var(--text); }
 @media (max-width: 480px) { .chapterprog { display: none; } }
+.shell { display: flex; align-items: flex-start; }
+.shell > .app { flex: 1 1 auto; min-width: 0; }
 .app { max-width: 1400px; margin: 0 auto; padding: 20px; }
 .foot { max-width: 1400px; margin: 30px auto; padding: 0 20px 30px; color: var(--muted); font-size: 13px; }
 
@@ -111,3 +113,47 @@ textarea.editor:disabled { opacity: .7; }
 kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media (max-width: 480px) { .app { padding: 14px; } h1 { font-size: 24px; } .top { padding: 10px 14px; } .brand-text { display: none; } }
+
+/* Casebook drawer. Wide screens: a column beside the page, in the flow, so the desk shifts and nothing is covered.
+   Narrow screens: a full-screen sheet. Every entry renders as text; forms are small and labelled. */
+.cbtn { padding: 6px 12px; font-size: 13px; color: var(--text); border-color: var(--control); }
+.cbtn[aria-expanded="true"] { border-color: var(--teal); color: var(--teal); }
+.casebook { flex: 0 0 440px; width: 440px; max-width: 100%; position: sticky; top: 64px; max-height: calc(100vh - 64px); overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 14px 16px 20px; }
+.casebook[hidden] { display: none; }
+.cbhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; } .cbhead h2 { margin: 0; font-size: 18px; }
+.cbintro { margin: 6px 0 10px; }
+.cbtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.cbtabs [role="tab"] { padding: 5px 9px; font-size: 13px; border-radius: 999px; background: transparent; color: var(--muted); }
+.cbtabs [role="tab"].on { color: var(--text); border-color: var(--teal); background: rgba(58,209,196,.08); }
+.cbtabs .cnt { display: inline-block; margin-left: 6px; font: 600 11px/1 var(--mono); color: var(--accent); }
+.cbpanel .teach { border-left: 3px solid var(--info); padding: 6px 10px; margin: 0 0 10px; color: var(--text); background: rgba(127,179,255,.06); border-radius: 0 8px 8px 0; }
+.cbpanel h3 { font-size: 14px; margin: 12px 0 4px; }
+.entries { list-style: none; margin: 0 0 10px; padding: 0; }
+.entry { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 8px; background: var(--panel-2); outline-offset: -2px; }
+.entry p { margin: 6px 0; overflow-wrap: anywhere; } .entry pre { font-size: 12px; margin-top: 4px; }
+.ehead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.entry .problems { margin: 6px 0 0; padding-left: 18px; color: var(--warn); } .entry .passes { color: var(--ok); margin-top: 6px; }
+.entry .done { text-decoration: line-through; color: var(--muted); }
+button.small { padding: 3px 8px; font-size: 12px; }
+.cbform { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px; }
+.cbfield { margin-top: 8px; } .cbfield > label { display: block; font-size: 13px; margin-bottom: 3px; }
+.cbfield textarea, .cbfield input[type=text], .cbfield select { width: 100%; font: inherit; background: var(--panel-2); color: var(--text); border: 1px solid var(--control); border-radius: 8px; padding: 7px 10px; }
+.cbfield textarea { resize: vertical; min-height: 60px; } .cbfield textarea.mono { font-family: var(--mono); font-size: 13px; }
+.cbfield .source { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--panel-2); } .cbfield .source pre { font-size: 12px; max-height: 120px; overflow: auto; }
+.rlist { margin-top: 10px; } .cbpanel .empty { padding: 6px 0; text-align: left; margin: 4px 0 0; }
+.ticket { margin-top: 10px; } .ticket summary { cursor: pointer; color: var(--muted); font-size: 13px; } .ticket pre { font-size: 12px; margin-top: 6px; background: var(--panel-2); padding: 8px 10px; border-radius: 8px; }
+.cbfoot { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
+.cbmeter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 6px; } .cbmeter > span { display: block; height: 100%; background: var(--teal); }
+.cbstatus { margin-top: 8px; outline-offset: 2px; min-height: 1em; } .cbstatus.ok { color: var(--ok); } .cbstatus.bad { color: var(--bad); } .cbstatus.warn { color: var(--warn); }
+@media (max-width: 1023px) { .casebook { position: fixed; inset: 0; width: auto; flex: none; max-height: none; height: 100%; z-index: 20; border-left: 0; padding-top: 12px; } }
+/* Log it: the casebook entry a mission earns, shown in the lesson pane once the investigative part is done. */
+.logit { border: 1px solid var(--accent); background: rgba(245,184,65,.06); } .logit .eyebrow { color: var(--accent); }
+.logit ul { margin: 6px 0; padding-left: 20px; } .logit li { margin: 3px 0; overflow-wrap: anywhere; }
+.logit .feedback { margin-top: 8px; }
+/* The brief: the learner's casebook beside the authored model, one section per row. */
+.brief { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; align-items: start; margin-top: 8px; }
+.brief > div { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel-2); min-width: 0; }
+.brief .eyebrow { margin-bottom: 4px; } .brief ul { margin: 0; padding-left: 18px; font-size: 14px; } .brief li { margin: 3px 0; overflow-wrap: anywhere; } .brief p { margin: 4px 0; font-size: 14px; overflow-wrap: anywhere; }
+.brief .missing { color: var(--muted); font-size: 13px; }
+@media (max-width: 640px) { .brief { grid-template-columns: 1fr; } }
+.closedbook pre { font-size: 12.5px; background: var(--panel-2); padding: 10px 12px; border-radius: 8px; max-height: 320px; overflow: auto; }

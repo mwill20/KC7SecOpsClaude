@@ -20,9 +20,13 @@
       <a href="#about">What this is</a>
       <ol class="chapterprog" id="chapterprog" aria-label="Chapter progress"></ol>
       <span class="score" id="topscore" aria-live="polite"></span>
+      <button class="cbtn" id="casebook-toggle" aria-controls="casebook" aria-expanded="false" aria-keyshortcuts="Control+Shift+N" title="Casebook (Ctrl+Shift+N)">Casebook</button>
     </nav>
   </header>
-  <main id="main" class="app" tabindex="-1"></main>
+  <div class="shell">
+    <main id="main" class="app" tabindex="-1"></main>
+    <aside id="casebook" class="casebook" hidden></aside>
+  </div>
   <footer class="foot">Fiction, start to finish. No real SIEM, no real people, no real addresses. Practise the query shape here; use real values only in tools your employer authorizes.</footer>
   <script type="module" src="app.js"></script>
 </body>

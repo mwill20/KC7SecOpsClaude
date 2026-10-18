@@ -42,6 +42,7 @@
         "why": "Unanchored, /exe/ would match C:\\Program Files\\exeter\\tool.bin. Precision in the pattern is precision in the evidence."
       },
       "clue": "Three launches. Dez's at 20:15 reads 'Restart-Service PlayoutEngine', exactly what he said. The other two are pledge-desk: one at 19:33 with -w hidden -enc, one at 01:58 compressing something from the file server. Dez was telling the truth.",
+      "logIt": {"kind":"evidence","prompt":"Log the PowerShell launches as evidence. Time: 19:33 to 01:58. Observation: three launches on AUTOMATION-01: pledge-desk at 19:33 with -w hidden -enc, dez.okafor at 20:15 with Restart-Service PlayoutEngine, pledge-desk at 01:58 with Compress-Archive against FS-01. Records: all three. Where to find it: PROCESS_LAUNCH, target.process.command_line.","mustInclude":["19:33","dez.okafor","evt-00131|evt-00647|evt-00184"]},
       "caveat": "The trainer escapes backslashes the way Search does. If your pattern does not match, count the backslashes first."
     },
     {
@@ -74,6 +75,7 @@
         "why": "A single dual-use flag is a weak signal alone. The combination you found tonight, hidden plus encoded plus a shared account that just arrived from outside, is a strong one."
       },
       "clue": "One encoded command, 19:33, pledge-desk, parent cmd.exe. Two minutes later the same session created a scheduled task. That is how a visitor becomes a resident.",
+      "logIt": {"kind":"gap","prompt":"Log a Gap: the 19:33 command is base64 and this trainer does not decode it, so what it did on the playout PC is unknown. Why it matters: eradication cannot be called complete until the decoded command says what it dropped, changed or fetched.","mustInclude":["-enc|encoded|base64"]},
       "caveat": "The trainer does not decode the base64. In a real investigation you would, in an isolated tool, never in a browser you trust with other sessions."
     },
     {
@@ -106,6 +108,7 @@
         "why": "The nightly backup is scheduled by the playout software every night. PledgeSync is new, named to look routine, and created in the middle of the suspicious sequence."
       },
       "clue": "PledgeSync. Created 19:35:22 by pledge-desk, runs C:\\ProgramData\\PledgeSync\\sync.ps1 every ten minutes as pledge-desk. The schtasks.exe launch one second earlier shows the exact command. Everything that happens on AUTOMATION-01 for the rest of the night traces back to this.",
+      "logIt": {"kind":"remediation","list":"eradicate","prompt":"Write the first Remediation item, in the Eradicate list: disable and remove the PledgeSync scheduled task, and the sync.ps1 it runs every ten minutes, on AUTOMATION-01. Answers: your evidence entry for the encoded command; name the task event evt-00141 in the action text. Owner role: volunteer engineer. Urgency: now.","mustInclude":["PledgeSync","evt-00141|evt-00140"]},
       "caveat": "Not every endpoint product emits SCHEDULED_TASK_CREATION. If yours does not, the schtasks.exe process launch is the fallback: search PROCESS_LAUNCH for schtasks on AUTOMATION-01 and you will find it one second before the task event."
     },
     {
@@ -135,6 +138,7 @@
         "why": "You saw the Compress-Archive command in mission 1. Staging, then a large outbound transfer, is the pattern chapter 4 and 5 will confirm."
       },
       "clue": "Four events: the task, the script, a zip of the donor list, and a WAV file written at 02:58, twelve minutes before the pirate segment aired. The 03:02 playout_ctl.exe launch injected exactly that file into the 03:10 slot. You now know how the segment got on air. You still need where the data went.",
+      "logIt": {"kind":"evidence","prompt":"Log the PledgeSync folder as evidence. Time: 19:35 to 02:58. Observation: task creation at 19:35:22, sync.ps1 written at 19:36:05, donors_export.zip at 02:05:12 and segment.wav at 02:58:00, all under C:\\ProgramData\\PledgeSync by pledge-desk. Records: the four events. Where to find it: the file_path grouped field; SCHEDULED_TASK_CREATION and FILE_CREATION.","mustInclude":["donors_export.zip","segment.wav","evt-00141|evt-00143|evt-00669|evt-00705"]},
       "caveat": "Grouped fields exist in Google's Search; the members modelled here are a subset of the real list."
     }
   ]

@@ -26,16 +26,17 @@ Purpose: let the owner judge two learning experiences by using both, not by read
 | Syntax breadth | Placeholders only; `$e.` forms rejected | `$e.` event variable, `events:`, grouped fields, `/* */` comments, `>= / <= / < / >`, `max/min`, `by`/`over every` windows | Closer to what learners meet in Google's docs |
 | Learner regex | Never executed | Executed in the browser behind a guard (no backrefs, lookaround, nested quantifiers) | Needed for real results; see THREAT_MODEL T2 |
 | Placeholders | `__USER__`-style tokens, real-looking values rejected | Fictional values typed directly (the data is fictional) | No placeholder rule is needed when nothing is real |
+| Note-keeping | None | A persistent per-case **Casebook** (scope, evidence with record IDs, timeline, hypotheses, pivots, gaps, determination, remediation in four lists, engineering handoff), a first mission on how analysts keep notes, a "Log it" block on every other mission, a deterministic structure check worth 10 points, Insert from results, Markdown export and a case-closed section | KC7 teaches the query; an analyst is judged on the notes. The handoff tab is the exit to a planned engineering course |
 
 ## Scoring
 
-Watch 40 (answer 25 + call 15) · Build/Your turn 100 (query 60 + answer 25 + call 15) · Read 15. Course total 1,970. Parts are independent checks, so each is recorded separately; a mission is complete when every part is correct.
+Watch 50 (answer 25 + call 15 + casebook 10) · Build/Your turn 110 (query 60 + answer 25 + call 15 + casebook 10) · Read 25 (call 15 + casebook 10; the opening read mission on note-keeping is 15 alone). Course total 2,235. Parts are independent checks, so each is recorded separately; a mission is complete when every part is correct, and the Casebook part is a structure check (fields, UTC times, record IDs that exist, references that resolve, no claim words without a record) that never grades the quality of the thinking.
 
 ## What was verified
 
-- `npm test`: 35 unit tests, including should-fail cases (parser rejects bad shapes with the right code; grader fails plausible wrong queries; content validator catches a drifted answer; progress store ignores hostile state; the contrast check rejects a low-contrast token).
+- `npm test`: 58 unit tests, including should-fail cases (parser rejects bad shapes with the right code; grader fails plausible wrong queries; content validator catches a drifted answer and a bad `logIt` block; progress and casebook stores ignore hostile state; the note check fails a claim word without a record and a timeline reference to a missing entry; the contrast check rejects a low-contrast token).
 - `npm run validate:content`: every reference runs; every authored answer equals what the data returns; every Build starter fails until completed; every Watch starter equals its reference.
-- `npm run test:browser`: 11 Playwright tests in Chromium against the built `dist/`, no retries, no sleeps: a Build mission completed with the keyboard only (invalid → correct → answer → call → clue → next), a Watch mission with a time-range change and the narrower-range warning, hint reveal with focus management, record drill-down with focus return, 320 px width with no horizontal overflow, reduced motion, zero `securitypolicyviolation` events and zero non-loopback requests across every route and interaction, and structural accessibility assertions.
+- `npm run test:browser`: 17 Playwright tests in Chromium against the built `dist/`, no retries, no sleeps: a Build mission completed with the keyboard only (invalid → correct → answer → call → clue → next), a Watch mission with a time-range change and the narrower-range warning, hint reveal with focus management, record drill-down with focus return, 320 px width with no horizontal overflow, reduced motion, zero `securitypolicyviolation` events and zero non-loopback requests across every route and interaction, structural accessibility assertions, and the casebook: keyboard open/close with focus return, Insert from results through a passing note check and a named failure, Markdown download and clipboard copy, storage off leaving `localStorage` empty and hostile stored state left in place, the 320 px sheet, and the assembled brief with the case-closed casebook section.
 - An accessibility pass (names, focus order, headings, live regions, token contrast) with sixteen fixes, each re-checked by a test. Method, findings and mutation checks: [docs/EVALUATION.md](docs/EVALUATION.md).
 - The earlier manual click-through in one desktop browser still stands; it is now superseded by the tests above for everything it covered.
 
@@ -45,6 +46,7 @@ Watch 40 (answer 25 + call 15) · Build/Your turn 100 (query 60 + answer 25 + ca
 - No session with a real screen reader, and no browser-zoom (200%) run; the live-region and focus checks are structural.
 - Only one browser engine (Chromium).
 - Learning effectiveness: nobody but the builder has used it.
+- The quality of casebook entries. The check is structural; two learners can both pass with notes of very different value.
 
 ## How to compare fairly
 

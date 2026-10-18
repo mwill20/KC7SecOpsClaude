@@ -42,6 +42,7 @@
         "why": "This trainer follows the page that documents outcome conditions in Search. Your tenant is the authority. The query also works without the condition section; you simply read the table yourself."
       },
       "clue": "pledge-desk, 19:05 to 19:10, seven failures, all from 198.51.100.23. Marco's three failures at 22:41, 22:42 and 22:44 land in one bucket too, but three is not more than three. Change the threshold and watch him appear; then ask whether that makes him a suspect or a man who forgot he was fired.",
+      "logIt": {"kind":"remediation","list":"harden","prompt":"Write a Harden item: lock out after more than three failures in five minutes on VPN-GW-01, require MFA on the VPN, and retire the shared pledge-desk account in favour of named accounts. Answers: your burst evidence. Owner role: IT lead. Urgency: this week. Harden items become the proposed controls in the handoff.","mustInclude":["pledge-desk|shared","MFA|lockout|lock out|VPN"]},
       "caveat": "Search statistics have a 90-day lookback and a results cap; the time range picker on the Search page, not the query, sets the window being bucketed."
     },
     {
@@ -74,6 +75,7 @@
         "why": "It is a real finding and it is not the intrusion. Writing it precisely protects the station and protects Marco from a story the evidence does not support."
       },
       "clue": "Two rows, two different nights. One is an intrusion. The other is a man who walked into his old studio at 22:40 and tried his old password three times. Both belong in the brief; only one belongs in the incident.",
+      "logIt": {"kind":"hypothesis","prompt":"Log a Hypothesis, status refuted: Marco Vela carried out the intrusion. Contradicting refs: your burst evidence (an outside address, not Studio B), your click evidence (the password left through Hal's desk) and your playout evidence (pledge-desk, not marco.vela). Marco's building access a week after he was let go is a Gap for the station, if you want to add one.","mustInclude":["Marco|marco.vela"]},
       "caveat": "Why did Marco have building access a week after being let go? That is a finding for the station, not for this query."
     },
     {
@@ -103,11 +105,13 @@
         "why": "The logs identify an account, an address and a sequence. They do not identify a human. Saying so is the difference between an analyst and a rumour."
       },
       "clue": "19:21:04. Eleven minutes after the last guess. Nine minutes before the playout PC. The whole night hangs on that one second, and you can show it.",
+      "logIt": {"kind":"determination","prompt":"Write the Determination: confirmed incident, confidence high. Deciding refs: the burst and the 19:21:04 success, the click, the PledgeSync folder and the upload. Summary, two sentences: an outside party used the pledge-desk credential, taken through a lookalike sponsor portal, to persist on AUTOMATION-01, take the donor list and air the 03:10 segment. The person is unidentified; Marco's attempts failed against a disabled account.","mustInclude":["19:21","pledge-desk"]},
       "caveat": "Timestamps are UTC here. Real sources mix zones and clock drift; normalize before you build a timeline."
     },
     {
       "id": "C06-M04",
       "kind": "read",
+      "brief": "casebook",
       "title": "Handoff",
       "beat": "06:05. Odalys has coffee for both of you and a legal pad. Hal is in the doorway. You have the pad. Write the three columns every handoff needs: what the logs show, what you believe and why, and what you could not see.",
       "question": "What goes in the brief, and in which column?",
@@ -115,7 +119,10 @@
       "explain": [
         { "part": "Facts", "meaning": "18:40 three lure emails from pier9-partners.example. 18:52 PLEDGE-DESK-02 resolved and connected to 203.0.113.44. 19:05 to 19:09 seven pledge-desk failures from 198.51.100.23. 19:21:04 success. 19:30 to 19:36 pledge-desk on AUTOMATION-01: run-as svc-playout, encoded PowerShell, task PledgeSync, sync.ps1. 19:40 to 05:50 ten-minute beacons. 01:58 to 02:10 donor spreadsheet compressed and 48 MB sent to 203.0.113.44. 02:58 to 03:02 segment.wav written and injected into the 03:10 slot. 22:41 to 22:44 marco.vela three failures, account disabled, Studio B." },
         { "part": "Hypotheses", "meaning": "The pledge-desk password was entered into the fake portal from Hal's desk. The donor list was the content of the 48 MB upload. The broadcast was intended to be noticed." },
-        { "part": "Gaps", "meaning": "No email body or attachment analysis. Encoded command not decoded. No visibility past 203.0.113.44. Dez's 20:15 restart assumed benign pending his confirmation. Marco's building access unexplained." }
+        { "part": "Gaps", "meaning": "No email body or attachment analysis. Encoded command not decoded. No visibility past 203.0.113.44. Dez's 20:15 restart assumed benign pending his confirmation. Marco's building access unexplained." },
+        { "part": "Determination", "meaning": "Confirmed incident, high confidence. An outside party used the shared pledge-desk credential, taken through a lookalike sponsor portal, to persist on AUTOMATION-01, exfiltrate the donor list and air the 03:10 segment. The person is unidentified; Marco's attempts failed against a disabled account." },
+        { "part": "Remediation", "meaning": "Contain: block egress to 203.0.113.0/24 and isolate AUTOMATION-01. Eradicate: disable the PledgeSync task and sync.ps1, reset the pledge-desk password, remove the lure from the two unclicked inboxes. Recover: rebuild AUTOMATION-01 and verify the 06:30 schedule, tell the donors whose names aired. Harden: MFA and lockout on VPN-GW-01, named accounts instead of pledge-desk, PowerShell logging, an egress allowlist for the playout PC." },
+        { "part": "Handoff", "meaning": "Problem: a phished shared credential reached the playout PC and persisted there. Assets: AUTOMATION-01, PLEDGE-DESK-02, pledge-desk, svc-playout. Controls: the Harden list. Detections: more than three failures in five minutes on one account from one outside address; hidden plus encoded PowerShell from a non-admin account; a scheduled task created minutes after a new login; one outbound connection over 10 MB to a newly seen address. Acceptance: each rule fires on tonight's records replayed and stays quiet on a normal night. Open: the decoded command, the server behind 203.0.113.44, Dez's confirmation, Marco's building access." }
       ],
       "starter": "",
       "reference": null,
@@ -132,6 +139,7 @@
         "why": "A hypothesis still has to explain the facts. 'Marco did it' explains none of them and contradicts several. The brief's job is to be right, not to be comfortable."
       },
       "clue": "Odalys reads the pad twice, resets the pledge-desk password, pulls the playout PC off the network, and calls the board. Hal sits down. The morning news goes out at 06:30, on time, with no static.",
+      "logIt": {"kind":"handoff","prompt":"Write the Handoff ticket. Press Assemble from casebook to pull the problem statement, refs, controls and open questions from your other tabs, then write the rest yourself. Affected assets: AUTOMATION-01, PLEDGE-DESK-02, the pledge-desk and svc-playout accounts. Detection ideas, in words: more than three failures in five minutes on one account from one outside address; hidden plus encoded PowerShell from a non-admin account; a scheduled task created minutes after a new login; one outbound connection over 10 MB to a newly seen address. Acceptance criteria: how the engineer proves each control works. This ticket is where a Cybersecurity Engineering course picks up.","mustInclude":["AUTOMATION-01","pledge-desk","203.0.113"]},
       "caveat": "This case is fiction. The habit is not: facts, hypotheses, gaps, every time."
     }
   ]

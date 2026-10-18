@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { root, loadContent, loadData, validate, deriveAnswer } from '../../tools/lib.mjs';
+import { root, loadContent, loadData, validate, deriveAnswer, validateLogIt } from '../../tools/lib.mjs';
 import { runQuery, compareResults, gradeQuery, gradeAnswer, gradeCall } from '../../site/engine/grader.js';
 import { MESSAGES, describe } from '../../site/ui/messages.js';
 
@@ -15,7 +15,7 @@ test('C1 every mission validates: references run, answers match the data, starte
 
 test('C1 should-fail: an authored answer that drifts from the data is caught', () => {
   const bad = JSON.parse(JSON.stringify(content));
-  bad.chapters[0].missions[0].answer.value = '41';
+  bad.chapters[0].missions[1].answer.value = '41';   // C01-M01; missions[0] is now the read mission on note-keeping
   assert.ok(validate(bad, data).some(p => p.includes('C01-M01') && p.includes('data says "40"')));
 });
 
@@ -117,4 +117,33 @@ test('C8 every chapter carries a recap for its chapter-end card, and the validat
   for (const ch of content.chapters) assert.ok(ch.recap.length >= 3 && ch.recap.length <= 6, ch.id);
   const bad = JSON.parse(JSON.stringify(content)); delete bad.chapters[2].recap;
   assert.ok(validate(bad, data).some(p => p.includes('C03') && p.includes('recap')));
+});
+
+test('C9 every original mission carries a Log it block the validator accepts; the new notes mission has none; the validator refuses a bad one', () => {
+  const withLogIt = missions.filter(m => m.logIt);
+  assert.equal(withLogIt.length, 25);
+  assert.equal(missions.length, 26);
+  assert.equal(missions.find(m => m.id === 'C01-M00').logIt, undefined);
+  assert.equal(missions[0].id, 'C01-M00');
+  const kinds = new Set(withLogIt.map(m => m.logIt.kind));
+  for (const k of ['scope', 'evidence', 'timeline', 'hypothesis', 'pivot', 'gap', 'determination', 'remediation', 'handoff']) assert.ok(kinds.has(k), 'some mission asks for ' + k);
+  // the story anchors the task named
+  const by = id => missions.find(m => m.id === id).logIt;
+  assert.equal(by('C01-M05').kind, 'evidence'); assert.ok(by('C01-M05').mustInclude.includes('198.51.100.23') && by('C01-M05').mustInclude.some(t => t.startsWith('19:05')));
+  assert.equal(by('C03-M03').kind, 'remediation'); assert.equal(by('C03-M03').list, 'eradicate'); assert.ok(by('C03-M03').mustInclude.includes('PledgeSync'));
+  assert.equal(by('C04-M04').kind, 'remediation'); assert.equal(by('C04-M04').list, 'contain'); assert.ok(by('C04-M04').mustInclude.includes('203.0.113.0/24'));
+  assert.equal(by('C06-M03').kind, 'determination'); assert.equal(by('C06-M04').kind, 'handoff');
+  assert.equal(missions.find(m => m.id === 'C06-M04').brief, 'casebook');
+  const eventIds = new Set(data.events.map(e => e['metadata.id']));
+  // should-fail: kind outside the enum, empty prompt, empty mustInclude, a record ID that is not in the dataset, a list on a non-remediation kind
+  assert.ok(validateLogIt({ kind: 'note', prompt: 'write something useful here', mustInclude: ['x'] }, 'T', eventIds).some(p => p.includes('logIt.kind')));
+  assert.ok(validateLogIt({ kind: 'evidence', prompt: '', mustInclude: ['x'] }, 'T', eventIds).some(p => p.includes('prompt')));
+  assert.ok(validateLogIt({ kind: 'evidence', prompt: 'write something useful here', mustInclude: [] }, 'T', eventIds).some(p => p.includes('mustInclude')));
+  assert.ok(validateLogIt({ kind: 'evidence', prompt: 'write something useful here', mustInclude: ['evt-00001|evt-99999'] }, 'T', eventIds).some(p => p.includes('evt-99999')));
+  assert.ok(validateLogIt({ kind: 'gap', prompt: 'write something useful here', mustInclude: ['x'], list: 'contain' }, 'T', eventIds).some(p => p.includes('logIt.list')));
+  assert.deepEqual(validateLogIt({ kind: 'remediation', prompt: 'write something useful here', mustInclude: ['evt-00001'], list: 'harden' }, 'T', eventIds), []);
+  const bad = JSON.parse(JSON.stringify(content)); bad.chapters[0].missions[1].logIt.mustInclude = ['evt-99999'];
+  assert.ok(validate(bad, data).some(p => p.includes('C01-M01') && p.includes('evt-99999')));
+  const noBrief = JSON.parse(JSON.stringify(content)); noBrief.chapters[5].missions[3].explain = noBrief.chapters[5].missions[3].explain.filter(e => e.part !== 'Handoff');
+  assert.ok(validate(noBrief, data).some(p => p.includes('C06-M04') && p.includes('brief')));
 });

@@ -41,6 +41,7 @@
         "why": "The playout PC's normal streaming is inbound (received bytes). Outbound volume on that scale from that machine is new tonight, and you already know the connection that caused it."
       },
       "clue": "AUTOMATION-01, 48,345,375 bytes out. Studio A, in second place, is under two million and that is a night of normal use. One machine, one connection, one spreadsheet.",
+      "logIt": {"kind":"evidence","prompt":"Log the upload as evidence. Time: 02:10. Observation: AUTOMATION-01 sent 48,345,375 bytes tonight; one NETWORK_CONNECTION at 02:10:33 carried 48,230,112 of them to 203.0.113.44 on port 443, five minutes after donors_export.zip was written. Records: that connection. State size, direction, destination and time; what the stream contained is inference.","mustInclude":["evt-00679","203.0.113.44","02:10"]},
       "caveat": "Sum ignores nothing. A single misparsed byte field can dominate a total; click into the biggest group before you quote it."
     },
     {
@@ -73,6 +74,7 @@
         "why": "Counts describe rhythm; bytes describe payload. Both rows look beacon-like by count, but only one carried a file."
       },
       "clue": "Two destinations all night. The streaming CDN: 40 connections, 59 KB out, which is a player saying hello. The attacker address: 63 connections, 48 MB out. Sixty-two were heartbeats. One was the donor list.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 02:10. Fact: 48 MB left AUTOMATION-01 for 203.0.113.44 on port 443, the one connection of 63 to that address that carried a payload. Evidence ref: your upload evidence. For contrast, the CDN at 192.0.2.120 took 40 connections and 59 KB all night.","mustInclude":["02:10","203.0.113.44"]},
       "caveat": "Try removing order and see the rows come back in key order. The data is the same; only the reading changes."
     },
     {
@@ -102,6 +104,7 @@
         "why": "Blame is not an action item; a password reset and a check of the other two inboxes are. Odalys and the desk did not click tonight, but the lure is still sitting there."
       },
       "clue": "Three targets, one click, one shared password, one playout PC. The brief writes itself: phishing at 18:40, credential use from outside at 19:21, persistence at 19:35, staging at 02:05, exfiltration at 02:10, defacement on air at 03:10. Chapter 6 proves the timing.",
+      "logIt": {"kind":"remediation","list":"eradicate","prompt":"Write an Eradicate item: reset the pledge-desk password now, end its sessions, and remove the lure from the two inboxes that did not click (odalys.reyes and the pledge-desk mailbox). Answers: your lure evidence and your burst evidence. Owner role: station manager or IT lead. Urgency: now. Blame is not an action item.","mustInclude":["pledge-desk"]},
       "caveat": "If the gateway logged each recipient as a separate message, count and count_distinct agree. If it logged one message with a list, they would not. Know your source."
     }
   ]
