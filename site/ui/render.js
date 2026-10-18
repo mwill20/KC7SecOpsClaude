@@ -26,7 +26,21 @@ const short = c => c.replace('metadata.', '').replace('security_result.', 'sr.')
 
 // timeCols: outcome column names whose values are timestamps in seconds; they render as UTC clock times with the raw
 // value beside them, so a min/max on metadata.event_timestamp.seconds reads as "first" and "last".
+// Entity records render with their validity interval first, then the entity fields a record carries.
+const ENTITY_COLS = ['graph.metadata.entity_type', 'graph.entity.user.userid', 'graph.entity.user.title', 'graph.entity.user.department', 'graph.entity.user.employment_status', 'graph.entity.user.account_type', 'graph.entity.user.attribute.roles.name', 'graph.entity.asset.hostname', 'graph.entity.asset.ip', 'graph.entity.asset.attribute.roles.name', 'graph.entity.asset.attribute.labels.owner', 'graph.entity.asset.attribute.labels.criticality'];
+const shortEntity = c => c.replace('graph.metadata.', '').replace('graph.entity.', '').replace('.attribute.roles.name', '.role').replace('.attribute.labels.', '.').replace('.managers.userid', '.manager');
+const fmtDate = s => new Date(s * 1000).toISOString().slice(0, 10);
 export function resultsTable(result, onRow, timeCols = new Set()) {
+  if (result.kind === 'entities') {
+    const sample = result.rows.slice(0, 200);
+    const present = c => sample.some(r => r[c] !== undefined && r[c] !== '');
+    const cols = ENTITY_COLS.filter(present).slice(0, 8);
+    const head = el('tr', {}, el('th', { text: 'record' }), el('th', { text: 'valid (UTC)' }), cols.map(c => el('th', { text: shortEntity(c) })));
+    const body = sample.map(r => { const btn = el('button', { class: 'ghost', text: 'Open', 'aria-label': 'Open record ' + r['metadata.id'], onclick: e => { e.stopPropagation(); onRow(r, btn); } });
+      return el('tr', { class: 'row-btn', onclick: () => onRow(r, btn) }, el('td', {}, btn), el('td', { text: `${fmtDate(r['graph.metadata.interval.start_time.seconds'])} to ${fmtDate(r['graph.metadata.interval.end_time.seconds'])}` }),
+        cols.map(c => el('td', { text: cell(r[c]) }))); });
+    return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
+  }
   if (result.kind === 'events') {
     const sample = result.rows.slice(0, 200);
     const present = c => sample.some(r => r[c] !== undefined && r[c] !== '' && r[c] !== 0);
@@ -39,7 +53,7 @@ export function resultsTable(result, onRow, timeCols = new Set()) {
         cols.map(c => el('td', { text: c === 'time' ? fmtTime(r['metadata.event_timestamp.seconds']) : cell(r[c]) }))); });
     return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
   }
-  const head = el('tr', {}, result.columns.map(c => el('th', { text: c === 'window_start' ? 'window start (UTC)' : short(c) })));
+  const head = el('tr', {}, result.columns.map(c => el('th', { text: c === 'window_start' ? 'window start (UTC)' : c.startsWith('graph.') ? shortEntity(c) : short(c) })));
   const body = result.rows.slice(0, 200).map(r => el('tr', {}, result.columns.map(c => el('td', { class: Array.isArray(r[c]) ? 'arr' : null, text: c === 'window_start' ? fmtTime(r[c]) : timeCols.has(c) && typeof r[c] === 'number' && r[c] > 0 ? `${fmtTime(r[c])} (${r[c]})` : cell(r[c]) }))));
   return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
 }
@@ -50,5 +64,5 @@ const cell = v => v === undefined || v === '' ? '—' : Array.isArray(v) ? fmtAr
 
 export function rawRecord(r) {
   const entries = Object.entries(r).sort(([a], [b]) => a.localeCompare(b));
-  return el('div', { class: 'raw' }, el('dl', {}, entries.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: k === 'metadata.event_timestamp.seconds' ? v + ' (' + fmtTime(v) + ' UTC)' : String(v) })])));
+  return el('div', { class: 'raw' }, el('dl', {}, entries.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: k === 'metadata.event_timestamp.seconds' || /\.seconds$/.test(k) ? v + ' (' + fmtTime(v) + ' UTC)' : String(v) })])));
 }

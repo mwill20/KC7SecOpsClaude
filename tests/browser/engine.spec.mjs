@@ -7,9 +7,14 @@ const SOLO = 'C01-M05';
 test('Engine v2 on the desk: the Lists panel names the bundled lists and where they live in a tenant; list, dedup, array and earliest queries run and render; a non-UTC zone is reported as not run here', async ({ page }) => {
   await page.goto(`#${SOLO}`);
   const lists = page.locator('details.lists');
-  await expect(lists.locator('summary')).toHaveText(/^Reference lists \(\d+\)$/);
+  await expect(lists.locator('summary')).toHaveText(/^Lists and tables \(\d+\)$/);
   await lists.locator('summary').click();
   await expect(lists).toContainText('Detection > Lists');
+  await expect(lists).toContainText('Detection > Data tables');
+  await expect(lists).toContainText('July 2027');
+  await expect(lists.locator('code', { hasText: '%gateway_blocks' })).toBeVisible();
+  await expect(lists.locator('li', { hasText: '%gateway_blocks' })).toContainText('.range · cidr · in cidr %');
+  await expect(lists.locator('li', { hasText: '%station_allowlist' })).toContainText('week-one mail log');
   await expect(lists.locator('code', { hasText: '%blocked_ranges' })).toBeVisible();
   await expect(lists.locator('li', { hasText: '%blocked_ranges' })).toContainText('cidr · in cidr %');
   await expect(lists.locator('li', { hasText: '%blocked_ranges' })).toContainText('203.0.113.0/24');
@@ -22,9 +27,16 @@ test('Engine v2 on the desk: the Lists panel names the bundled lists and where t
   await expect(page.locator('.results .summary')).toContainText(/\d+ events/);
   await run('target.ip in %blocked_ranges');
   await expect(feedback).toHaveClass(/bad/);
-  await expect(feedback).toContainText('Will not run: The keyword after in must match the list type.');
+  await expect(feedback).toContainText('Will not run: The keyword after in must match the list or column type.');
   await run('target.ip in cidr %no_such_list');
   await expect(feedback).toContainText('That reference list does not exist in this trainer.');
+  // A data table column runs in the same form; an unknown column is named apart from an unknown table.
+  await run('metadata.event_type = "NETWORK_CONNECTION"\ntarget.ip in cidr %gateway_blocks.range');
+  await expect(feedback).toHaveClass(/info/);
+  await run('target.ip in cidr %gateway_blocks.cidr');
+  await expect(feedback).toContainText('The data table exists, but not that column.');
+  await run('target.ip = %gateway_blocks.range');
+  await expect(feedback).toContainText('Not run here: Comparing a field to a reference list or data table with = is rule syntax');
   // dedup on an event query: fewer rows, labelled.
   await run('metadata.event_type = "USER_LOGIN"\ndedup:\n  principal.user.userid');
   await expect(page.locator('.results .summary')).toContainText('deduplicated');

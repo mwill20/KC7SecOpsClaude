@@ -122,8 +122,9 @@ textarea.editor:disabled { opacity: .7; }
 .options { list-style: none; padding: 0; margin: 8px 0; border: 0; min-width: 0; } .options li { padding: 6px 0; } .options label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; } .options input { margin-top: 5px; }
 .scorebox { margin-top: 14px; display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; }
 .scorebox span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); } .scorebox span.on { color: var(--ok); border-color: var(--ok); }
-.fields { margin-top: 8px; } .fields summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-.fields ul { columns: 2; list-style: none; padding: 0; margin: 8px 0 0; font-family: var(--mono); font-size: 12px; } .fields li { padding: 2px 0; } .fields li span { color: var(--muted); }
+.fields, .entities { margin-top: 8px; } .fields summary, .entities summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.fields ul, .entities ul { columns: 2; list-style: none; padding: 0; margin: 8px 0 0; font-family: var(--mono); font-size: 12px; } .fields li, .entities li { padding: 2px 0; } .fields li span, .entities li span { color: var(--muted); }
+.entities ul { columns: 1; } .entities code { color: var(--accent); overflow-wrap: anywhere; }
 .lists { margin-top: 8px; } .lists summary { cursor: pointer; color: var(--muted); font-size: 13px; } .lists ul { list-style: none; padding: 0; margin: 4px 0 0; }
 .lists .listlist { columns: 1; } .lists .listlist li { padding: 8px 0; border-top: 1px solid var(--line); } .lists .listlist li:first-child { border-top: 0; }
 .lists .listlist code { color: var(--accent); } .lists .items { font-family: var(--mono); font-size: 12px; color: var(--text); overflow-wrap: anywhere; margin-top: 3px; }

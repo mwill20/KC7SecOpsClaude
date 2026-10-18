@@ -1,0 +1,576 @@
+{
+  "id": "C09",
+  "title": "Two events, one story",
+  "subtitle": "Joins in Search: when a login and a file access are one action, and when they only look like one",
+  "intro": "Monday morning. Odalys has the week-two handoff on the desk and one question written across the top: how do you know the gateway login and the file server are the same story? Every chapter so far asked one kind of event at a time and left the connecting to you. Google's conditions page documents a Search query with two event variables, $e1 and $e2, joined by a placeholder both set, grouped by that placeholder with match: $key over 1h, and filtered with condition: #e1 > 0 and #e2 > 0. This chapter writes those joins against Friday's data. It also tells you the honest part: Google's statistics page says the over window is not supported in Search, and its conditions page shows it. Both pages were read on 2026-10-18. Verify the shape in your own tenant before you lean on it.",
+  "concepts": [
+    "A join is two event variables that set the same placeholder; the placeholder is the key, match: groups by it, over N says how close in time the two events must be",
+    "A join finds both orders: the window is a distance, not a direction; read earliest() per variable to learn which came first",
+    "Correlation is two events of one account within one window; coincidence is the same shape with an innocent reading, and the data cannot tell them apart without the baseline",
+    "#e1 is the number of distinct events the first variable matched; $e1 alone means #e1 > 0; a non-existence test needs a bounded event and is not run here",
+    "Google's pages disagree on over in Search; write the join as the conditions page does and run it once in a tenant before the brief relies on it"
+  ],
+  "recap": [
+    "Write a two-event Search join: two variables, a shared placeholder, match on it with over N, one outcome per variable, a bounded condition",
+    "Say what over 1h means (within an hour of each other, either order) and read earliest() per variable to put the two events in order",
+    "Tell a correlation from a coincidence by widening the window and watching who else joins",
+    "Use the same join to find the attacker's path and the engineer's maintenance, and separate them with the action column, not the shape",
+    "Name the documentation conflict on over in Search and record the tenant check as a gap, not a fact"
+  ],
+  "missions": [
+    {
+      "id": "C09-M01",
+      "kind": "read",
+      "title": "Correlation or coincidence",
+      "beat": "Odalys reads the week-two handoff back to you. 'Gateway at 20:03. File server at 20:11. You wrote them as two facts and I read them as one story. Which is it?' Dez, from the door: 'The docs say Search does not even do that.' He is half right.",
+      "question": "What does it take to say two events are one story, and what does Search let you write down about it?",
+      "concept": {
+        "title": "A join is a claim with a key and a window",
+        "text": "Two events are one story when the same thing links them (an account, a host, an address) within a time you can defend. In Search that is written with two event variables: $e1.principal.user.userid = $account and $e2.principal.user.userid = $account make $account the join key; match: $account over 1h groups by it and keeps pairs within an hour of each other; outcome: count($e1.metadata.id) and count($e2.metadata.id) count each side; condition: #e1 > 0 and #e2 > 0 keeps groups that have both. A coincidence has the same shape. The data cannot tell them apart; the baseline and the action column can. This chapter writes the join, then widens the window until the innocent pairs appear, so you can see what the window was doing."
+      },
+      "explain": [
+        {
+          "part": "$e1.principal.user.userid = $account\n$e2.principal.user.userid = $account",
+          "meaning": "The join key: one placeholder set by both events. Every other condition names its event ($e1.target.hostname = \"VPN-GW-01\"), so each side is filtered on its own."
+        },
+        {
+          "part": "match:\n  $account over 1h",
+          "meaning": "Group by the key; two events belong together when they are within an hour of each other, in either order. by 1h would put them in the same clock hour instead; no window joins across the whole range."
+        },
+        {
+          "part": "condition:\n  #e1 > 0 and #e2 > 0",
+          "meaning": "#e1 is the number of distinct first-variable events in the group; $e1 alone means #e1 > 0. A test that is true at zero (#e2 = 0, not $e2) asks for events that did not happen; Google says such a condition needs a bounded event, and this trainer reports it as not run here."
+        },
+        {
+          "part": "The two pages",
+          "meaning": "Google's conditions page shows exactly this query shape in Search, with over 1h. Google's statistics page says the over window used for event-window searches is not supported in Search. Both were read on 2026-10-18 and both are linked on the About page. This trainer runs the conditions page's shape and tells you the conflict exists; the tenant decides."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez says the join is pointless because the two facts are already in the brief. What does the join add that two facts do not?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Nothing in evidence, only in presentation: a join is a way to print two facts on one line, and the brief should keep them apart so the reader can weigh each on its own"
+          },
+          {
+            "id": "B",
+            "label": "A tested claim: the same key within a stated window, which a second analyst can rerun and widen, and which the baseline can refute"
+          },
+          {
+            "id": "C",
+            "label": "Proof of intent: an account that logs in and then touches a server within an hour has shown what it came for"
+          }
+        ],
+        "correct": "B",
+        "why": "Two facts in a brief are linked by the reader. A join links them in the query, with a key and a window someone else can rerun and argue with. It is still not intent; the next missions show the same shape finding the engineer at work."
+      },
+      "clue": "Odalys writes the key and the window at the top of the pad: lena.ostrowski, one hour. 'Show me the join. Then show me what happens when you give it the whole night.'",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: Google's conditions page documents match: $key over 1h on a two-event Search query and the statistics page says over is not supported in Search; this trainer runs the conditions page's shape and no tenant run has been done. Why it matters: every join in this chapter is a claim to re-run in the tenant before the brief leans on it.",
+        "mustInclude": [
+          "over"
+        ]
+      },
+      "caveat": "In a rule, the same two-variable shape is the normal way to write a multi-event detection, and over 1h is the match window. In Search the documentation disagrees with itself. Run the chapter's first join in your tenant and write down what happened; that sentence belongs in the handoff."
+    },
+    {
+      "id": "C09-M02",
+      "kind": "watch",
+      "title": "The gateway and the file server",
+      "beat": "The simplest version of Odalys's question. For each account, a success at the gateway and a login on FS-01 within an hour of each other. One key, one window, two counts.",
+      "question": "Which accounts logged in at the gateway and on FS-01 within an hour of each other?",
+      "concept": {
+        "title": "Two variables, one key, one window",
+        "text": "$e1 is the gateway success, $e2 is the FS-01 login, $account is set by both. match: $account over 1h groups by the account and keeps a pair when the two events are within an hour of each other. The outcomes count each side separately; earliest() per variable tells you which came first. One row comes back, and its two times are eight minutes apart."
+      },
+      "explain": [
+        {
+          "part": "$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"",
+          "meaning": "The first event: a success at the remote door. Every condition on $e1 filters the first side only."
+        },
+        {
+          "part": "$e2.target.hostname = \"FS-01\"",
+          "meaning": "The second event: any login the file server handled. No action filter, so the denied run-as at 02:31 counts too."
+        },
+        {
+          "part": "$e1.principal.user.userid = $account\n$e2.principal.user.userid = $account",
+          "meaning": "The join key. The column is named after the field both sides set."
+        },
+        {
+          "part": "match:\n  $account over 1h",
+          "meaning": "Within an hour of each other, either order. The results bar says what was joined and how."
+        },
+        {
+          "part": "$first_gateway = earliest($e1.metadata.event_timestamp)\n$first_fs = earliest($e2.metadata.event_timestamp)",
+          "meaning": "One time per side, so the row reads in order: gateway first, file server eight minutes later."
+        }
+      ],
+      "starter": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"USER_LOGIN\"\n$e2.target.hostname = \"FS-01\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $gateway = count($e1.metadata.id)\n  $fs = count($e2.metadata.id)\n  $first_gateway = earliest($e1.metadata.event_timestamp)\n  $first_fs = earliest($e2.metadata.event_timestamp)",
+      "reference": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"USER_LOGIN\"\n$e2.target.hostname = \"FS-01\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $gateway = count($e1.metadata.id)\n  $fs = count($e2.metadata.id)\n  $first_gateway = earliest($e1.metadata.event_timestamp)\n  $first_fs = earliest($e2.metadata.event_timestamp)",
+      "hints": [
+        "Run it as written. One row. The results bar names the two variables and the window.",
+        "Read the two time columns: the gateway time and the file-server time, both as UTC clock times.",
+        "lena.ostrowski: two gateway successes, two FS-01 logins, first gateway 20:03:21, first FS-01 20:11:02. Dez and Odalys also succeeded at the gateway and never touched FS-01, so they are not rows."
+      ],
+      "answer": {
+        "prompt": "What clock time is in the $first_fs column (HH:MM, UTC)?",
+        "value": "20:11",
+        "also": [
+          "20:11:02"
+        ],
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$first_fs",
+          "format": "hhmm"
+        }
+      },
+      "call": {
+        "prompt": "The row joins a gateway success and a file-server login eight minutes apart. Hal says that settles it. What has the join established?",
+        "options": [
+          {
+            "id": "A",
+            "label": "That the same account did both within the hour, and that two other gateway accounts did not; whose hands were on the keyboard is still the hypothesis"
+          },
+          {
+            "id": "B",
+            "label": "That the attacker went straight from the gateway to the file server, since nothing else explains two events eight minutes apart"
+          },
+          {
+            "id": "C",
+            "label": "Nothing new, because a join only reorders facts the brief already had and cannot add a claim of its own that the two separate rows did not already make"
+          }
+        ],
+        "correct": "A",
+        "why": "The join adds a tested claim: same account, within the window, and the other gateway accounts do not pair. It still names an account, not a person; chapter 10 adds who the account belongs to."
+      },
+      "clue": "One row. lena.ostrowski at the gateway at 20:03:21, on FS-01 at 20:11:02, and again at 02:14 and 02:31. Dez and Odalys came through the gateway and never joined. The key held; the window held; the story has a spine.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the join: 20:03 to 20:11 UTC, lena.ostrowski succeeds at VPN-GW-01 from 198.51.100.77 (evt-20200) and logs in to FS-01 from 10.9.4.200 (evt-20210) within the same hour; the other two gateway accounts have no FS-01 login. Source: this query, whole night. Observation only, confidence high.",
+        "mustInclude": [
+          "evt-20200",
+          "evt-20210",
+          "lena.ostrowski"
+        ]
+      },
+      "caveat": "In a tenant, run this once before trusting the shape: Google's statistics page says over is not supported in Search while the conditions page shows it. If the tenant refuses it, the same join is a rule, and the rule is where it belongs for the long run."
+    },
+    {
+      "id": "C09-M03",
+      "kind": "build",
+      "title": "Login, then a file",
+      "beat": "A login is a door; a file is what someone did inside. Join a gateway success to a file created by the same account within an hour, and read the two times per row.",
+      "question": "Which accounts created a file within an hour of a gateway success, and in which order?",
+      "concept": {
+        "title": "The window is a distance; earliest() gives the direction",
+        "text": "over 1h keeps a pair when the two events are within an hour of each other, before or after. The join does not know which came first; earliest() per variable does. Two rows come back. In one the login is forty minutes before the file. In the other the file is seven minutes before the login, because a station manager saved a spreadsheet at her desk and then signed in from home. Same shape, two readings."
+      },
+      "explain": [
+        {
+          "part": "$e2.metadata.event_type = \"FILE_CREATION\"\n$e2.principal.user.userid = $account",
+          "meaning": "The second event is a file written by the same account, anywhere."
+        },
+        {
+          "part": "match:\n  $account over 1h",
+          "meaning": "The gap to fill is the window. An hour is the claim this chapter makes; the next mission tests it."
+        },
+        {
+          "part": "$login_at = earliest($e1.metadata.event_timestamp)\n$file_at = earliest($e2.metadata.event_timestamp)",
+          "meaning": "Read the two columns against each other. Login before file is the path; file before login is a person who was already working."
+        }
+      ],
+      "starter": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"FILE_CREATION\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over ___\noutcome:\n  $files = array($e2.target.file.full_path)\n  $login_at = earliest($e1.metadata.event_timestamp)\n  $file_at = earliest($e2.metadata.event_timestamp)",
+      "reference": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"FILE_CREATION\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $files = array($e2.target.file.full_path)\n  $login_at = earliest($e1.metadata.event_timestamp)\n  $file_at = earliest($e2.metadata.event_timestamp)",
+      "hints": [
+        "The gap is the join window: a duration such as 5m, 1h or 1d, written without a space.",
+        "Fill the gap with 1h.",
+        "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"FILE_CREATION\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $files = array($e2.target.file.full_path)\n  $login_at = earliest($e1.metadata.event_timestamp)\n  $file_at = earliest($e2.metadata.event_timestamp)"
+      ],
+      "answer": {
+        "prompt": "What clock time is in the $file_at column for odalys.reyes (HH:MM, UTC)?",
+        "value": "23:23",
+        "also": [
+          "23:23:23"
+        ],
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.user.userid": "odalys.reyes"
+          },
+          "column": "$file_at",
+          "format": "hhmm"
+        }
+      },
+      "call": {
+        "prompt": "Two rows: a membership export on FS-01 thirty-eight minutes after a gateway login, and a tally spreadsheet on a laptop seven minutes before one. What separates them?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The window: the second pair is tighter, and tighter pairs are the stronger correlation, so the spreadsheet row is the one to investigate first, before the server"
+          },
+          {
+            "id": "B",
+            "label": "The order and the place: login then file on the server the session reached is the path; file at her own desk then a login from home is a working evening"
+          },
+          {
+            "id": "C",
+            "label": "Nothing yet: both rows pass the same join, so both accounts have to be treated the same way until one is cleared"
+          }
+        ],
+        "correct": "B",
+        "why": "The join is symmetric; the reading is not. earliest() per side gives the order, and the host of the file gives the place. Odalys's row is the coincidence that teaches what the attacker's row means."
+      },
+      "clue": "lena.ostrowski: gateway 02:14:33, then members-export.zip on FS-01 at 02:52:18. odalys.reyes: membership-tally.xlsx on OPS-LAPTOP-07 at 23:23:23, then the gateway at 23:30:45. The first is a path. The second is a station manager finishing a spreadsheet before she went home.",
+      "logIt": {
+        "kind": "timeline",
+        "prompt": "Add a Timeline entry: 02:52 UTC, lena.ostrowski writes C:\\Shares\\Membership\\members-export.zip on FS-01, thirty-eight minutes after the second gateway success, record evt-20820. Reference the Evidence entry that holds the gateway and file-server join, or add one for this record first.",
+        "mustInclude": [
+          "02:52"
+        ]
+      },
+      "caveat": "Google's over window in a rule is a sliding window and a match may span events in either order; nothing in the syntax says which event came first. If order matters to the claim, say it with the two earliest() columns, and say it in words in the brief."
+    },
+    {
+      "id": "C09-M04",
+      "kind": "build",
+      "title": "The lookup and the connection",
+      "beat": "Last week's beacon was a DNS name and a connection a second apart, forty times. Join them: a lookup of a lookalike name and a connection to the attacker's server from the same address within five minutes. Fill in the key.",
+      "question": "From which addresses did a lookalike lookup and a connection to 198.51.100.77 happen within five minutes of each other?",
+      "concept": {
+        "title": "The key can be an address, and the window can be short",
+        "text": "The join key is whatever both events share. Here it is the source address: $e1.principal.ip = $src on the lookup and $e2.principal.ip = $src on the connection. The lookup's name is tested against the lookalike_shapes table from chapter 8, so the first side is already narrowed to the names that matter. Five minutes is a tight window; a beacon resolves and connects a second apart, so it passes. In a tenant the join would be on the answer the resolver returned ($e1.network.dns.answers.data = $ip and $e2.target.ip = $ip); this dataset carries the question, not the answer, so the host that asked is the key."
+      },
+      "explain": [
+        {
+          "part": "$e1.network.dns.questions.name in regex %lookalike_shapes.pattern",
+          "meaning": "The first event is a lookup of a lookalike name. A data table column from chapter 8, tested on one side of a join."
+        },
+        {
+          "part": "$e2.target.ip = \"198.51.100.77\"",
+          "meaning": "The second event is a connection to the attacker's server."
+        },
+        {
+          "part": "$e1.principal.ip = $src\n$e2.principal.ip = $src",
+          "meaning": "The join key, the gap to fill: the same source address on both sides."
+        },
+        {
+          "part": "match:\n  $src over 5m",
+          "meaning": "Within five minutes. Two addresses come back: the desk, once, and the remote session, forty times."
+        }
+      ],
+      "starter": "$e1.metadata.event_type = \"NETWORK_DNS\"\n$e1.network.dns.questions.name in regex %lookalike_shapes.pattern\n$e1.principal.ip = $src\n$e2.metadata.event_type = \"NETWORK_CONNECTION\"\n$e2.target.ip = \"198.51.100.77\"\n$e2.principal.ip = ___\nmatch:\n  $src over 5m\noutcome:\n  $lookups = count($e1.metadata.id)\n  $connections = count($e2.metadata.id)\n  $names = array_distinct($e1.network.dns.questions.name)",
+      "reference": "$e1.metadata.event_type = \"NETWORK_DNS\"\n$e1.network.dns.questions.name in regex %lookalike_shapes.pattern\n$e1.principal.ip = $src\n$e2.metadata.event_type = \"NETWORK_CONNECTION\"\n$e2.target.ip = \"198.51.100.77\"\n$e2.principal.ip = $src\nmatch:\n  $src over 5m\noutcome:\n  $lookups = count($e1.metadata.id)\n  $connections = count($e2.metadata.id)\n  $names = array_distinct($e1.network.dns.questions.name)",
+      "hints": [
+        "The gap is the join placeholder: the second event must set the same $name the first event set, so the two sides share a key.",
+        "Fill the gap with $src.",
+        "$e1.metadata.event_type = \"NETWORK_DNS\"\n$e1.network.dns.questions.name in regex %lookalike_shapes.pattern\n$e1.principal.ip = $src\n$e2.metadata.event_type = \"NETWORK_CONNECTION\"\n$e2.target.ip = \"198.51.100.77\"\n$e2.principal.ip = $src\nmatch:\n  $src over 5m\noutcome:\n  $lookups = count($e1.metadata.id)\n  $connections = count($e2.metadata.id)\n  $names = array_distinct($e1.network.dns.questions.name)"
+      ],
+      "answer": {
+        "prompt": "How many connections does the row for 10.9.4.200 count ($connections)?",
+        "value": "40",
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.ip": "10.9.4.200"
+          },
+          "column": "$connections"
+        }
+      },
+      "call": {
+        "prompt": "Both rows pair a lookalike lookup with a connection to the same server. The desk row has one lookup; the remote-session row has dozens. Which sentence is the fact for the Evidence tab?",
+        "options": [
+          {
+            "id": "A",
+            "label": "PLEDGE-DESK-01 and 10.9.4.200 each resolved a lookalike name and connected to 198.51.100.77 within five minutes, once and forty times"
+          },
+          {
+            "id": "B",
+            "label": "The desk was infected at 19:12 and the infection moved to the remote session, which is why both addresses resolve the same family of names"
+          },
+          {
+            "id": "C",
+            "label": "The remote session is the attacker and the desk is clean, because one lookup is noise and forty is a pattern"
+          }
+        ],
+        "correct": "A",
+        "why": "The row is a count of pairs per address. Infection, movement and who is clean are readings; the second is a hypothesis with no record, the third is a threshold nobody set. Write the counts, then the story under Hypotheses."
+      },
+      "clue": "10.9.4.21: harborlight-sponsors.example once, two connections, 19:12. 10.9.4.200: files.harborlight-sponsors.example forty times, forty connections, every fifteen minutes from 20:04. The lookup and the connection are one motion, and the join says so in one row per address.",
+      "logIt": {
+        "kind": "hypothesis",
+        "prompt": "Write or update a Hypothesis, status supported: the fifteen-minute cadence from 10.9.4.200 is a beacon that resolves files.harborlight-sponsors.example and connects to 198.51.100.77 in one motion. Supporting refs: your cadence evidence from chapter 7 and this join. Test next: whether the same pairing appears from any other address over thirty days.",
+        "mustInclude": [
+          "files.harborlight-sponsors.example",
+          "198.51.100.77"
+        ]
+      },
+      "caveat": "Real UDM carries the resolver's answer in network.dns.answers.data, a repeated field, and the natural join is answer to target.ip. This flat dataset has the question only. The habit is the same: pick the key both events really share, and say in the brief which key you used."
+    },
+    {
+      "id": "C09-M05",
+      "kind": "solo",
+      "title": "The join that finds the engineer",
+      "beat": "The same shape, pointed at privilege: a gateway success followed within an hour by a run-as to svc-playout by the same account. Two rows come back. One is Dez restarting the playout service from home. One is not.",
+      "question": "Which accounts ran as svc-playout within an hour of a gateway success, and did it work?",
+      "concept": {
+        "title": "One join, two stories; the action column decides",
+        "text": "A join finds a shape. The engineer's maintenance and the attacker's attempt have the same shape: remote door, then a privilege. What separates them is in the second event's own fields: security_result.action and target.hostname. Dez's run-as on AUTOMATION-01 is ALLOW; the remote session's on FS-01 is FAIL. Put both in the outcomes so each row carries its own verdict, and the join never has to be read as an accusation."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"USER_LOGIN\"\n$e2.target.user.userid = \"svc-playout\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $result = array_distinct($e2.security_result.action)\n  $host = array_distinct($e2.target.hostname)\n  $runas_at = earliest($e2.metadata.event_timestamp)",
+      "hints": [
+        "Two variables. $e1: USER_LOGIN at VPN-GW-01 with action ALLOW. $e2: USER_LOGIN with target.user.userid svc-playout. Both set $account from principal.user.userid. match: $account over 1h. Outcomes from $e2: array_distinct of security_result.action, array_distinct of target.hostname, earliest of the timestamp.",
+        "match:\n  $account over 1h\noutcome:\n  $result = array_distinct($e2.security_result.action)\n  $host = array_distinct($e2.target.hostname)\n  $runas_at = earliest($e2.metadata.event_timestamp)",
+        "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"USER_LOGIN\"\n$e2.target.user.userid = \"svc-playout\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $result = array_distinct($e2.security_result.action)\n  $host = array_distinct($e2.target.hostname)\n  $runas_at = earliest($e2.metadata.event_timestamp)"
+      ],
+      "answer": {
+        "prompt": "What is in the $result cell for lena.ostrowski?",
+        "value": "FAIL",
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.user.userid": "lena.ostrowski"
+          },
+          "column": "$result",
+          "format": "list"
+        }
+      },
+      "call": {
+        "prompt": "The engineer and the remote session both appear in the table with the same shape. Hal wants the engineer's row removed before the brief goes to the board. What do you do?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Remove it; a row that describes legitimate work is noise in a brief about an incident, and the board should see only the finding"
+          },
+          {
+            "id": "B",
+            "label": "Keep it, and move the engineer's row to Hypotheses, since a run-as from a home connection is suspicious until he confirms it in writing and the board has seen the confirmation"
+          },
+          {
+            "id": "C",
+            "label": "Keep it as the baseline: the ALLOW on AUTOMATION-01 is what the shape looks like when it is maintenance, and it makes the FAIL on FS-01 readable"
+          }
+        ],
+        "correct": "C",
+        "why": "A join that only returns the attacker has not been tested against normal. Dez's row is the control group, with a record and an action. Removing it hides how the finding was told apart; moving it to Hypotheses invents a doubt the record does not raise."
+      },
+      "clue": "dez.okafor: gateway 21:00, run-as svc-playout on AUTOMATION-01 at 21:05:30, ALLOW. lena.ostrowski: gateway 02:14, run-as svc-playout on FS-01 at 02:31:05, FAIL. Same join, two stories. The second event's own columns tell them apart; the shape never could.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the baseline row: 21:05 UTC, dez.okafor runs as svc-playout on AUTOMATION-01, action ALLOW, five minutes after his gateway success at 21:00, record evt-20298. Source: this query, whole night. Observation: the engineer's maintenance has the same join shape as the 02:31 attempt and a different action and host. Confidence high.",
+        "mustInclude": [
+          "21:05",
+          "dez.okafor",
+          "evt-20298"
+        ]
+      },
+      "caveat": "In a rule, this join is the detection: gateway then run-as, condition #e1 > 0 and #e2 > 0, and the privileged_accounts table excluding the people who may. Here it is a query that returns the engineer too, on purpose: a detection you have not seen fire on normal is a detection you do not understand."
+    },
+    {
+      "id": "C09-M06",
+      "kind": "build",
+      "title": "More than once",
+      "beat": "One connection to the file server after a login is a visit. Several within the hour is a session doing work. Join the gateway success to the file-server connections and keep only the accounts with more than a single connection.",
+      "question": "Which accounts made more than a single connection to FS-01 within an hour of a gateway success?",
+      "concept": {
+        "title": "#e2 counts the second side",
+        "text": "In condition, #e2 is the number of distinct second-variable events in the group. #e2 > 1 keeps groups with more than a single connection; #e2 > 0 would keep every group that has one, which the join already guarantees. The outcomes carry the count and the bytes so the row says how much work the session did. Google documents #var and $var (which means #var > 0) for conditions; a test that would be true at zero asks for an event that did not happen and is not run here."
+      },
+      "explain": [
+        {
+          "part": "$e2.metadata.event_type = \"NETWORK_CONNECTION\"\n$e2.target.ip = \"10.9.4.50\"",
+          "meaning": "The second event: a connection to the file server's address."
+        },
+        {
+          "part": "condition:\n  #e2 > ___",
+          "meaning": "The gap: a bounded test on the second side's count. More than a single connection is the claim."
+        },
+        {
+          "part": "$bytes = sum($e2.network.received_bytes)",
+          "meaning": "What came back from the server to the session, added up. Nineteen point seven megabytes is a lot of membership."
+        }
+      ],
+      "starter": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"NETWORK_CONNECTION\"\n$e2.target.ip = \"10.9.4.50\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $n = count($e2.metadata.id)\n  $bytes = sum($e2.network.received_bytes)\ncondition:\n  #e2 > ___",
+      "reference": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"NETWORK_CONNECTION\"\n$e2.target.ip = \"10.9.4.50\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $n = count($e2.metadata.id)\n  $bytes = sum($e2.network.received_bytes)\ncondition:\n  #e2 > 1",
+      "hints": [
+        "The gap is a number. #e2 counts the connections in the group; the question says more than a single one.",
+        "Fill the gap with 1.",
+        "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"NETWORK_CONNECTION\"\n$e2.target.ip = \"10.9.4.50\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 1h\noutcome:\n  $n = count($e2.metadata.id)\n  $bytes = sum($e2.network.received_bytes)\ncondition:\n  #e2 > 1"
+      ],
+      "answer": {
+        "prompt": "How many connections does the $n column count for the row that survives?",
+        "value": "4",
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$n"
+        }
+      },
+      "call": {
+        "prompt": "A colleague rewrites the condition as #e2 = 0 to find the gateway accounts that never touched the file server, and the desk says it is not run here. Why?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Because the trainer has a bug: a count of zero is a number like any other and the condition should simply return the two other accounts with a zero in the count column"
+          },
+          {
+            "id": "B",
+            "label": "Because it asks for an event that did not happen; Google says a non-existence test needs a bounded event, and a join has no row for a pair that never formed"
+          },
+          {
+            "id": "C",
+            "label": "Because zero is the default for a missing field and comparing against defaults is refused everywhere in Search, not only in conditions"
+          }
+        ],
+        "correct": "B",
+        "why": "A join row exists because a pair formed. Asking for the accounts with no pair is asking for rows that were never built; Google's conditions page says such a test needs at least one bounded event. Here it is reported as not run here, with the reason, rather than answered wrongly."
+      },
+      "clue": "One row: lena.ostrowski, four connections to FS-01 within an hour of a gateway success, 19.7 MB received. The file server answered the session in megabytes; the session answered the attacker's server with 6.4 MB at 03:40.",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: four connections from the remote session to FS-01 (10.9.4.50) within an hour of a gateway success brought 19.7 MB back to 10.9.4.200, and Search cannot say which files on the membership share that was. Why it matters: it decides whether the 6.4 MB that left at 03:40 was the export.",
+        "mustInclude": [
+          "FS-01|10.9.4.50"
+        ]
+      },
+      "caveat": "Google documents conditions in Search as bounded (#e > 0, $e) or unbounded (#e = 0, not $e) and requires at least one bounded event in a condition. In a rule, a non-existence condition is how you write \"login without MFA\"; it needs the bounded login to anchor the window."
+    },
+    {
+      "id": "C09-M07",
+      "kind": "solo",
+      "title": "Two doors, one account",
+      "beat": "Chapter 7 put Lena at her desk and at the gateway in the same evening as two facts. Make it one row: a gateway success and a desk login by the same account within two hours of each other, with both times.",
+      "question": "Which account succeeded at the gateway and at PLEDGE-DESK-01 within two hours of each other?",
+      "concept": {
+        "title": "Both sides can be the same event type",
+        "text": "Nothing says $e1 and $e2 must be different kinds of event. Both are USER_LOGIN here; what differs is the filter on each side: one at VPN-GW-01, one on PLEDGE-DESK-01. The key is the account; the window is two hours, because the desk login at 18:20 and the gateway at 20:03 are an hour and forty-three minutes apart. One row, two doors, and the two earliest() columns put them in order."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"USER_LOGIN\"\n$e2.principal.hostname = \"PLEDGE-DESK-01\"\n$e2.security_result.action = \"ALLOW\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 2h\noutcome:\n  $gateway_at = earliest($e1.metadata.event_timestamp)\n  $desk_at = earliest($e2.metadata.event_timestamp)\n  $from = array_distinct($e1.principal.ip)",
+      "hints": [
+        "Two USER_LOGIN variables with action ALLOW: $e1 at target.hostname VPN-GW-01, $e2 with principal.hostname PLEDGE-DESK-01. Both set $account from principal.user.userid. match: $account over 2h. Outcomes: earliest of each side's timestamp, and array_distinct of $e1.principal.ip.",
+        "match:\n  $account over 2h\noutcome:\n  $gateway_at = earliest($e1.metadata.event_timestamp)\n  $desk_at = earliest($e2.metadata.event_timestamp)\n  $from = array_distinct($e1.principal.ip)",
+        "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.target.hostname = \"VPN-GW-01\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"USER_LOGIN\"\n$e2.principal.hostname = \"PLEDGE-DESK-01\"\n$e2.security_result.action = \"ALLOW\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 2h\noutcome:\n  $gateway_at = earliest($e1.metadata.event_timestamp)\n  $desk_at = earliest($e2.metadata.event_timestamp)\n  $from = array_distinct($e1.principal.ip)"
+      ],
+      "answer": {
+        "prompt": "What clock time is in the $desk_at column (HH:MM, UTC)?",
+        "value": "18:20",
+        "also": [
+          "18:20:14"
+        ],
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$desk_at",
+          "format": "hhmm"
+        }
+      },
+      "call": {
+        "prompt": "Dez points out that he also has a desk login earlier in the week and a gateway login tonight, and asks why his account is not a row. What is the answer?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Because the join runs against tonight's range and his desk login is outside it; widen the time range and his row would appear, which is why the window matters"
+          },
+          {
+            "id": "B",
+            "label": "Because the join excludes accounts on the privileged_accounts table automatically, so engineers and the station manager never appear in a two-door query, whatever the window"
+          },
+          {
+            "id": "C",
+            "label": "Because dedup removed his row as a duplicate of Lena's, since both rows would have had the same shape and the same columns"
+          }
+        ],
+        "correct": "A",
+        "why": "A join reads what the range holds. Dez's desk login is not in tonight's data, so there is no second event to pair; no table or dedup was involved. The window and the range together are the claim's boundaries."
+      },
+      "clue": "One row. lena.ostrowski: desk at 18:20:14, gateway at 20:03:21 from 198.51.100.77, an hour and forty-three minutes apart, both ALLOW. Two doors open for one account, and the join writes it as one line.",
+      "logIt": {
+        "kind": "pivot",
+        "prompt": "Write a Pivot: what PLEDGE-DESK-01 (10.9.4.21) did between 19:12 and 20:03, between Lena's desk session and the first gateway success from outside; whether anything on the desk reached 198.51.100.77 after the first connection. Say why: the desk is the only place the credential could have left from.",
+        "mustInclude": [
+          "PLEDGE-DESK-01|10.9.4.21"
+        ]
+      },
+      "caveat": "In a tenant, the same two-door join over thirty days is a baseline worth keeping: accounts that are regularly at a desk and at the gateway within two hours are the people who work from both; a new pair is the finding."
+    },
+    {
+      "id": "C09-M08",
+      "kind": "watch",
+      "title": "Give it the whole night",
+      "beat": "Odalys asks the question she promised: what happens to the login-then-file join when the window is the whole night? Run the chapter's shape with over 12h and count the rows.",
+      "question": "How many accounts pair a successful login with a file they created when the window is twelve hours?",
+      "concept": {
+        "title": "Widen the window and the coincidences arrive",
+        "text": "The same join with any successful login on one side and a file on the other, and a window as wide as the night, returns a row for everyone who logged in and saved a file. That is every working person at the station. The window was never a detail; it was the whole claim. Narrow enough to be defended, wide enough to catch the path: an hour found two rows in mission 3, and one of them was still a coincidence. The baseline is what the wide window shows you."
+      },
+      "explain": [
+        {
+          "part": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.security_result.action = \"ALLOW\"",
+          "meaning": "Any successful login, at any door. Mission 3 kept the gateway only."
+        },
+        {
+          "part": "match:\n  $account over 12h",
+          "meaning": "Twelve hours: the whole window of the case. Every login pairs with every file by the same account."
+        },
+        {
+          "part": "$n = count($e2.metadata.id)",
+          "meaning": "Files per account. Read the row count in the results bar: that is how many people saved something tonight."
+        }
+      ],
+      "starter": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"FILE_CREATION\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 12h\noutcome:\n  $n = count($e2.metadata.id)",
+      "reference": "$e1.metadata.event_type = \"USER_LOGIN\"\n$e1.security_result.action = \"ALLOW\"\n$e1.principal.user.userid = $account\n$e2.metadata.event_type = \"FILE_CREATION\"\n$e2.principal.user.userid = $account\nmatch:\n  $account over 12h\noutcome:\n  $n = count($e2.metadata.id)",
+      "hints": [
+        "Run it as written and read the row count in the results bar.",
+        "Change over 12h to over 5m and run again: the rows fall away as the window narrows. Change it back before you answer.",
+        "Seven accounts pair a login with a file over twelve hours; every working person who saved something. Over five minutes, two. Over one hour at the gateway, two, one of them Odalys finishing a spreadsheet."
+      ],
+      "answer": {
+        "prompt": "How many rows does the table have?",
+        "value": "7",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "Hal reads the wide table and says the join is useless, since it returns everyone. What is the right reading?",
+        "options": [
+          {
+            "id": "A",
+            "label": "He is right: a query that returns the whole staff cannot be a detection, so joins belong in rules with thresholds and not in Search"
+          },
+          {
+            "id": "B",
+            "label": "The wide table is the baseline: it shows what the shape looks like for everyone, which is what makes the narrow table's two rows a claim and not a list"
+          },
+          {
+            "id": "C",
+            "label": "The window should be removed altogether, because a join without a window is the honest version and the hour was cherry-picked to make the two rows look like a finding"
+          }
+        ],
+        "correct": "B",
+        "why": "A window is a claim about how close two events must be to count as one story. The wide run shows the claim's cost: at twelve hours everyone pairs. The narrow run is defensible because you have seen the wide one. Keep both in the brief."
+      },
+      "clue": "Seven rows at twelve hours: Dez, Kenji, Lena, Odalys, Priya, Ruth, Tomas. The station worked and saved its work. At one hour from the gateway: two rows, one path and one coincidence. The hour was the claim; the night is the baseline.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the baseline: 23:23 UTC, odalys.reyes writes C:\\Users\\Public\\membership-tally.xlsx on OPS-LAPTOP-07 seven minutes before her gateway success at 23:30, record evt-20398. Source: the one-hour join from mission 3 or this query, whole night. Observation: a legitimate file-then-login pair the join also returns. Confidence high.",
+        "mustInclude": [
+          "odalys.reyes",
+          "23:23",
+          "evt-20398"
+        ]
+      },
+      "caveat": "In a rule the window is fixed when the rule is written and never widened again. Search is where you widen it on purpose, see the baseline, and choose the number you will defend. Do that before the rule exists, and write the number down with the reason."
+    }
+  ]
+}

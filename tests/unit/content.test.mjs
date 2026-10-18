@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { root, loadContent, loadData, loadDatasets, validate, deriveAnswer, validateLogIt, validateLists, ctxFor, digestOf, DENSITY } from '../../tools/lib.mjs';
+import { root, loadContent, loadData, loadDatasets, validate, deriveAnswer, validateLogIt, validateLists, validateTables, validateEntities, entityRecords, entitiesFor, ctxFor, digestOf, DENSITY } from '../../tools/lib.mjs';
 import { runQuery, compareResults, gradeQuery, gradeAnswer, gradeCall } from '../../site/engine/grader.js';
 import { MESSAGES, describe } from '../../site/ui/messages.js';
 
@@ -121,8 +121,8 @@ test('C8 every chapter carries a recap for its chapter-end card, and the validat
 
 test('C9 every mission but the notes mission carries a Log it block the validator accepts; the validator refuses a bad one', () => {
   const withLogIt = missions.filter(m => m.logIt);
-  assert.equal(withLogIt.length, 64);
-  assert.equal(missions.length, 65);
+  assert.equal(withLogIt.length, 81);
+  assert.equal(missions.length, 82);
   assert.equal(missions.find(m => m.id === 'C01-M00').logIt, undefined);
   assert.equal(missions[0].id, 'C01-M00');
   const kinds = new Set(withLogIt.map(m => m.logIt.kind));
@@ -155,7 +155,7 @@ test('C10 chapter density: 7 to 8 desk missions per chapter and two Your-turn mi
     assert.ok(ch.missions.filter(m => m.kind !== 'read').length <= 8, `${ch.id} desk missions`);
     assert.ok(ch.missions.filter(m => m.kind === 'solo').length >= (i === 0 ? 1 : 2), `${ch.id} Your-turn missions`);
   }
-  assert.equal(missions.length, 65);
+  assert.equal(missions.length, 82);
   // every mission the density pass added carries the full schema
   const NEW = missions.filter(m => Number(m.id.slice(1, 3)) <= 6 && Number(m.id.slice(-2)) >= (m.id.startsWith('C01') ? 7 : m.id.startsWith('C06') ? 5 : m.id.startsWith('C05') ? 4 : 5));
   assert.equal(NEW.length, 23);
@@ -196,14 +196,14 @@ test('C11 the bundled reference lists validate and resolve from a query; should-
   assert.ok(bad({ name: '9lives' }).some(p => p.includes('bad name')));
   assert.ok(validateLists({ lists: [{ name: 'x', type: 'string', description: 'a dozen characters', items: ['a'] }, { name: 'x', type: 'string', description: 'a dozen characters', items: ['b'] }] }).some(p => p.includes('duplicate name')));
   // every new engine code reads as two plain-language parts
-  for (const code of ['TIMEZONE_UNSUPPORTED', 'UNKNOWN_LIST', 'LIST_TYPE_MISMATCH', 'DEDUP_KEY_NOT_GROUPED', 'TIME_AGGREGATE_NEEDS_TIMESTAMP', 'CONDITION_ON_ARRAY', 'ORDER_ON_ARRAY', 'STRING_FN_NEEDS_STRING', 'CONCAT_NEEDS_ARGS', 'TOO_MANY_LISTS']) { assert.equal(MESSAGES[code].length, 2, code); assert.ok(MESSAGES[code][1].length > 20, code); }
+  for (const code of ['TIMEZONE_UNSUPPORTED', 'UNKNOWN_LIST', 'LIST_TYPE_MISMATCH', 'DEDUP_KEY_NOT_GROUPED', 'TIME_AGGREGATE_NEEDS_TIMESTAMP', 'CONDITION_ON_ARRAY', 'ORDER_ON_ARRAY', 'STRING_FN_NEEDS_STRING', 'CONCAT_NEEDS_ARGS', 'TOO_MANY_LISTS', 'TOO_MANY_REGEX_LISTS', 'TOO_MANY_CIDR_LISTS', 'UNKNOWN_TABLE', 'UNKNOWN_TABLE_COLUMN', 'LIST_AS_VALUE', 'UNJOINED_VARIABLE', 'BARE_FIELD_IN_JOIN', 'MATCH_KEY_NOT_SHARED', 'OUTCOME_NEEDS_VARIABLE', 'NON_EXISTENCE', 'TOO_MANY_EVENT_VARS', 'OVER_NEEDS_KEY', 'UNKNOWN_EVENT_VAR', 'MULTI_EVENT_NEEDS_MATCH']) { assert.equal(MESSAGES[code].length, 2, code); assert.ok(MESSAGES[code][1].length > 20, code); }
   assert.match(describe('TIMEZONE_UNSUPPORTED', { zone: 'America/Los_Angeles' }).title, /\(America\/Los_Angeles\)/);
   assert.match(describe('TIMEZONE_UNSUPPORTED', {}).fix, /UTC/);
 });
 
 test('C12 two cases: case 1 events are byte-identical to the density branch (digest proven by the validator), case 2 is fictional and inside its window, chapters 7 and 8 validate against it, and every case fills a casebook from Scope to Handoff', () => {
   assert.deepEqual(content.cases.map(c => c.id), ['pier-nine', 'week-after']);
-  assert.deepEqual(content.cases.map(c => c.chapters), [['C01', 'C02', 'C03', 'C04', 'C05', 'C06'], ['C07', 'C08']]);
+  assert.deepEqual(content.cases.map(c => c.chapters), [['C01', 'C02', 'C03', 'C04', 'C05', 'C06'], ['C07', 'C08', 'C09', 'C10']]);
   // the first case's events: the digest recorded on the density branch, so a regenerated dataset is caught even if case.json is edited
   assert.equal(digestOf(data.events), 'a2ddb67f4a6b39a48a4023871eeb3096c70178009ce1986109444682dc9a09fd');
   assert.equal(data.events.length, 1010); assert.equal(content.cases[0].digest, digestOf(data.events));
@@ -230,15 +230,30 @@ test('C12 two cases: case 1 events are byte-identical to the density branch (dig
   assert.equal(runQuery('network.sent_bytes > 1000000', data2.events, null, ctx).result.rows[0]['target.ip'], '198.51.100.77');
   assert.equal(runQuery('metadata.event_type = "EMAIL_TRANSACTION"\nnetwork.email.from in regex %lookalike_patterns', data2.events, null, ctx).result.count, 3);
   assert.ok(content.lists.lists.find(l => l.name === 'sponsor_domains').items.includes('pier9-partners.example'), 'the allowlist is too wide on purpose');
-  // chapters 7 and 8: sixteen missions, two cases' worth of points, every answer proven against case 2 data
-  const c2 = missions.filter(m => m.id.startsWith('C07') || m.id.startsWith('C08'));
-  assert.equal(c2.length, 16);
-  assert.deepEqual(c2.map(m => m.kind), ['read', 'watch', 'build', 'build', 'watch', 'solo', 'solo', 'build', 'watch', 'build', 'build', 'watch', 'solo', 'solo', 'read', 'read']);
+  // chapters 7 to 10: thirty-three missions, every answer proven against case 2 data; the brief is the last mission of chapter 10
+  const c2 = missions.filter(m => /^C(07|08|09|10)/.test(m.id));
+  assert.equal(c2.length, 33);
+  assert.deepEqual(c2.map(m => m.kind), ['read', 'watch', 'build', 'build', 'watch', 'solo', 'solo', 'build', 'read', 'watch', 'build', 'build', 'watch', 'solo', 'solo', 'read', 'read', 'read', 'watch', 'build', 'build', 'solo', 'build', 'solo', 'watch', 'read', 'watch', 'build', 'build', 'solo', 'build', 'solo', 'read']);
+  // chapter 9 joins: every desk mission names two event variables; chapter 10 reads the directory alone or joins an event to it
+  for (const m of c2.filter(m => m.id.startsWith('C09') && m.kind !== 'read')) assert.match(m.reference, /\$e1\..*\$e2\./s, m.id);
+  for (const m of c2.filter(m => m.id.startsWith('C10') && m.kind !== 'read')) assert.match(m.reference, /graph\./, m.id);
+  assert.equal(missions.find(m => m.id === 'C08-M08').brief, undefined);
+  assert.equal(missions.find(m => m.id === 'C10-M04').logIt.list, 'harden'); assert.ok(missions.find(m => m.id === 'C10-M04').logIt.mustInclude.includes('kenji.mori'), 'the Remediation entry names an owner');
+  assert.equal(deriveAnswer(missions.find(m => m.id === 'C09-M08'), data2.events, ctxFor(content, 'week-after')), '7');
+  assert.equal(deriveAnswer(missions.find(m => m.id === 'C10-M04'), data2.events, ctxFor(content, 'week-after')), '23:50');
+  // the two appended records are the last two ids and every chapter 7 and 8 record id cited before them is unchanged
+  assert.deepEqual(data2.events.slice(-2).map(e => [e['metadata.id'], e['principal.user.userid'], e['security_result.summary']]), [['evt-20972', 'marco.vela', 'Account disabled'], ['evt-20973', 'marco.vela', 'Account disabled']]);
+  assert.equal(data2.events.find(e => e['metadata.id'] === 'evt-20796')['target.user.userid'], 'svc-playout');
+  // chapter 8 teaches data tables as the current object: three missions name a %table.column, one the legacy %list, and the Read on the migration carries the date
+  assert.deepEqual(c2.filter(m => /%[a-z_]+\.[a-z_]+/.test(m.reference ?? '')).map(m => m.id), ['C08-M02', 'C08-M03', 'C08-M04', 'C09-M04']);
+  assert.deepEqual(c2.filter(m => /%[a-z_]+\b(?!\.)/.test(m.reference ?? '')).map(m => m.id), ['C08-M01']);
+  assert.ok(missions.find(m => m.id === 'C08-M00').concept.text.includes('July 2027'));
+  assert.equal(missions.find(m => m.id === 'C08-M00').logIt.kind, 'remediation');
   assert.equal(deriveAnswer(missions.find(m => m.id === 'C07-M03'), data2.events, ctx), '10.9.4.21, 198.51.100.77, 10.9.4.200');
   assert.equal(deriveAnswer(missions.find(m => m.id === 'C07-M04'), data2.events, ctx), '19:12');
   assert.equal(deriveAnswer(missions.find(m => m.id === 'C08-M04'), data2.events, ctx), 'BLOCK');
   for (const m of c2) for (const k of ['kind', 'beat', 'question', 'concept', 'explain', 'starter', 'reference', 'hints', 'answer', 'call', 'clue', 'caveat', 'logIt']) assert.ok(Object.hasOwn(m, k), `${m.id} lacks ${k}`);
-  assert.equal(missions.find(m => m.id === 'C08-M08').brief, 'casebook');
+  assert.equal(missions.find(m => m.id === 'C10-M08').brief, 'casebook');
   for (const c of content.cases) {
     const ms = content.chapters.filter(ch => c.chapters.includes(ch.id)).flatMap(ch => ch.missions);
     const kinds = new Set(ms.map(m => m.logIt?.kind).filter(Boolean));
@@ -247,9 +262,9 @@ test('C12 two cases: case 1 events are byte-identical to the density branch (dig
     assert.equal(ms.at(-1).brief, 'casebook', `${c.id} ends with the brief`);
   }
   // should-fail: a case whose brief is not last, a case missing a logIt kind, a case with a bad window, a scope asked for late
-  const noBrief = JSON.parse(JSON.stringify(content)); delete noBrief.chapters[7].missions[7].brief;
+  const noBrief = JSON.parse(JSON.stringify(content)); delete noBrief.chapters[9].missions[7].brief;
   assert.ok(validate(noBrief, datasets).some(p => p.includes('case week-after') && p.includes('brief')));
-  const noGap = JSON.parse(JSON.stringify(content)); noGap.chapters[6].missions[7].logIt.kind = 'pivot';
+  const noGap = JSON.parse(JSON.stringify(content)); for (const ch of noGap.chapters.slice(6)) for (const m of ch.missions) if (m.logIt?.kind === 'gap') m.logIt.kind = 'pivot';
   assert.ok(validate(noGap, datasets).some(p => p.includes('case week-after') && p.includes('gap')));
   const badWindow = JSON.parse(JSON.stringify(content)); badWindow.cases[1].window.end = '2026-03-21T05:00:00Z';
   assert.ok(validate(badWindow, datasets).some(p => p.includes('case week-after') && p.includes('window')));
@@ -257,4 +272,47 @@ test('C12 two cases: case 1 events are byte-identical to the density branch (dig
   assert.ok(validate(lateScope, datasets).some(p => p.includes('Scope')));
   // the single-dataset shape earlier branches passed still validates the first case and names the missing second
   assert.ok(validate(content, data).some(p => p.includes('case week-after') && p.includes('no dataset')));
+});
+
+test('C13 the bundled data tables and the station directory validate; should-fail: a bad column type, a short row, a CIDR cell that does not parse, a regex cell that fails the guard, a table named like a list, an unknown asset owner, overlapping versions, a real-looking address', () => {
+  assert.deepEqual(validateTables(content.tables), []);
+  assert.deepEqual(validateEntities(content.entities), []);
+  const tb = t => validateTables({ tables: [{ name: 'x', description: 'a dozen characters', columns: [{ name: 'c', type: 'string' }], rows: [['a']], ...t }] });
+  assert.ok(tb({ columns: [{ name: 'c', type: 'set' }] }).some(p => p.includes('columns')));
+  assert.ok(tb({ columns: [{ name: 'c', type: 'string' }, { name: 'd', type: 'string' }] }).some(p => p.includes('rows')));
+  assert.ok(tb({ columns: [{ name: 'c', type: 'cidr' }], rows: [['203.0.113.0/40']] }).some(p => p.includes('not a CIDR')));
+  assert.ok(tb({ columns: [{ name: 'c', type: 'regex' }], rows: [['(a+)+$']] }).some(p => p.includes('regex guard')));
+  assert.ok(tb({ columns: [{ name: 'c', type: 'string' }, { name: 'c', type: 'string' }], rows: [['a', 'b']] }).some(p => p.includes('duplicate column')));
+  const shared = JSON.parse(JSON.stringify(content)); shared.tables.tables[0].name = 'sponsor_domains';
+  assert.ok(validate(shared, datasets).some(p => p.includes('share a name')));
+  // the directory: two versions of marco.vela, lena.ostrowski and STUDIO-B, and the case windows see the right one
+  const recs = entityRecords(content.entities);
+  assert.equal(recs.length, content.entities.users.length + content.entities.assets.length);
+  assert.ok(recs.every(r => /^ent-\d{5}$/.test(r['metadata.id'])));
+  const w1 = { start: Date.parse(content.cases[0].window.start) / 1000, end: Date.parse(content.cases[0].window.end) / 1000 };
+  const w2 = { start: Date.parse(content.cases[1].window.start) / 1000, end: Date.parse(content.cases[1].window.end) / 1000 };
+  const marco = w => entitiesFor(recs, w).filter(r => r['graph.entity.user.userid'] === 'marco.vela');
+  assert.deepEqual(marco(w1).map(r => r['graph.entity.user.employment_status']), ['ACTIVE'], 'the directory lagged on pledge night');
+  assert.deepEqual(marco(w2).map(r => r['graph.entity.user.employment_status']), ['TERMINATED']);
+  assert.deepEqual(entitiesFor(recs, w2).filter(r => r['graph.entity.asset.hostname'] === 'STUDIO-B').map(r => r['graph.entity.asset.attribute.labels.owner']), ['kenji.mori']);
+  assert.deepEqual(entitiesFor(recs, w1).filter(r => r['graph.entity.user.userid'] === 'lena.ostrowski').map(r => r['graph.entity.user.attribute.roles.name']), ['STAFF']);
+  assert.deepEqual(entitiesFor(recs, w2).filter(r => r['graph.entity.user.userid'] === 'lena.ostrowski').map(r => r['graph.entity.user.attribute.roles.name']), ['MEMBERSHIP_SHARE_EDITOR']);
+  assert.equal(ctxFor(content, 'week-after').entities.length, entitiesFor(recs, w2).length);
+  // every event account and host the datasets carry is in the directory, so a join never silently drops a station name
+  const accounts = new Set([...data.events, ...data2.events].map(e => e['principal.user.userid']).filter(Boolean));
+  const hosts = new Set([...data.events, ...data2.events].map(e => e['principal.hostname']).filter(Boolean));
+  for (const a of accounts) assert.ok(content.entities.users.some(u => u.userid === a), 'user ' + a);
+  for (const h of hosts) assert.ok(content.entities.assets.some(x => x.hostname === h), 'asset ' + h);
+  const en = patch => { const e = JSON.parse(JSON.stringify(content.entities)); patch(e); return validateEntities(e); };
+  assert.ok(en(e => { e.assets[0].owner = 'nobody'; }).some(p => p.includes('not a user')));
+  assert.ok(en(e => { e.assets[0].ip = '8.8.8.8'; }).some(p => p.includes('fictional station LAN')));
+  assert.ok(en(e => { e.users.push({ ...e.users[0], valid_from: '2026-02-01T00:00:00Z' }); }).some(p => p.includes('versions overlap')));
+  assert.ok(en(e => { e.users[0].employment_status = 'FIRED'; }).some(p => p.includes('employment_status')));
+  assert.ok(en(e => { e.users[0].valid_to = e.users[0].valid_from; }).some(p => p.includes('valid_from and valid_to')));
+  assert.ok(en(e => { e.assets[0].hostname = 'pc1'; }).some(p => p.includes('hostname')));
+  // the running directory answers the week-after questions chapter 10 asks
+  const ctx2 = ctxFor(content, 'week-after');
+  const term = runQuery('$e.metadata.event_type = "USER_LOGIN"\n$e.principal.user.userid = $uid\n$u.graph.entity.user.userid = $uid\n$u.graph.entity.user.employment_status = "TERMINATED"\nmatch:\n  $uid\noutcome:\n  $n = count($e.metadata.id)', data2.events, null, ctx2);
+  assert.equal(term.ok, true);
+  assert.equal(runQuery('graph.metadata.entity_type = "ASSET"\ngraph.entity.asset.attribute.labels.criticality = "HIGH"', data2.events, null, ctx2).result.count, 4);
 });

@@ -1,16 +1,16 @@
 # Evaluation: what was tested and how
 
-Last run 2026-10-18 on the session-3 branch (65 missions, two cases). Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked. The session-3 section is at the end of this file.
+Last run 2026-10-18 on the session-4 branch (82 missions, two cases, ten chapters). Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked. The session-3 and session-4 sections are at the end of this file.
 
 ## Summary
 
 | Layer | Tool | Count | Result |
 |---|---|---|---|
-| Dataset generation | `tools/gen-data.mjs` | 1,010 + 971 events | deterministic (fixed seeds); `data/events.json` byte-identical to the density branch (sha256 `3c2da175…`), proven by the digest in `content/case.json`; `data/events-week-after.json` new |
-| Content validation | `tools/validate-content.mjs` | 65 missions, 2 cases, 5 lists | every reference runs against its case's data; every authored answer proven; every Build starter fails until completed; every `logIt` block valid; density rule per chapter; each case's window, ranges, chapters and digest; every case fed from Scope to Handoff with one brief mission last; `lists.json` and `casebook.json` shapes |
-| Unit tests | `node --test` | 69 | pass (59 before + 4 FreeForm/name + 4 engine v2 + 1 lists + 1 two-case model) |
-| Browser tests | Playwright 1.64.1, Chromium | 24 | pass (18 before + 4 FreeForm/name + 1 engine v2 + 1 two cases), each run at the root and under `/KC7SecOpsClaude/` |
-| Mutation checks on the new tests | manual, see below | 4 + 5 + 5 | each mutation failed the intended test |
+| Dataset generation | `tools/gen-data.mjs` | 1,010 + 973 events | deterministic (fixed seeds); `data/events.json` byte-identical to the density branch (sha256 `3c2da175…`), proven by the digest in `content/case.json`; `data/events-week-after.json` gained two appended records in session 4 with every earlier id unchanged (new digest `c7b7e9ef…`) |
+| Content validation | `tools/validate-content.mjs` | 82 missions, 2 cases, 5 lists, 4 tables, 25 entity records | every reference runs against its case's data (joins and entity queries included); every authored answer proven; every Build starter fails until completed; every `logIt` block valid (event or entity record ids); density rule per chapter; each case's window, ranges, chapters and digest; every case fed from Scope to Handoff with one brief mission last; `lists.json`, `tables.json`, `entities.json` and `casebook.json` shapes |
+| Unit tests | `node --test` | 74 | pass (69 before + V5 data tables and limits + V6 joins (two tests) + V7 entity context + C13 tables and directory) |
+| Browser tests | Playwright 1.64.1, Chromium | 25 | pass (24 before + 1 entities and joins on the desk), each run at the root and under `/KC7SecOpsClaude/` |
+| Mutation checks on the new tests | manual, see below | 4 + 5 + 5 + 7 | each mutation failed the intended test |
 
 Environment for the recorded run: Linux, Node 22.22.0 (npm warns against `engines: >=24` but runs), Chromium build 1194 driven through `PIER9_CHROMIUM` because the container could not download Playwright's own build 1248. A clean CI run should instead do `npx playwright install --with-deps chromium` on Node 24; nothing in the tests depends on the Chromium build.
 
@@ -309,3 +309,93 @@ The second window was generated first (`tools/gen-data.mjs`, seed 20260320, appe
 - Tenant execution of any engine v2 shape; the Google pages were read through search summaries, not fetched.
 - Learning effect of the second case: nobody outside the project has played it.
 - The second case's data on a thirty-day baseline, which the chapters mention and the trainer does not have.
+
+## Session 4: data tables, joins, entity context, chapters 9 and 10
+
+Branch `claude/quirky-clarke-qo2yj0` (the task named it `cloud/s4`), 2026-10-18. What a learner notices: the desk panel is **Lists and tables** and shows four data tables (with a `source` column on the allowlist that says which rows came from the week-one mail log) beside the five legacy lists, with the July 2027 retirement date; chapter 8 opens with a Read mission on the migration and three of its missions name a `%table.column`; a query with two event variables runs as a **join** and the results bar says `joined $e1 and $e2 within 1h`; an **Entities** panel lists the station directory's fields and an entity query renders records with their validity interval; two new chapters in the second case, **Two events, one story** and **Who owns this host**; the week-two handoff moved to the end of chapter 10 with owners on every Remediation line. The course total went from 5,620 to 6,970 points over 82 missions. No change to any chapter 1 to 7 reference query, answer value or scoring value; chapter 8 kept its mission IDs; `data/events.json` is byte-identical.
+
+### Documentation, as verified by the owner
+
+The build container cannot reach `docs.cloud.google.com`. The owner read the pages on 2026-10-18 and the engine follows these facts, recorded in `site/engine/catalog.js` (`DOCS`) and on the About page:
+
+- **Reference lists** (`/chronicle/docs/reference/reference-lists`): replaced by data tables; existing lists are migrated automatically; legacy reference lists retire in July 2027.
+- **Use reference lists and data tables in YARA-L 2.0** (`/chronicle/docs/yara-l/reference-list-syntax`): STRING `field in %list`, REGEX `field in regex %list`, CIDR `field in cidr %list`; data tables use the same three forms with `%table_name.column_name`; `not` and `nocase` combine with them (`nocase` for STRING and REGEX only); Search limits per query: at most 7 `in` statements, 4 with `regex`, 2 with `cidr` (rules: 10/5/5); lists are usable in the events and outcome sections; string lists are exact and case-sensitive by default; list files support `//` comments.
+- **timestamp.get_hour** (`/chronicle/docs/detection/yara-l-2-0-functions/timestamp-get_hour`): the zone defaults to GMT and accepts TZ names, offsets, `"UTC"` and `"GMT"`.
+- **Deduplicate search results** (`/chronicle/docs/investigation/deduplication-yaral`): `dedup` after `match`/`outcome` on aggregated queries, keyed by match or outcome fields; on plain queries any non-repeated, non-grouped field or placeholder; placed before `order` in every example.
+- **Use conditions in search and dashboards** (`/chronicle/docs/investigation/yara-l-2-0-conditions`): Search queries with two event variables joined by a shared placeholder (`$e1.principal.hostname = $hostname`, `$e2.principal.hostname = $hostname`, `match: $hostname over 1h`, `condition: #e1 > 0 or #e2 > 1`); `#var` is the count of distinct occurrences, `$var` is `#var > 0`; bounded against unbounded conditions; a non-existence condition needs at least one bounded event.
+- **Analyze search data with statistics**: the `over` keyword used for event-window searches is not supported in Search, and Search has no condition section, which contradicts the conditions page; entity data is queried with `graph.entity.*` fields (`graph.entity.hostname != ""`, `match: graph.entity.ip by hour`, `outcome: $min_seconds = min(graph.metadata.event_metadata.event_timestamp.seconds)`); entity records are valid over a time range, with `by first hour` restricting to the start time.
+
+The trainer follows the conditions page for joins and says so to the learner (C09-M01, LIMITATIONS); it does not implement `by first hour`.
+
+### New missions, by chapter
+
+| Chapter | Mission | Kind | Teaches | Log it |
+|---|---|---|---|---|
+| 8 | C08-M00 The lists are moving | Read | what changes when a list becomes a table (home, `%table.column`, columns), what does not (the three forms, `not`, `nocase`, the 7/4/2 limits), July 2027 | Remediation / Harden (2027, source) |
+| 8 | C08-M02 (rewritten) | Build | `in regex %lookalike_shapes.pattern` | Evidence (18:35, evt-20051) |
+| 8 | C08-M03 (rewritten) | Build | `not in %privileged_accounts.account` | Timeline (02:31) |
+| 8 | C08-M04 (rewritten) | Watch | `in cidr %gateway_blocks.range` | Evidence (20:20, BLOCK) |
+| 8 | C08-M08 (no longer the brief) | Read | the first version of the week-two handoff | Handoff |
+| 9 | C09-M01 Correlation or coincidence | Read | a join is a claim with a key and a window; the documentation conflict on `over` | Gap (over) |
+| 9 | C09-M02 The gateway and the file server | Watch | two variables, `$account`, `over 1h`, `earliest()` per side: 20:03 then 20:11 | Evidence (evt-20200, evt-20210) |
+| 9 | C09-M03 Login, then a file | Build | the window as a distance, `earliest()` as direction: Lena's export after the login, Odalys's spreadsheet before hers | Timeline (02:52) |
+| 9 | C09-M04 The lookup and the connection | Build | the key as an address, a table column on one side of a join, `over 5m`: 1 and 40 pairs | Hypothesis (supported) |
+| 9 | C09-M05 The join that finds the engineer | Your turn | the same shape returns Dez's ALLOW and the attacker's FAIL; the action column decides | Evidence (21:05, evt-20298) |
+| 9 | C09-M06 More than once | Build | `condition: #e2 > 1`; why `#e2 = 0` is not run here | Gap (FS-01) |
+| 9 | C09-M07 Two doors, one account | Your turn | both sides the same event type: desk 18:20 and gateway 20:03 within 2h | Pivot (PLEDGE-DESK-01) |
+| 9 | C09-M08 Give it the whole night | Watch | `over 12h` returns everyone: the wide window is the baseline | Evidence (23:23, evt-20398) |
+| 10 | C10-M01 Context is a second dataset | Read | entity records with validity intervals; the join form documented for rules | Gap (directory) |
+| 10 | C10-M02 Every host and its owner | Watch | `graph.metadata.entity_type = "ASSET"`: eleven records, FS-01 owned by odalys.reyes | Pivot (FS-01) |
+| 10 | C10-M03 Accounts the station let go | Build | `employment_status = "TERMINATED"`; the directory lagged on pledge night | Gap (marco.vela) |
+| 10 | C10-M04 A terminated account in the login log | Build | `$e.principal.user.userid = $uid` with `$u.graph.entity.user.userid = $uid`: two FAIL from STUDIO-B at 23:50 | Remediation / Harden (STUDIO-B, owner kenji.mori) |
+| 10 | C10-M05 Title against privilege, with the directory | Your turn | run-as attempts with title and role: STATION_ADMIN ALLOW, MEMBERSHIP_SHARE_EDITOR FAIL | Hypothesis (supported) |
+| 10 | C10-M06 Where the session went, with owners | Build | connections joined to assets on the address: the outside drops out, FS-01 HIGH stays | Timeline (20:11, HIGH) |
+| 10 | C10-M07 Which findings change | Your turn | gateway successes joined to `remote_access = "no"`: the same finding on a record | Determination (updated) |
+| 10 | C10-M08 Handoff, with owners | Read (brief) | the final ticket beside the model | Handoff |
+
+Kinds added: 4 Watch, 5 Build, 4 Your turn, 4 Read (one of them the Read added to chapter 8). Points: chapter 8 590 → 615, chapter 9 675, chapter 10 650; case 2 1,265 → 2,615.
+
+### Method
+
+Every candidate join and entity query was run against `data/events-week-after.json` and the bundled directory through the real engine before a word was written (the probe scripts ran `runQuery` with the case-2 context), and every number, time and record ID in a beat, clue, hint or Log it prompt was taken from those rows. The two appended case-2 records were given ids after the existing ones were fixed (`evt-20972`, `evt-20973`), so every chapter 7 and 8 citation is unchanged; the validator proves every chapter 7 and 8 answer against the regenerated file and the new digest is recorded in `content/case.json`. Each new engine construct got a passing case and a should-fail case in `tests/unit/engine.test.mjs` (V5 to V7) before the content used it. The desk was then driven in Chromium (`tests/browser/entities.spec.mjs`): the Entities panel, a terminated-user query rendered with its interval, an open entity record, the event-to-entity join as a table with its join column, a two-event join labelled with its window, and three should-fail messages.
+
+### Friction log
+
+| # | Where | What a learner would say | What changed |
+|---|---|---|---|
+| J1 | Direct join `$e1.a = $e2.b` | The only way to name the key in `match:` was a placeholder, so a join written the way rules often write it had nothing to group by. | Either side of a direct join may be named in `match:` and resolves to the join key (V6). |
+| J2 | Joins on blank fields | A blank hostname on a remote session paired with every other blank hostname, and an asset record paired with an event on the user field it does not carry. | Zero values never join, as Google's match variables skip them unless `allow_zero_values` is set; V6 and V7 assert it and LIMITATIONS says so. |
+| J3 | `count(metadata.id)` in a join | Refused as an outcome without a variable, which is right, but the message had to say how to fix it. | `OUTCOME_NEEDS_VARIABLE`: write `count($e1.metadata.id)`. Entity queries may still count `metadata.id`, since every record has one. |
+| J4 | `#e2 = 0` | The natural way to ask "gateway accounts that never touched the file server" is a non-existence test, which the join cannot answer. | Reported as *not run here* with Google's reason (a condition needs a bounded event); C09-M06 teaches it and its call asks why. |
+| J5 | Entity join columns | A join column was named after the placeholder in the first draft, so two learners' tables could not be compared. | Join columns are named by the fields joined, sorted (`graph.entity.user.userid = principal.user.userid`); outcome names stay the learner's. |
+| J6 | Analyst calls in chapters 9 and 10 | The first draft's correct options were the longest in fifteen of sixteen missions. | Distractors lengthened or the correct option trimmed until test C7 passed: longest-is-correct in 22 of 82 missions, every option within 1.6× of its shortest sibling. |
+| J7 | Entities panel | Its `details` shared the field list's class, so the browser test that opens the field list found two panels. | Own class and styles; the full suite passes at the root and under the subpath. |
+| J8 | Chapter 8's brief | With chapters 9 and 10 in the case, the week-two handoff could no longer be the last mission. | C08-M08 keeps its ID and asks for the first version of the handoff; C10-M08 is the brief mission and the case-closed page reads it. |
+
+### Mutation checks
+
+Applied, run, reverted:
+
+| Mutation | Test that failed |
+|---|---|
+| Join keys no longer skip zero values | V6 (the blank account pairs) and V7 (an asset joins an event on the user field) |
+| Entity join ignores the validity interval | V7 (bo joins both versions) |
+| The regex list limit removed from the parser | V5 (five `in regex` tests accepted) |
+| `over N` accepted on a single-event query | G3 and V6 should-fail (`OVER_WINDOW` no longer raised) |
+| Non-existence conditions accepted | V6 should-fail (`#e2 = 0` runs) |
+| The `over` window ignored in the executor | V6 (the one-minute join returns a row) and C1 (C09-M08's authored answer no longer derives) |
+| Overlapping entity versions accepted by the validator | C13 |
+
+### Left for session 5
+
+- Detection-rule literacy: the chapter 9 and 10 joins written as rules, with `allow_zero_values`, the rule-engine data-table join (`field = %table.column`) and non-existence conditions, which this trainer reports as not run here.
+- A third, smaller case (chapters 11 and 12), as planned.
+- `mustInclude` record IDs checked against the mission's reference rows (S5 from session 3) is still open; entity ids are now accepted by existence as event ids are.
+- Three-way joins and `by first hour` on entity queries are not implemented.
+
+### Not verified
+
+- Tenant execution of any join or entity shape; Google's own pages disagree on `over` in Search and the trainer follows the conditions page.
+- The entity field names against a tenant's entity graph: they mirror UDM entity nouns as the team reads them, and the roles, criticality and remote_access values are the station's own labels.
+- Learning effect of the two new chapters: nobody outside the project has played them.
+- Same environment as before: Node 22 with an existing Chromium build (1194) through `PIER9_CHROMIUM`, one engine, no assistive technology session.

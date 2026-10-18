@@ -225,6 +225,15 @@ conn(at2(3, 40, 27), lena, '', VPN_CLIENT, C2B, 443, 6480320, 2100);
 // ---- Finish case 2 -------------------------------------------------------------------------------
 events2.sort((a, b) => a['metadata.event_timestamp.seconds'] - b['metadata.event_timestamp.seconds']);
 events2.forEach((e, i) => { e['metadata.id'] = 'evt-' + String(20000 + i + 1).padStart(5, '0'); });
+// ---- Appended in session 4 (chapter 10, entity context) ------------------------------------------
+// Two failed logins by the terminated overnight host's account from STUDIO-B, which the directory now assigns to the
+// music director. Appended after the ids above are fixed, so every chapter 7 and 8 record id stays where it was; the
+// file is no longer in time order (the engine sorts), and the case digest in content/case.json records the new bytes.
+const appended = [];
+bucket = appended;
+for (const [m, s] of [[50, 5], [52, 30]]) login(at2(23, m, s), marco, { host: marco.host, ip: marco.ip, action: 'FAIL', summary: 'Account disabled' });
+appended.forEach((e, i) => { e['metadata.id'] = 'evt-' + String(20000 + events2.length + i + 1).padStart(5, '0'); });
+events2.push(...appended);
 const out2 = { case: 'The week after', window: { start: T2, end: T3 }, generatedBy: 'tools/gen-data.mjs', events: events2 };
 fs.writeFileSync(path.join(root, 'data', 'events-week-after.json'), JSON.stringify(out2));
 console.log('events (week after):', events2.length, 'bytes:', fs.statSync(path.join(root, 'data', 'events-week-after.json')).size);

@@ -1,5 +1,5 @@
-import { CONTENT, DATASETS } from './bundle.js';
-import { FIELDS, DOCS, FUNCTIONS } from './engine/catalog.js';
+import { CONTENT, DATASETS, ENTITIES } from './bundle.js';
+import { EVENT_FIELDS, ENTITY_FIELDS, DOCS, FUNCTIONS, LISTS_RETIRE } from './engine/catalog.js';
 import { runQuery, gradeQuery, gradeAnswer, gradeCall, POINTS } from './engine/grader.js';
 import { describe } from './ui/messages.js';
 import { createStore, CASEBOOK_POINTS } from './ui/progress.js';
@@ -24,9 +24,16 @@ const caseIndex = c => CASE_LIST.indexOf(c);
 // The first case keeps the #closed route earlier releases linked to; later cases get #closed/<id>. Home takes #case/<id>.
 const closedHref = c => (caseIndex(c) === 0 ? '#closed' : '#closed/' + c.id);
 const homeHref = c => (caseIndex(c) === 0 ? '#' : '#case/' + c.id);
-// Reference lists are bundled content. In a tenant they are objects under Detection > Lists; the query names them with %.
+// Reference lists and data tables are bundled content. In a tenant they are objects under Detection > Lists and
+// Detection > Data tables; a query names a list with %name and a table column with %table.column.
 const REF_LISTS = CONTENT.lists?.lists ?? [];
-const CTX = { lists: REF_LISTS };
+const DATA_TABLES = CONTENT.tables?.tables ?? [];
+// Entity context: the station directory as flat graph.* records, each valid over an interval. A case sees the records
+// valid at some point inside its window, so the week-after desk shows the directory as it stood that night.
+const ENTITY_RECORDS = Array.isArray(ENTITIES) ? ENTITIES : [];
+const entitiesFor = caseId => { const w = windowOf(caseId); return ENTITY_RECORDS.filter(e => e['graph.metadata.interval.start_time.seconds'] <= w.end && e['graph.metadata.interval.end_time.seconds'] >= w.start); };
+const CTX_BY_CASE = Object.fromEntries(CASE_LIST.map(c => [c.id, { lists: REF_LISTS, tables: DATA_TABLES, entities: entitiesFor(c.id) }]));
+const ctxFor = caseId => CTX_BY_CASE[caseId] ?? CTX_BY_CASE[CASE.id];
 const KIND_LABEL = { watch: 'Watch one', build: 'Build it', solo: 'Your turn', read: 'Read' };
 // The investigative parts (query, answer, analyst call) and, for missions that carry a "Log it", the Casebook part.
 const investigateMax = m => (m.kind === 'read' ? POINTS.call : m.kind === 'watch' ? POINTS.answer + POINTS.call : POINTS.query + POINTS.answer + POINTS.call);
@@ -42,7 +49,8 @@ const logItOpen = m => { const r = store.get(m.id); return m.kind === 'read' ? r
 // The Casebook: one notebook per case, stored apart from progress. The data model is case-scoped so a later case gets
 // its own casebook and this one stays readable from the case switcher in the drawer.
 const casebook = createCasebook();
-const EVENT_IDS = Object.fromEntries(CASE_LIST.map(c => [c.id, new Set(eventsOf(c.id).map(e => e['metadata.id']))]));
+// A casebook entry may cite an event record or an entity record valid in the case's window.
+const EVENT_IDS = Object.fromEntries(CASE_LIST.map(c => [c.id, new Set([...eventsOf(c.id).map(e => e['metadata.id']), ...entitiesFor(c.id).map(e => e['metadata.id'])])]));
 const CASES = CASE_LIST.map(c => ({ id: c.id, title: c.title, eventIds: EVENT_IDS[c.id], dayStartHour: new Date(windowOf(c.id).start * 1000).getUTCHours() }));
 const caseInfo = id => CASES.find(c => c.id === id) ?? CASES[0];
 const hhmm = seconds => new Date(seconds * 1000).toISOString().slice(11, 16);
@@ -273,7 +281,7 @@ function missionPage(m) {
   const s = sess(m.id);
   if (s.text === null) s.text = m.starter ?? '';
   const chapter = CHAPTERS.find(x => x.id === m.chapterId); const c = CASE_BY_ID.get(m.caseId);
-  const EVENTS = eventsOf(m.caseId);
+  const EVENTS = eventsOf(m.caseId); const CTX = ctxFor(m.caseId);
   const order = MISSIONS.map(x => x.id); const at = order.indexOf(m.id);
   const prev = at > 0 ? MISSIONS[at - 1] : null, next = at < MISSIONS.length - 1 ? MISSIONS[at + 1] : null;
   const lastOfCase = caseMissions(c).at(-1) === m;
@@ -346,8 +354,8 @@ function missionPage(m) {
     const r = run.result;
     const range = c.ranges.find(x => x.id === s.rangeId);
     const head = el('div', { class: 'summary' },
-      el('span', { text: r.kind === 'events' ? `${fmtNum(r.count)} event${r.count === 1 ? '' : 's'}` : `${fmtNum(r.count)} row${r.count === 1 ? '' : 's'} · ${fmtNum(r.scanned)} events summarised` }),
-      el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') + (r.deduped ? ' · deduplicated' : '') }));
+      el('span', { text: r.kind === 'events' ? `${fmtNum(r.count)} event${r.count === 1 ? '' : 's'}` : r.kind === 'entities' ? `${fmtNum(r.count)} entity record${r.count === 1 ? '' : 's'}` : `${fmtNum(r.count)} row${r.count === 1 ? '' : 's'} · ${fmtNum(r.scanned)} ${r.source === 'entities' ? 'records' : 'events'} summarised` }),
+      el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') + (r.deduped ? ' · deduplicated' : '') + (r.joined ? ` · joined ${r.joined.join(' and ')}` + (r.window ? r.window.kind === 'over' ? ` within ${fmtWindow(r.window.seconds)}` : ` by ${fmtWindow(r.window.seconds)} buckets` : '') : '') }));
     const raw = el('div', { hidden: true, role: 'region', 'aria-label': 'Full record', tabindex: -1 });
     // Opening a record moves focus into the region; closing it returns focus to the button that opened it.
     // Insert from results: the selected record's time and metadata.id go into the Evidence draft; the observation stays the learner's.
@@ -391,13 +399,27 @@ function missionPage(m) {
     deskButtons.append(el('span', { class: 'small muted keys', id: 'editor-help-' + m.id }, ...keys('Ctrl', 'Enter'), ' runs', m.kind !== 'watch' ? [' · ', ...keys('Ctrl', 'Shift', 'Enter'), ' checks'] : [], ' · ', el('kbd', { text: 'Tab' }), ' leaves the editor', ' · ', ...keys('Alt', 'Shift', 'C'), ' casebook'));
   } else deskButtons.append(el('span', { class: 'small muted keys' }, ...(() => { const k = (...ks) => ks.flatMap((x, i) => (i ? [' + ', el('kbd', { text: x })] : [el('kbd', { text: x })])); return k('Alt', 'Shift', 'C'); })(), ' opens the casebook'));
 
-  const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))),
-    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'Functions that run here: ' + Object.keys(FUNCTIONS).join(', ') + '. Time functions take "UTC" as their zone.' }));
-  // The Lists panel: every bundled reference list with its type and items, and the honest line about where lists
-  // live in a tenant. The query names a list as %name, in cidr %name or in regex %name.
-  const listsPanel = el('details', { class: 'lists' }, el('summary', { text: `Reference lists (${REF_LISTS.length})` }),
-    el('p', { class: 'small muted', style: 'margin:8px 0' }, 'In Google SecOps, reference lists are objects you create under ', el('strong', { text: 'Detection > Lists' }), ' and a query names them with %. This trainer bundles the lists below so the syntax can be practised; nothing here is created or edited.'),
-    el('ul', { class: 'listlist' }, REF_LISTS.map(l => el('li', {}, el('div', { class: 'row' }, el('code', { text: '%' + l.name }), el('span', { class: 'pill', text: l.type === 'cidr' ? 'cidr · in cidr %' : l.type === 'regex' ? 'regex · in regex %' : 'string · in %' })),
+  const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(EVENT_FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))),
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'Functions that run here: ' + Object.keys(FUNCTIONS).join(', ') + '. Time functions take "UTC" as their zone. Two event variables ($e1, $e2) joined by a shared placeholder run as a join: match: $key over 1h, outcomes per variable, condition with #e1 and #e2.' }));
+  // The Entities panel: the entity fields, how many directory records are valid in this case's window, and the two
+  // ways to read them: an entity-only query, and the event-to-entity join written as rules document it.
+  const ents = CTX.entities; const nUsers = ents.filter(e => e['graph.metadata.entity_type'] === 'USER').length, nAssets = ents.length - nUsers;
+  const entitiesPanel = el('details', { class: 'entities' }, el('summary', { text: `Entities (${nUsers} users, ${nAssets} assets)` }),
+    el('p', { class: 'small muted', style: 'margin:8px 0' }, 'Entity context is the station directory: who owns an account, who owns a host, what each is for. In Google SecOps, entity data is queried in Search with graph.entity.* fields and each record is valid over a time range; this desk shows the records valid in this case\'s window. Query them alone (', el('code', { text: 'graph.metadata.entity_type = "ASSET"' }), ') or join an event to its entity with two variables: ', el('code', { text: '$e.principal.user.userid = $uid' }), ' and ', el('code', { text: '$u.graph.entity.user.userid = $uid' }), ', then match: $uid. The join is the form documented for rules; this trainer runs it against the bundled directory. Verify both in a tenant.'),
+    el('ul', {}, Object.entries(ENTITY_FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))),
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'graph.entity.hostname and graph.entity.ip are accepted as the names of the asset fields. Role, criticality and remote_access values are the station\'s own labels.' }));
+  // The Lists and tables panel: every bundled reference list (legacy, being migrated) and data table with its types and
+  // items, and the honest line about where each lives in a tenant. A query names a list as %name, in cidr %name or
+  // in regex %name, and a table column as %table.column in the same three forms.
+  const typePill = t => (t === 'cidr' ? 'cidr · in cidr %' : t === 'regex' ? 'regex · in regex %' : 'string · in %');
+  const listsPanel = el('details', { class: 'lists' }, el('summary', { text: `Lists and tables (${REF_LISTS.length + DATA_TABLES.length})` }),
+    el('p', { class: 'small muted', style: 'margin:8px 0' }, 'In Google SecOps, data tables are objects you create under ', el('strong', { text: 'Detection > Data tables' }), '; a query names one column as %table.column. Reference lists (', el('strong', { text: 'Detection > Lists' }), ', named %list) are the legacy object: Google migrates existing lists to data tables automatically and retires legacy reference lists in ' + LISTS_RETIRE + '. This trainer bundles the objects below so the syntax can be practised; nothing here is created or edited. Search allows seven in tests per query, four of them regex and two cidr.'),
+    el('div', { class: 'eyebrow', style: 'margin-top:8px', text: `Data tables (${DATA_TABLES.length})` }),
+    el('ul', { class: 'listlist' }, DATA_TABLES.map(t => el('li', {}, el('div', { class: 'row' }, el('code', { text: '%' + t.name }), t.columns.map(c => el('span', { class: 'pill', text: `.${c.name} · ${typePill(c.type)}` }))),
+      el('div', { class: 'small muted', text: t.description }),
+      el('div', { class: 'items' }, el('div', { class: 'muted', text: t.columns.map(c => c.name).join('  |  ') }), t.rows.map(r => el('div', { text: r.join('  |  ') })))))),
+    el('div', { class: 'eyebrow', style: 'margin-top:8px', text: `Reference lists, legacy (${REF_LISTS.length})` }),
+    el('ul', { class: 'listlist' }, REF_LISTS.map(l => el('li', {}, el('div', { class: 'row' }, el('code', { text: '%' + l.name }), el('span', { class: 'pill', text: typePill(l.type) }), el('span', { class: 'pill', text: 'legacy · retires ' + LISTS_RETIRE })),
       el('div', { class: 'small muted', text: l.description }), el('div', { class: 'items', text: l.items.join('  ·  ') })))));
 
   // Answer part
@@ -432,7 +454,7 @@ function missionPage(m) {
 
   desk.append(
     el('div', { class: 'deskbar' }, el('div', { class: 'eyebrow', style: 'margin:0', text: 'Query desk' }), el('label', {}, 'Time range', rangeSel)),
-    editor, deskButtons, feedback, results, fieldList, listsPanel, answerPart, callPart, scorebox, announcer,
+    editor, deskButtons, feedback, results, fieldList, listsPanel, entitiesPanel, answerPart, callPart, scorebox, announcer,
   );
   logItBox?.addEventListener('logged', paintScoreBox);
   paintResults(); paintScoreBox();
@@ -503,6 +525,9 @@ function briefCard(m) {
   return box;
 }
 
+// A join window as the learner wrote it: 300 reads as 5m, 3600 as 1h, 86400 as 1d.
+const fmtWindow = s => (s % 86400 === 0 ? `${s / 86400}d` : s % 3600 === 0 ? `${s / 3600}h` : `${Math.round(s / 60)}m`);
+
 // Tells the learner where in their own results the answer is read from, without giving the value.
 function whereToRead(check) {
   const named = row => Object.entries(row).map(([k, v]) => `${k} is ${v}`).join(' and ');
@@ -526,11 +551,11 @@ function aboutPage() {
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'What it is not' }),
       el('ul', {}, ['Not connected to any SIEM, and never will be. Nothing you type leaves this tab.', 'Not Google\'s compiler. The supported subset is documented; valid Google syntax outside it is reported as "not run here", separately from mistakes.', 'Not real data. Every event is generated by a script in this repository; IP addresses come from documentation ranges; people and places are invented.', 'Not a place for workplace values. Practise the shape here; use real identifiers only inside tools your employer authorizes.'].map(t => el('li', { text: t })))),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Supported subset' }),
-      el('p', { text: 'Filters with =, !=, <, <=, >, >=, nocase, regex literals, re.regex, net.ip_in_range_cidr, AND/OR/NOT, parentheses, implicit AND, $e. event-variable prefix, placeholders ($x = field or $x = function(field)), grouped fields (ip, hostname, user, domain, file_path, email), the functions timestamp.get_hour, timestamp.get_minute and timestamp.get_date (zone "UTC" only; other zones are reported as not run here), strings.to_lower, strings.to_upper and strings.concat, and reference lists (in %name, in cidr %name, in regex %name, not in, nocase) against the lists bundled in content. Sections: match (with by / over every windows), outcome (count, count_distinct, sum, max, min, array, array_distinct, earliest, latest; arrays cut at 1,000 as in Search), condition, dedup, order, limit. Not run here: joins across event variables, entity graph, additional.fields, data tables, multi-stage queries, other functions and zones.' }),
-      el('p', { class: 'small muted', text: 'Reference lists: in a tenant they are objects created under Detection > Lists; this trainer bundles a few in content/lists.json and shows them in the Lists panel on the desk. dedup is accepted between condition and order, keeps the first row per distinct key, and on a summary table can name only the grouping keys or outcomes.' })),
+      el('p', { text: 'Filters with =, !=, <, <=, >, >=, nocase, regex literals, re.regex, net.ip_in_range_cidr, AND/OR/NOT, parentheses, implicit AND, $e. event-variable prefix, placeholders ($x = field or $x = function(field)), grouped fields (ip, hostname, user, domain, file_path, email), the functions timestamp.get_hour, timestamp.get_minute and timestamp.get_date (zone "UTC" only; other zones are reported as not run here), strings.to_lower, strings.to_upper and strings.concat, data table columns (in %table.column, in cidr %table.column, in regex %table.column, not in, nocase) and legacy reference lists (in %name and the same forms) against the objects bundled in content, with Search\'s limits of seven in tests per query, four regex and two cidr. Sections: match (with by / over every windows), outcome (count, count_distinct, sum, max, min, array, array_distinct, earliest, latest; arrays cut at 1,000 as in Search), condition, dedup, order, limit. Not run here: joins across event variables, entity graph, additional.fields, the rule-engine data-table join (field = %table.column), multi-stage queries, other functions and zones.' }),
+      el('p', { class: 'small muted', text: 'Data tables and reference lists: in a tenant they are objects created under Detection > Data tables and Detection > Lists; Google is replacing lists with tables, migrates existing lists automatically and retires legacy reference lists in ' + LISTS_RETIRE + '. This trainer bundles a few of each in content/tables.json and content/lists.json and shows them in the Lists and tables panel on the desk. dedup is accepted between condition and order, keeps the first row per distinct key, and on a summary table can name only the grouping keys or outcomes.' })),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Google documentation used' }),
       el('ul', {}, DOCS.map(([h, t]) => el('li', {}, link(h, t)))),
-      el('p', { class: 'small muted', text: 'Links open in a new tab on click only. Google\'s pages disagree on whether Search supports the condition section; this trainer follows the page that documents it and says so in chapter 6. The dedup, statistics, functions and reference-list pages were read through search summaries on 2026-10-18, not fetched in full; run each new shape once in your own tenant.' })),
+      el('p', { class: 'small muted', text: 'Links open in a new tab on click only. Google\'s pages disagree on whether Search supports the condition section; this trainer follows the page that documents it and says so in chapter 6. The pages above were verified by the owner on 2026-10-18 against the live documentation, and the facts the engine follows (the GMT default and accepted zones for the time functions, dedup placement and keys, the three list and table forms, the Search limits of seven, four and two, and the July 2027 retirement of legacy reference lists) are recorded in site/engine/catalog.js and docs/EVALUATION.md. Run each new shape once in your own tenant.' })),
     el('div', { class: 'navrow' }, linkBtn('#', '← Back to the case file')),
   );
 }

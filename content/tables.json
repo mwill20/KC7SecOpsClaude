@@ -1,0 +1,65 @@
+{
+  "note": "Data tables as a tenant would hold them under Detection > Data tables. Google is replacing reference lists with data tables: existing lists are migrated automatically and legacy reference lists retire in July 2027. A table has named, typed columns; a query names one column as %table.column in the same three forms a list takes (in, in regex, in cidr). This trainer bundles the station's tables; nothing here is created or edited.",
+  "tables": [
+    {
+      "name": "station_allowlist",
+      "description": "The migrated sponsor allowlist, one row per name the station's machines may resolve, with where each name came from. Read the source column to the end: two rows came from the week-one mail log, not from a contract.",
+      "columns": [
+        { "name": "domain", "type": "string" },
+        { "name": "source", "type": "string" },
+        { "name": "added_by", "type": "string" }
+      ],
+      "rows": [
+        ["cdn.publicradio.example", "vendor contract", "dez.okafor"],
+        ["streaming.tunecast.example", "vendor contract", "dez.okafor"],
+        ["mail.harborlightsponsors.example", "sponsor contract", "dez.okafor"],
+        ["harborlightsponsors.example", "sponsor contract", "dez.okafor"],
+        ["updates.vendor.example", "vendor contract", "dez.okafor"],
+        ["time.sync.example", "vendor contract", "dez.okafor"],
+        ["weather.harborcast.example", "vendor contract", "dez.okafor"],
+        ["login.pledgeware.example", "vendor contract", "dez.okafor"],
+        ["pledgeware.example", "vendor contract", "dez.okafor"],
+        ["pier9-partners.example", "week-one mail log", "dez.okafor"],
+        ["cdn-sync.pier9-partners.example", "week-one mail log", "dez.okafor"]
+      ]
+    },
+    {
+      "name": "privileged_accounts",
+      "description": "Accounts allowed to run as another account on station hosts, which account they may run as, and who granted it. The migrated form of admin_accounts.",
+      "columns": [
+        { "name": "account", "type": "string" },
+        { "name": "may_run_as", "type": "string" },
+        { "name": "granted_by", "type": "string" }
+      ],
+      "rows": [
+        ["dez.okafor", "svc-playout", "odalys.reyes"],
+        ["odalys.reyes", "svc-playout", "board"],
+        ["svc-playout", "svc-playout", "system"]
+      ]
+    },
+    {
+      "name": "gateway_blocks",
+      "description": "Ranges the gateway blocks, why, and since when. The migrated form of blocked_ranges, with the reason beside the range.",
+      "columns": [
+        { "name": "range", "type": "cidr" },
+        { "name": "reason", "type": "string" },
+        { "name": "since", "type": "string" }
+      ],
+      "rows": [
+        ["203.0.113.0/24", "week-one command server", "2026-03-14"]
+      ]
+    },
+    {
+      "name": "lookalike_shapes",
+      "description": "Shapes of lookalike sender domains and the real name each one imitates. The migrated form of lookalike_patterns; the second column says what the pattern is for.",
+      "columns": [
+        { "name": "pattern", "type": "regex" },
+        { "name": "imitates", "type": "string" }
+      ],
+      "rows": [
+        ["pier9-[a-z]+\\.example$", "pierninesradio.example"],
+        ["harborlight-[a-z]+\\.example$", "harborlightsponsors.example"]
+      ]
+    }
+  ]
+}
