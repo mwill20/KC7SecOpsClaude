@@ -33,7 +33,7 @@ test('Build mission end to end with the keyboard only: invalid, correct, answer,
   await page.goto(`#${BUILD}`);
   await expect(page.locator('h1')).toHaveText('Keep only the failures');
   await expect(page).toHaveTitle(/Keep only the failures/);
-  const feedback = page.locator('.feedback');
+  const feedback = page.locator('.desk .feedback');
   const clue = page.locator('.clue');
   await expect(clue).toBeHidden();
 
@@ -76,12 +76,14 @@ test('Build mission end to end with the keyboard only: invalid, correct, answer,
   await page.keyboard.press('Enter');
   await expect(page.locator('.part [role="status"]').nth(1)).toContainText('Right.');
 
-  // 5. The clue appears in the lesson pane and the change is announced to assistive tech.
+  // 5. The clue appears in the lesson pane and the change is announced to assistive tech. The mission still wants its Log it.
   await expect(clue).toBeVisible();
   await expect(clue).toContainText('Fourteen failures');
-  await expect(page.locator('.scorebox')).toContainText('Mission complete');
-  await expect(page.locator('.desk .sr-only[role="status"]')).toContainText('Mission complete');
-  await expect(page.locator('#topscore')).toHaveText('100 / 1,970 pts');
+  await expect(page.locator('.scorebox')).toContainText('Casebook 0/10');
+  await expect(page.locator('.scorebox')).toContainText('Log it to complete');
+  await expect(page.locator('.desk .sr-only[role="status"]')).toContainText('Log it in the Casebook to complete the mission');
+  await expect(page.locator('.logit')).toBeVisible();
+  await expect(page.locator('#topscore')).toHaveText('100 / 2,235 pts');
 
   // 6. The next-mission control (in the lesson pane, before the desk in DOM order) is a real link: Enter on it navigates.
   await tabTo(page, 'a.btn[href="#C01-M03"]', 80, true);
@@ -132,7 +134,7 @@ test('Hints reveal one at a time, move focus to the new hint, cost nothing, and 
   await expect(hints.nth(2).locator('pre')).toContainText('security_result.action = "FAIL"');
   await expect(page.getByRole('button', { name: /Show/ })).toHaveCount(0);
   await expect(page.locator('.hints')).toContainText('Hints never cost points');
-  await expect(page.locator('#topscore')).toHaveText('0 / 1,970 pts');
+  await expect(page.locator('#topscore')).toHaveText('0 / 2,235 pts');
 });
 
 test('Record drill-down opens a full record, moves focus into it, and returns focus on close', async ({ page }) => {
@@ -203,7 +205,7 @@ test('Zero CSP violations, console errors or non-loopback requests across routin
   await page.goto('./');
   await expect(page.locator('h1')).toHaveText('Static on Pier Nine');
   await page.getByRole('link', { name: 'Open the case →' }).click();
-  await expect(page).toHaveURL(/#C01-M01$/);
+  await expect(page).toHaveURL(/#C01-M00$/);                                 // the course now opens on the note-keeping read mission
   await page.getByRole('link', { name: 'Case file' }).first().click();
   await page.locator('a.chapter-card').first().click();
   await expect(page).toHaveURL(/#C01$/);
@@ -221,8 +223,13 @@ test('Zero CSP violations, console errors or non-loopback requests across routin
   await page.goto('#C06');
   await page.goto('#not-a-real-route');
   await expect(page.locator('h1')).toHaveText('Static on Pier Nine');
-  await page.getByRole('checkbox').check();
-  await page.getByRole('checkbox').uncheck();
+  await page.getByLabel(/Remember my points/).check();
+  await page.getByLabel(/Remember my points/).uncheck();
+  await page.getByLabel(/Remember my casebook/).check();
+  await page.getByLabel(/Remember my casebook/).uncheck();
+  await page.keyboard.press('Control+Shift+N');
+  await expect(page.locator('#casebook')).toBeVisible();
+  await page.keyboard.press('Escape');
   expect(await log.csp()).toEqual([]);
   expect(log.errors).toEqual([]);
   expect([...log.hosts]).toEqual([new URL(baseURL).host]);
@@ -282,14 +289,14 @@ test('Accessibility: names, focus order, headings, live regions and the skip lin
 async function seedProgress(page, ids, full = true) {
   await page.addInitScript(({ ids, full }) => {
     const missions = {};
-    for (const [id, kind] of ids) missions[id] = { q: kind === 'build' || kind === 'solo' ? 60 : 0, a: kind === 'read' ? 0 : 25, c: 15, h: 0 };
+    for (const [id, kind, logIt] of ids) missions[id] = { q: kind === 'build' || kind === 'solo' ? 60 : 0, a: kind === 'read' ? 0 : 25, c: 15, cb: logIt ? 10 : 0, h: 0 };
     if (full) localStorage.setItem('pier9.progress.v1', JSON.stringify({ v: 1, missions }));
   }, { ids, full });
 }
 
 test('Starter gap, wrong-query feedback with example record IDs, and the keyboard check shortcut', async ({ page }) => {
   await page.goto(`#${BUILD}`);
-  const feedback = page.locator('.feedback');
+  const feedback = page.locator('.desk .feedback');
   // 1. Running the untouched starter names the gap instead of an unknown field.
   await page.getByRole('button', { name: 'Run query' }).click();
   await expect(feedback).toContainText('The starter still has a ___ gap.');
@@ -334,25 +341,45 @@ test('Top-bar chapter progress updates as a mission completes, and the chapter p
   const seg = page.locator('#chapterprog .chap');
   await expect(seg).toHaveCount(6);
   await expect(seg.first()).toHaveAttribute('aria-current', 'page');
-  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 0 of 6 missions complete');
+  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 0 of 7 missions complete');
   await expect(seg.nth(1)).not.toHaveAttribute('aria-current', 'page');
   const recap = page.getByRole('region', { name: 'Chapter recap' });
   await expect(recap).toContainText('By the end of this chapter you will be able to');
-  await expect(recap.locator('li')).toHaveCount(5);
-  await expect(recap).toContainText('0 of 6 missions complete so far.');
-  // Complete the Watch mission C01-M01 (answer 40, option C) and watch the segment move.
+  await expect(recap.locator('li')).toHaveCount(6);
+  await expect(recap).toContainText('0 of 7 missions complete so far.');
+  // Complete the Watch mission C01-M01: answer 40, option C, then its Log it (the Scope) in the Casebook.
   await page.goto(`#${WATCH}`);
-  await expect(seg.first()).toHaveAttribute('aria-label', /0 of 6/);
+  await expect(seg.first()).toHaveAttribute('aria-label', /0 of 7/);
   await page.getByRole('button', { name: 'Run query' }).click();
+  await expect(page.locator('.logit')).toBeHidden();
   await page.getByLabel('How many USER_LOGIN events are there for the whole night?').fill('40');
   await page.getByRole('button', { name: 'Check answer' }).click();
+  await expect(page.locator('.logit')).toBeVisible();                       // a Watch mission unlocks its Log it once the answer is read
   await page.locator('input[type="radio"][value="C"]').check();
   await page.getByRole('button', { name: 'Check call' }).click();
+  await expect(page.locator('.scorebox')).toContainText('Log it to complete');
+  await expect(seg.first()).toHaveAttribute('aria-label', /0 of 7/);
+  await page.locator('.logit').getByRole('button', { name: 'Check my Casebook' }).click();
+  await expect(page.locator('.logit .feedback')).toContainText('No scope yet.');
+  await page.locator('.logit').getByRole('button', { name: 'Open Casebook: Scope' }).click();
+  const cb = page.locator('#casebook');
+  await expect(cb.getByRole('tab', { name: 'Scope' })).toHaveAttribute('aria-selected', 'true');
+  await cb.locator('#cb-scope-question').fill('Everyone who touched a keyboard tonight.');
+  await cb.locator('#cb-scope-requestedBy').fill('Odalys Reyes');
+  await cb.locator('#cb-scope-window').fill('18:00 to 06:00');
+  await cb.locator('#cb-scope-inScope').fill('Login, email, process and network activity on the pier.');
+  await cb.locator('#cb-scope-outScope').fill('Naming a person.');
+  await cb.getByRole('button', { name: 'Save' }).click();
+  await expect(cb.locator('.cbstatus')).toContainText('Scope saved and passes the structure check.');
+  await page.keyboard.press('Escape');
+  await page.locator('.logit').getByRole('button', { name: 'Check my Casebook' }).click();
+  await expect(page.locator('.logit .feedback')).toContainText('Logged.');
   await expect(page.locator('.scorebox')).toContainText('Mission complete');
-  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 1 of 6 missions complete');
+  await expect(page.locator('.desk .sr-only[role="status"]')).toContainText('Mission complete');
+  await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 1 of 7 missions complete');
   await expect(seg.first()).toHaveClass(/partial/);
   await page.goto('#C01');
-  await expect(recap).toContainText('1 of 6 missions complete so far.');
+  await expect(recap).toContainText('1 of 7 missions complete so far.');
   // Chapter links in the bar are real links.
   await seg.nth(3).click();
   await expect(page).toHaveURL(/#C04$/);
@@ -364,19 +391,20 @@ test('Case-closed page: lists what is left while the case is open, and the three
   const open = await (await browser.newContext()).newPage();
   await open.goto('#closed');
   await expect(open.locator('h1')).toHaveText('The handoff is not written yet');
-  await expect(open.locator('.list li')).toHaveCount(25);
+  await expect(open.locator('.list li')).toHaveCount(26);
+  await expect(open.getByRole('region', { name: 'Casebook' })).toContainText('Not written yet');
   await expect(open.getByRole('region', { name: 'Facts' })).toHaveCount(0);
-  await expect(open.getByRole('link', { name: 'Next open mission →' })).toHaveAttribute('href', '#C01-M01');
+  await expect(open.getByRole('link', { name: 'Next open mission →' })).toHaveAttribute('href', '#C01-M00');
   await expect(open.locator('.skills .skill')).toHaveCount(6);
   await expect(open.locator('.skills .skill.complete')).toHaveCount(0);
   await open.context().close();
 
   // Closed: every mission recorded as complete through the same validated store a real run writes to.
   const ctx = await browser.newContext(); const page = await ctx.newPage();
-  const ids = await (async () => { const p = await ctx.newPage(); await p.goto('./'); const r = await p.evaluate(async () => { const { CONTENT } = await import('./bundle.js'); return CONTENT.chapters.flatMap(c => c.missions.map(m => [m.id, m.kind])); }); await p.close(); return r; })();
+  const ids = await (async () => { const p = await ctx.newPage(); await p.goto('./'); const r = await p.evaluate(async () => { const { CONTENT } = await import('./bundle.js'); return CONTENT.chapters.flatMap(c => c.missions.map(m => [m.id, m.kind, Boolean(m.logIt)])); }); await p.close(); return r; })();
   await seedProgress(page, ids);
   await page.goto('./');
-  await expect(page.locator('#topscore')).toHaveText('1,970 / 1,970 pts');
+  await expect(page.locator('#topscore')).toHaveText('2,235 / 2,235 pts');
   await expect(page.locator('#chapterprog .chap.done')).toHaveCount(6);
   await page.getByRole('link', { name: 'Read the case-closed handoff →' }).click();
   await expect(page).toHaveURL(/#closed$/);

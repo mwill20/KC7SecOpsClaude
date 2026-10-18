@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createStore, validateState, KEY } from '../../site/ui/progress.js';
+import { createStore, validateState, KEY, CASEBOOK_POINTS } from '../../site/ui/progress.js';
 
 const ids = new Set(['C01-M01', 'C01-M02']);
 const memStorage = (initial = {}) => { const m = new Map(Object.entries(initial)); return { getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k), dump: () => Object.fromEntries(m) }; };
@@ -21,6 +21,19 @@ test('P2 only valid points for valid parts are recorded; lower scores never over
   assert.equal(s.total(), 0);
   s.record('C01-M01', 'a', 25); s.record('C01-M01', 'a', 0);
   assert.equal(s.get('C01-M01').a, 25);
+});
+
+test('P6 the casebook part cb takes only 0 or 10, counts in the total, and a record from before cb existed still loads', () => {
+  const s = createStore(ids, memStorage());
+  s.record('C01-M01', 'cb', 5); s.record('C01-M01', 'cb', 11); assert.equal(s.total(), 0);
+  s.record('C01-M01', 'cb', CASEBOOK_POINTS); assert.equal(s.get('C01-M01').cb, 10); assert.equal(s.total(), 10);
+  const old = memStorage({ [KEY]: JSON.stringify({ v: 1, missions: { 'C01-M02': { q: 60, a: 25, c: 15, h: 0 } } }) });
+  const o = createStore(ids, old); assert.equal(o.remember, true); assert.equal(o.get('C01-M02').cb, 0); assert.equal(o.total(), 100);
+  // should-fail: a hostile cb value is refused and left in place
+  const bad = memStorage({ [KEY]: '{"v":1,"missions":{"C01-M01":{"cb":10000}}}' });
+  assert.equal(createStore(ids, bad).remember, false); assert.ok(bad.getItem(KEY).includes('10000'));
+  assert.equal(validateState({ v: 1, missions: { 'C01-M01': { cb: 10 } } }, ids).missions['C01-M01'].cb, 10);
+  assert.equal(validateState({ v: 1, missions: { 'C01-M01': { cb: 7 } } }, ids), null);
 });
 
 test('P3 should-fail: hostile or malformed stored state is ignored, not loaded and not deleted', () => {

@@ -71,5 +71,5 @@ test('A5 should-fail: a real-looking IP, a non-.example domain, a non-relative i
 
 test('A6 the allowlist is the single source of truth: every entry exists in site/ except the generated bundle', () => {
   for (const f of runtimeFiles) if (f !== 'bundle.js') assert.ok(fs.existsSync(path.join(root, 'site', f)), f);
-  assert.equal(runtimeFiles.length, 12);
+  assert.equal(runtimeFiles.length, 14);
 });

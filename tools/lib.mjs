@@ -35,9 +35,28 @@ export function deriveAnswer(mission, events) {
   throw new Error('unknown check type ' + c.type);
 }
 
+// The casebook entry kinds a mission's "Log it" may ask for, and the four remediation lists. Mirrors site/ui/casebook.js.
+const LOGIT_KINDS = ['scope', 'evidence', 'timeline', 'hypothesis', 'pivot', 'gap', 'determination', 'remediation', 'handoff'];
+const LOGIT_LISTS = ['contain', 'eradicate', 'recover', 'harden'];
+
+// logIt: { kind, prompt, mustInclude: [token|alternative, ...], list? }. Every token that looks like a record ID must
+// exist in the dataset, so a mission can never ask for a record the learner cannot find.
+export function validateLogIt(li, where, eventIds) {
+  const problems = [];
+  if (!li || typeof li !== 'object' || Array.isArray(li)) return [`${where}: logIt shape`];
+  if (!LOGIT_KINDS.includes(li.kind)) problems.push(`${where}: logIt.kind "${li.kind}" not in ${LOGIT_KINDS.join('/')}`);
+  if (typeof li.prompt !== 'string' || li.prompt.trim().length < 20) problems.push(`${where}: logIt.prompt missing or too short`);
+  if (!Array.isArray(li.mustInclude) || !li.mustInclude.length || li.mustInclude.some(t => typeof t !== 'string' || !t.trim())) problems.push(`${where}: logIt.mustInclude must be a non-empty list of strings`);
+  else for (const token of li.mustInclude) for (const alt of token.split('|')) if (/^evt-\d{5}$/.test(alt.trim()) && !eventIds.has(alt.trim())) problems.push(`${where}: logIt.mustInclude names ${alt.trim()}, which is not in the dataset`);
+  if (li.list !== undefined && (li.kind !== 'remediation' || !LOGIT_LISTS.includes(li.list))) problems.push(`${where}: logIt.list "${li.list}" only applies to remediation and must be one of ${LOGIT_LISTS.join('/')}`);
+  if (Object.keys(li).some(k => !['kind', 'prompt', 'mustInclude', 'list'].includes(k))) problems.push(`${where}: logIt has unknown keys`);
+  return problems;
+}
+
 export function validate({ case: caseFile, chapters }, data) {
   const problems = [];
   const ids = new Set();
+  const eventIds = new Set(data.events.map(e => e['metadata.id']));
   for (const ch of chapters) {
     if (!ch.id || !ch.title || !Array.isArray(ch.missions)) problems.push(`${ch.id}: chapter shape`);
     // The chapter-end recap card needs three to six plain-language "you can now" lines.
@@ -47,6 +66,8 @@ export function validate({ case: caseFile, chapters }, data) {
       if (ids.has(m.id)) problems.push(`${where}: duplicate id`); ids.add(m.id);
       if (!['watch', 'build', 'solo', 'read'].includes(m.kind)) problems.push(`${where}: kind`);
       if (!m.call || !m.call.options?.some(o => o.id === m.call.correct)) problems.push(`${where}: call.correct not among options`);
+      if (m.logIt !== undefined) problems.push(...validateLogIt(m.logIt, where, eventIds));
+      if (m.brief !== undefined && (m.brief !== 'casebook' || m.kind !== 'read' || !['Facts', 'Hypotheses', 'Gaps', 'Determination', 'Remediation', 'Handoff'].every(part => m.explain?.some(e => e.part === part)))) problems.push(`${where}: brief must be "casebook" on a read mission whose explain carries all six brief sections`);
       if (m.kind === 'read') { if (m.reference) problems.push(`${where}: read mission has a reference`); continue; }
       if (!m.reference) { problems.push(`${where}: missing reference`); continue; }
       const ref = runQuery(m.reference, data.events);

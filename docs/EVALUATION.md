@@ -1,16 +1,16 @@
 # Evaluation: what was tested and how
 
-Last run 2026-10-17 on the branch that added the browser tests. Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked.
+Last run 2026-10-18 on the Casebook branch. Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked.
 
 ## Summary
 
 | Layer | Tool | Count | Result |
 |---|---|---|---|
 | Dataset generation | `tools/gen-data.mjs` | 1,010 events | deterministic (fixed seed), `data/events.json` unchanged by this work |
-| Content validation | `tools/validate-content.mjs` | 25 missions | every reference runs; every authored answer proven against the data; every Build starter fails until completed |
-| Unit tests | `node --test` | 35 | pass (29 from the first two branches + 6 for the learner-polish branch, see below) |
-| Browser tests | Playwright 1.64.1, Chromium | 11 | pass (8 + 3 for the learner-polish branch) |
-| Mutation checks on the new tests | manual, see below | 4 | each mutation failed the intended test |
+| Content validation | `tools/validate-content.mjs` | 26 missions | every reference runs; every authored answer proven against the data; every Build starter fails until completed; every `logIt` block has a kind in the enum, a prompt, a non-empty `mustInclude`, and record IDs that exist |
+| Unit tests | `node --test` | 58 | pass (41 from the earlier branches + 17 for the Casebook branch, see below) |
+| Browser tests | Playwright 1.64.1, Chromium | 17 | pass (11 + 6 for the Casebook branch), each run at the root and under `/KC7SecOpsClaude/` |
+| Mutation checks on the new tests | manual, see below | 4 + 5 | each mutation failed the intended test |
 
 Environment for the recorded run: Linux, Node 22.22.0 (npm warns against `engines: >=24` but runs), Chromium build 1194 driven through `PIER9_CHROMIUM` because the container could not download Playwright's own build 1248. A clean CI run should instead do `npx playwright install --with-deps chromium` on Node 24; nothing in the tests depends on the Chromium build.
 
@@ -121,3 +121,63 @@ Mutation checks run and reverted on this branch: making every correct option the
 ### Still not verified
 
 Unchanged from the section above: no tenant execution, one browser engine, no session with a real screen reader, no browser-zoom test, and no learner outside the project. The friction log is a builder's read of the course through the grader and the browser, not a study.
+
+## Casebook branch
+
+Branch `cloud/casebook`, 2026-10-18. What a learner notices: a **Casebook** button in the top bar and `Ctrl`+`Shift`+`N`; a new first mission on how analysts keep notes; a **Log it** block at the end of every other mission worth 10 points; an **Add to Casebook** button on every open record; the last mission showing their own brief beside the authored one; and a Casebook section on the case-closed page with export buttons. The course total went from 1,970 to 2,235 points (26 missions).
+
+### What was tested
+
+Unit (`tests/unit/casebook.test.mjs`, `progress.test.mjs` P6, `content.test.mjs` C9, `artifact.test.mjs` A6):
+
+| # | Claim | Should-fail cases |
+|---|---|---|
+| K1 | Session-only by default; remembering writes the key and turning it off removes it | — |
+| K2 | Evidence numbers are stable across deletes and edits | — |
+| K3 | Per-case isolation: separate entries and numbering; clearing one case leaves the other; stored cases are listed | — |
+| K4 | Hostile stored state is ignored, not loaded, left in place | 16 blobs: not JSON, array, wrong version, bad case ID (`../etc`), an entry with an `onclick` key, a markup entry ID, an enum outside the set, records not an array, a string ref, duplicate IDs, negative sequence, extra key on the determination, an unknown list, a 4,001-character field, 201 pivots |
+| K5 | 96 KB bound: an oversize blob is ignored; a write that would pass the bound is refused with `FULL` and the state stays intact; a small entry still fits; a 4,001-character field is `TOO_LONG`; a blank entry is `BLANK`; a bad case ID or kind is `KIND` | each listed |
+| K6 | Storage that throws on every call leaves the casebook session-only | — |
+| K7 | Sanitising drops unknown keys (including a `__proto__` attempt), parses refs and records from text, blanks enums outside the set, clears a blank single | — |
+| N1 | A complete entry of every kind passes; the time rule accepts `HH:MM`, `HH:MM:SS` and ranges and rejects `7pm`, `24:00`, `19:5` | — |
+| N2 | Claim words | *proves* without a record fails with the claim rule and the records rule; with a record it passes; *definitely*, *obviously*, *clearly*, *must have* each fail on a timeline fact with a missing ref; *proverbial* does not |
+| N3 | Timeline references | a ref to a missing Evidence entry fails `BAD_REF` with the number in the message; no ref fails `NEEDS_REF` |
+| N4 | Field rules | `7:05pm` fails the time rule; `evt-99999` fails as unknown record; an empty observation and confidence each fail as missing; an empty source query fails; a gap without "why" fails; a scope window `all night` fails the time rule |
+| N5 | Hypotheses | supported without support, refuted without contradiction, open without a test, supported with a ref that does not exist |
+| N6 | Remediation and determination without evidence refs fail `NEEDS_REF`; a verdict outside the set fails the enum rule | each listed |
+| N7 | A mission's Log it passes only when an entry of the kind passes the structure check and carries every anchor; the message names the missing anchor; a remediation Log it reads only its own list and reports a structural failure before the anchors; the determination is checked as a single | no entry, partial entry, wrong list, no refs |
+| N8 | Markdown and ticket export are built from the entries only, sort the timeline across midnight, carry no markup | — |
+| P6 | The `cb` part takes only 0 or 10, counts in the total, a pre-casebook record still loads | `cb: 10000` refused and left in place; `cb: 7` invalid |
+| C9 | All 25 original missions carry a `logIt`; the new mission has none; every kind is asked for at least once; the story anchors (C01-M05 burst and IP, C03-M03 Eradicate PledgeSync, C04-M04 Contain 203.0.113.0/24, C06-M03 determination, C06-M04 handoff) are where the spec put them | kind outside the enum, empty prompt, empty `mustInclude`, an `evt-99999` alternative, a `list` on a non-remediation kind, a mission whose anchor names a missing record, a brief mission missing a section |
+| A6 | The allowlist has 14 files and each exists | — |
+
+Browser (`tests/browser/casebook.spec.mjs`, plus the updated `trainer.spec.mjs`):
+
+1. **Drawer.** `Ctrl`+`Shift`+`N` from the editor opens the drawer, `aria-expanded` flips, focus lands on the heading, nine tabs, Evidence selected; the desk's right edge is left of the drawer's left edge (nothing covered); `ArrowRight` and `End` move selection and focus and the panel follows; every control in the drawer has a name and nothing interactive is nested; `Escape` closes and the editor is focused again; the button toggles and **Close** returns focus to it; the shortcut is listed beside the editor's other shortcuts.
+2. **Insert from results and the note check.** On C01-M05 the Log it is hidden until the query is correct, then names the evidence entry and the anchors. Opening evt-00039 and pressing **Add to Casebook** opens the drawer on Evidence with `19:05` and the ID filled, the observation empty and focused, the source showing the query and *Whole night*, and an **Edit source** button. A second record (evt-00094) turns the time into `19:05 to 19:21` and appends the ID. Writing the observation and saving yields *Passes the structure check*, the saved entry receives focus, the tab reads *Evidence, 1 entry*. **Check my Casebook** awards 10 points (`70 / 2,235`). A second entry with *proves* and no record shows both rules in plain language; a supported hypothesis without a ref shows its rule; delete is two presses.
+3. **Export.** In a context with clipboard permission: a gap entry, then **Download Markdown** produces `casebook-pier-nine.md` whose content starts with the title and carries the gap and the ticket; **Copy handoff ticket** reports success and `readText()` returns the ticket; requests went only to loopback.
+4. **Storage.** With remembering off, after adding a pivot `localStorage` is empty; ticking **Remember my casebook** writes exactly one key containing the pivot and leaves progress untouched; the meter is visible; unticking removes the key. A hostile blob (an entry with markup and an `onclick` key) planted before load leaves remembering off, shows *No evidence yet*, is left byte-for-byte in place, and raises no page error or dialog.
+5. **320 px.** The drawer is a full-screen sheet (`aria-modal`, 320 wide at x = 0) with no horizontal overflow on any of the nine tabs, with the source editor open, with a long unbroken token saved, and after closing. Each tab is also asserted never to render the words `null` or `undefined`: a screenshot pass during the build found a literal `null` under every field without a hint (native `append` stringifies a null child), which the structural tests had not caught; it was fixed and this assertion added.
+6. **Brief and case closed.** C06-M04 shows six *Yours / Model* rows, names the missions that fill an empty section, keeps its fixed-choice call, and unlocks a handoff Log it after it. Saving a determination in the drawer repaints the brief without a reload and reports the missing refs; **Assemble from casebook** fills the problem statement from it and says nothing is saved yet. The case-closed page shows the determination, says the handoff is not written with a link to C06-M04, and carries both export buttons.
+
+Updated in `trainer.spec.mjs`: the Build mission now ends at *Log it to complete* with `Casebook 0/10` and the softer announcement; the chapter-progress test completes C01-M01 through its Scope Log it (*No scope yet* first, then the form, then *Mission complete* and `1 of 7`); the CSP test uses the labelled toggles, opens and closes the drawer, and expects the course to open on C01-M00; the case-closed test seeds `cb: 10` and expects 26 missions and `2,235 / 2,235`; desk feedback locators are scoped to `.desk` because the Log it block has its own status region.
+
+### Mutation checks
+
+Applied, run, reverted:
+
+| Mutation | Test that failed |
+|---|---|
+| Remove the claim-word rule from `checkEntry` | N2 (no `CLAIM_WORD`) and browser test 2 (*"proves" is a claim* missing) |
+| Let `validateState` accept unknown entry keys | K4 (the `onclick` blob loaded) |
+| Drop the 96 KB check in `commit` | K5 (no `FULL`; bytes exceeded the bound) |
+| Stop `setRemember(false)` removing the key | K1 and browser test 4 (key still present) |
+| Make `cb` accept any number in `progress.js` | P6 (`cb: 10000` loaded) |
+
+### Not verified
+
+- Learning effect of keeping the casebook: nobody outside the project has written one.
+- Quality of entries: the check is structural by design; see `docs/LIMITATIONS.md`.
+- `Ctrl`+`Shift`+`N` in a real Chrome: the browser reserves it for an incognito window and the page never sees it. The test harness dispatches the key to the page, so the test passes where a Chrome user would need the button. Documented in `docs/USAGE.md` and `docs/LIMITATIONS.md`; the owner may want a different combination.
+- Clipboard behaviour outside Chromium with permission granted; the fallback text in the Handoff tab is what a refusing browser shows.
+- Same environment as before: Node 22 with an existing Chromium build, one engine, no assistive technology session.

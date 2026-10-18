@@ -3,15 +3,45 @@
   "title": "Dead air at 03:10",
   "subtitle": "Logins, outcomes, and the difference between an account and a person",
   "intro": "Hal's theory is simple: Marco still has a login, Marco is angry, Marco did it. Odalys's instruction is simpler: start with who could sign in tonight, and what happened when they tried. Every login attempt on the pier lands in SecOps as a USER_LOGIN event. That is where you begin.",
-  "concepts": ["An event is one record of one thing happening", "USER_LOGIN includes attempts that failed", "Count accounts, not repeated logins", "Blank fields are zero values, not errors"],
+  "concepts": ["Facts, hypotheses and gaps are different sentences", "An event is one record of one thing happening", "USER_LOGIN includes attempts that failed", "Count accounts, not repeated logins", "Blank fields are zero values, not errors"],
   "recap": [
     "Filter one event type and one action with two stacked conditions",
     "Count distinct account IDs and say why that is not a head count",
     "Group by a field, count per group and sort the biggest first",
     "Read a blank field as the source saying 'I do not know', not as an error",
-    "Read Google's $e. spelling as the same single-event filter"
+    "Read Google's $e. spelling as the same single-event filter",
+    "Write a casebook entry another analyst could reproduce: UTC time, query, range and record IDs"
   ],
   "missions": [
+    {
+      "id": "C01-M00",
+      "kind": "read",
+      "title": "How analysts keep notes",
+      "beat": "Before the first query, Odalys slides a legal pad across the desk. 'Whatever you find, write it so I can hand it to someone who was not here.' A casebook is that pad: what you saw, where you saw it, and what you only think.",
+      "question": "What makes a note useful to the next analyst, at 3 a.m., who has never heard of Pier Nine?",
+      "concept": { "title": "Facts, inference and gaps live in different sentences", "text": "A fact is what a record shows and another analyst can reproduce from the same query, time range and record IDs. An inference is the story that would explain the facts; label it a hypothesis until a record supports it. A gap is what you could not see. Keep every time in UTC, write one claim per entry, and cite a record or mark the sentence as a hypothesis. The Casebook (top bar, or Ctrl+Shift+N) has a tab for each of these; every mission from here on ends by asking you for one entry." },
+      "explain": [
+        { "part": "A good entry", "meaning": "19:05 to 19:10 UTC · USER_LOGIN · seven FAIL events for pledge-desk from 198.51.100.23 through VPN-GW-01; principal.hostname blank on every one · records evt-00039 to evt-00057 · source: metadata.event_type = \"USER_LOGIN\" and principal.user.userid = \"pledge-desk\", whole night · confidence high. Reproducible, UTC, one claim, no verdict." },
+        { "part": "A bad entry", "meaning": "Someone clearly brute-forced the pledge desk around 7 last night and got in. Probably Marco. No query, no range, no record ID, a local time, a verdict and a name in one sentence; nothing in it can be checked by anyone else." },
+        { "part": "The habits", "meaning": "Facts before inference. Reproducible: query, time range, record IDs. UTC, always. Write for the reader at 3 a.m. One claim per entry. Cite a record, or mark it as a hypothesis. Write down what you could not see." }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Three lines from the pad. One: 'Seven FAIL events for pledge-desk between 19:05 and 19:10 UTC from 198.51.100.23, records evt-00039 to evt-00057.' Two: 'The pledge-desk password was typed into the fake portal from Hal's desk.' Three: 'The email body and attachment were not available tonight.' Which labelling is right?",
+        "options": [
+          { "id": "A", "label": "Line one is a fact, line two a hypothesis, line three a gap" },
+          { "id": "B", "label": "Line one is a hypothesis, line two a fact, line three a gap" },
+          { "id": "C", "label": "Line one is a fact, line two a gap, line three a hypothesis" }
+        ],
+        "correct": "A",
+        "why": "Line one names records, a UTC range and an address; anyone can rerun it. Line two explains the facts, but no record shows a password being typed, so it stays a hypothesis until one does. Line three says what you lacked; written down, it becomes a task instead of a surprise."
+      },
+      "clue": "The pad has a column for each kind of sentence and a rule for each column. Open the Casebook once to see the tabs, then open the login log and start filling the first one.",
+      "caveat": "Real casebooks end up in disputes and sometimes in court. Write every entry as if a stranger will read it aloud, because one may."
+    },
     {
       "id": "C01-M01",
       "kind": "watch",
@@ -43,6 +73,7 @@
         "why": "The event type says what kind of thing happened. Whether it worked is a separate field, security_result.action, which you use next."
       },
       "clue": "Forty attempts from a station with eleven staff on shift. Several names repeat. One account, pledge-desk, appears more than any person does. Keep that in mind; it is shared by the whole pledge desk.",
+      "logIt": {"kind":"scope","prompt":"Before you count anything, write the Scope. Question asked: Odalys's sticky note, in her words. Requested by: Odalys Reyes. Time window: Pledge Night, 18:00 to 06:00 UTC. In scope: login, email, process and network activity on the pier tonight. Out of scope: naming a person; the logs identify accounts and addresses.","mustInclude":["Odalys","18:00","06:00"]},
       "caveat": "In a real tenant the same query can return thousands of rows. Narrow the time range first; this trainer gives you the whole night by default."
     },
     {
@@ -76,6 +107,7 @@
         "why": "Each condition controls part of the scope. Removing the event type widens the search to any event with a FAIL action."
       },
       "clue": "Fourteen failures. Marco is in there: three attempts from Studio B around 22:40, each marked 'Account disabled'. But he is not the only one, and he is not the biggest. Count before you conclude.",
+      "logIt": {"kind":"evidence","prompt":"Log the failures as evidence. Time: the whole night as a range. Source: the query and range you ran. Observation: how many USER_LOGIN events carry FAIL and which accounts appear, including marco.vela's three from STUDIO-B marked 'Account disabled'. Records: at least one of Marco's three (open a row, press Add to Casebook). Confidence: high; you are reporting a count, not a cause.","mustInclude":["marco.vela","evt-00387|evt-00388|evt-00391"]},
       "caveat": "Different products record failure differently. In your own tenant, check how a source maps its failure codes before trusting a FAIL count."
     },
     {
@@ -109,6 +141,7 @@
         "why": "The count describes account IDs in the records. pledge-desk is shared by the whole desk, and service accounts sign in without a human present. Marco's account never succeeded, so it is not in this count at all."
       },
       "clue": "Nine accounts, and one of them is pledge-desk, which Hal, Priya and whoever covers the phones all use. If that account did something tonight, the log will not say which hand was on the keyboard.",
+      "logIt": {"kind":"gap","prompt":"Log a Gap. Nine is a count of account IDs, not of people: pledge-desk is shared by Hal, Priya and anyone on the phones, and svc-playout signs in with nobody at a keyboard. Why it matters: any finding about pledge-desk will need a second source (a badge, a camera, a person) before it names a hand on the keyboard.","mustInclude":["pledge-desk"]},
       "caveat": "Try removing the != \"\" line and run again. If a source ever leaves the user ID blank, the blank becomes a tenth 'account'."
     },
     {
@@ -142,6 +175,7 @@
         "why": "A count is a lead, not a verdict. Seven failures could be one tired volunteer or an attacker; when and from where they happened decides which."
       },
       "clue": "pledge-desk: seven failures. marco.vela: three, all 'Account disabled', all from Studio B, the room he used to work in. Hal will like that. Look harder at the shared account before you let him.",
+      "logIt": {"kind":"hypothesis","prompt":"Log a Hypothesis, status open: the seven pledge-desk failures are a password-guessing attempt from outside, not a tired volunteer mistyping. No refs yet; that is what open means. Test next: pull every pledge-desk login in time order and read when and from where the failures came.","mustInclude":["pledge-desk","seven|7"]},
       "caveat": "count(metadata.id) counts records. Two products can log the same real-world attempt as two records; a count is an event count, not a proven attempt count."
     },
     {
@@ -171,6 +205,7 @@
         "why": "A zero value is the source saying 'I do not know'. For a VPN login it is expected, and the external IP carries the real information."
       },
       "clue": "Seven failures from one outside address between 19:05 and 19:10, then a success from the same address at 19:21, then two sign-ins on AUTOMATION-01 nine minutes later. The playout PC. Hal's suspect was in Studio B at 22:40 getting 'Account disabled'. The timeline already does not fit his story.",
+      "logIt": {"kind":"evidence","prompt":"Log the burst as evidence. Time: the range of the seven failures, 19:05 to 19:10. Source: your query and range. Observation: seven FAIL events for pledge-desk from one outside address through VPN-GW-01 with a blank hostname, then an ALLOW from the same address at 19:21. Records: at least one failure and the success (open a row, press Add to Casebook). Name the IP; do not name a person.","mustInclude":["19:05","198.51.100.23","evt-00039|evt-00040|evt-00048|evt-00049|evt-00053|evt-00054|evt-00057|evt-00094"]},
       "caveat": "In production, exact matching is case-sensitive unless you add nocase. Account IDs vary by source; check how yours are recorded."
     },
     {
@@ -200,6 +235,7 @@
         "why": "One event variable means one event. Two different variables, such as $e1 and $e2, would be a multi-event query, which this trainer does not run."
       },
       "clue": "Chapter 1 gave you a lead: an outside address signing into a shared account, then landing on the playout PC. Chapter 2 asks how that address got a password in the first place.",
+      "logIt": {"kind":"pivot","prompt":"Log a Pivot. 198.51.100.23 had the pledge-desk password by 19:21 and was on AUTOMATION-01 nine minutes later. Next question: how did an outside address get a shared password? Write where you will look (the mail gateway, EMAIL_TRANSACTION, before 19:05) and what would make it worth the time.","mustInclude":["198.51.100.23","mail|email"]},
       "caveat": "This trainer accepts one event variable. Google's docs also show $e1/$e2 joins, dedup and array outcomes; those are real Search features that are out of scope here."
     }
   ]

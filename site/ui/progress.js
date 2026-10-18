@@ -1,7 +1,9 @@
 // Optional, bounded, local-only progress. Stores points per mission part and the highest hint used.
-// Never stores query text, answers typed, or anything from the editor.
+// Never stores query text, answers typed, or anything from the editor. Casebook entries live in their own store
+// (ui/casebook.js); only the points a passed "Log it" earns are recorded here, as part cb.
 export const KEY = 'pier9.progress.v1';
-const PARTS = { q: [0, 60], a: [0, 25], c: [0, 15] };
+export const CASEBOOK_POINTS = 10;
+const PARTS = { q: [0, 60], a: [0, 25], c: [0, 15], cb: [0, CASEBOOK_POINTS] };
 const MAX_BYTES = 16384;
 
 export function emptyState() { return { v: 1, missions: {} }; }
@@ -14,7 +16,7 @@ export function validateState(raw, missionIds) {
     const clean = {};
     for (const [part, allowed] of Object.entries(PARTS)) { const v = rec[part] ?? 0; if (!allowed.includes(v)) return null; clean[part] = v; }
     const h = rec.h ?? 0; if (![0, 1, 2, 3].includes(h)) return null; clean.h = h;
-    if (Object.keys(rec).some(k => !['q', 'a', 'c', 'h'].includes(k))) return null;
+    if (Object.keys(rec).some(k => !['q', 'a', 'c', 'cb', 'h'].includes(k))) return null;
     out.missions[id] = clean;
   }
   return out;
@@ -34,14 +36,14 @@ export function createStore(missionIds, storage = safeStorage()) {
     get remember() { return remember; },
     available: Boolean(storage),
     setRemember(on) { remember = Boolean(on); if (!remember) { try { storage?.removeItem(KEY); } catch { /* ignore */ } } else persist(); },
-    get(id) { return state.missions[id] ?? { q: 0, a: 0, c: 0, h: 0 }; },
+    get(id) { const r = state.missions[id]; return r ? { cb: 0, ...r } : { q: 0, a: 0, c: 0, cb: 0, h: 0 }; },
     record(id, part, points) {
       if (!missionIds.has(id) || !PARTS[part] || !PARTS[part].includes(points)) return;
       const cur = this.get(id); if (points <= cur[part]) return;
       state.missions[id] = { ...cur, [part]: points }; persist();
     },
     hint(id, level) { if (!missionIds.has(id) || ![1, 2, 3].includes(level)) return; const cur = this.get(id); if (level <= cur.h) return; state.missions[id] = { ...cur, h: level }; persist(); },
-    total() { return Object.values(state.missions).reduce((s, m) => s + m.q + m.a + m.c, 0); },
+    total() { return Object.values(state.missions).reduce((s, m) => s + m.q + m.a + m.c + (m.cb ?? 0), 0); },
     clear() { state = emptyState(); try { storage?.removeItem(KEY); } catch { /* ignore */ } },
     snapshot() { return JSON.parse(JSON.stringify(state)); },
   };

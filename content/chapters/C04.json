@@ -42,6 +42,7 @@
         "why": "The spacing matches the task's /mo 10 interval exactly, and the lookups continue long after every human went home."
       },
       "clue": "AUTOMATION-01 called home 62 times. PLEDGE-DESK-02 called once, at 18:52, when Hal followed the link. Two different stories from the same domain: one click, then one machine on a leash.",
+      "logIt": {"kind":"evidence","prompt":"Log the cadence as evidence. Time: 19:40 to 05:50. Observation: AUTOMATION-01 looked up cdn-sync.pier9-partners.example 62 times, ten minutes apart, from 19:40:05 to 05:50:06; PLEDGE-DESK-02 looked the domain up once, at 18:52. Records: the first and last lookups. Write 'ten-minute cadence' in the observation, not 'beacon'; beacon is the hypothesis.","mustInclude":["AUTOMATION-01","19:40","evt-00150|evt-01008"]},
       "caveat": "Beacons in the wild add jitter and rotate names. A clean ten-minute cadence is a teaching case, not a promise."
     },
     {
@@ -74,6 +75,7 @@
         "why": "Attackers use 443 because it is allowed everywhere and inspected nowhere. The metadata around the connection is what you can still read."
       },
       "clue": "Sixty-five connections into the range: 63 from AUTOMATION-01, two from PLEDGE-DESK-02 at 18:52 and 18:53. The two from Hal's desk are the page load and the form post. Everything after that is the playout PC.",
+      "logIt": {"kind":"hypothesis","prompt":"Log a Hypothesis, status supported: 203.0.113.0/24 is attacker infrastructure. The lookalike resolves into it, AUTOMATION-01 connects into it every ten minutes, and PLEDGE-DESK-02's two connections at 18:52 and 18:53 were the lure page and the form post. Supporting refs: your evidence entries for the click and the cadence. Supported means you cite them.","mustInclude":["203.0.113"]},
       "caveat": "The range here is from RFC 5737 documentation space and belongs to nobody. Never put a real indicator from work into a public trainer."
     },
     {
@@ -106,6 +108,7 @@
         "why": "Operator precedence silently changed the question. The results looked plausible, which is the dangerous part."
       },
       "clue": "Twenty-one connections. Nineteen are the evening's ordinary browsing and mail. Two are the 18:52 and 18:53 connections to 203.0.113.44 that followed the phishing link. Hal's machine is a victim's machine, not the attacker's.",
+      "logIt": {"kind":"timeline","prompt":"Add a Timeline entry. Time: 18:52. Fact: PLEDGE-DESK-02 (10.9.4.22, hal.brunner) resolved pier9-partners.example and connected to 203.0.113.44 twice; its other 19 connections tonight are ordinary browsing and mail. Evidence ref: the # of your click evidence. A timeline entry points at evidence; it never stands alone.","mustInclude":["18:52","PLEDGE-DESK-02|10.9.4.22"]},
       "caveat": "principal.ip and target.ip are repeated fields in real UDM. This trainer models one value each; the docs cover how repeated values and negation interact."
     },
     {
@@ -135,6 +138,7 @@
         "why": "You can prove the size, the direction, the destination and the timing. Proving what was inside the stream needs the file itself or the attacker's server, neither of which you have."
       },
       "clue": "One connection over ten megabytes all night: 48 MB from the playout PC to 203.0.113.44 at 02:10:33. The pirate segment at 03:10 read donor names on air. The donor list left the building an hour before that. The broadcast was the announcement, not the theft.",
+      "logIt": {"kind":"remediation","list":"contain","prompt":"Write a Contain item: block egress to 203.0.113.0/24 at the gateway and isolate AUTOMATION-01 from the network until it is rebuilt. Answers: your cadence evidence and your click evidence. Owner role: network engineer. Urgency: now. The 48 MB upload itself goes in the Evidence tab in the next mission.","mustInclude":["203.0.113.0/24"]},
       "caveat": "Byte counts depend on the sensor. Flow logs, proxies and EDR disagree by headers and retransmits. Treat a size as approximate and the direction as reliable."
     }
   ]

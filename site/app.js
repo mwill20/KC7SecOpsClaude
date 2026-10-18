@@ -2,8 +2,10 @@ import { CONTENT, DATA } from './bundle.js';
 import { FIELDS } from './engine/catalog.js';
 import { runQuery, gradeQuery, gradeAnswer, gradeCall, POINTS } from './engine/grader.js';
 import { describe } from './ui/messages.js';
-import { createStore } from './ui/progress.js';
-import { el, clear, resultsTable, rawRecord, fmtNum } from './ui/render.js';
+import { createStore, CASEBOOK_POINTS } from './ui/progress.js';
+import { el, clear, resultsTable, rawRecord, fmtNum, fmtBytes } from './ui/render.js';
+import { createCasebook, checkLogIt, contextFor, ENTRY_LABEL, LIST_LABEL, LISTS, VERDICT_LABEL, sortTimeline, handoffText } from './ui/casebook.js';
+import { mountCasebook, download, copyTicket } from './ui/casebook-ui.js';
 
 const CASE = CONTENT.case;
 const CHAPTERS = CONTENT.chapters;
@@ -13,10 +15,24 @@ const store = createStore(new Set(MISSIONS.map(m => m.id)));
 const EVENTS = DATA.events;
 const WINDOW = DATA.window;
 const KIND_LABEL = { watch: 'Watch one', build: 'Build it', solo: 'Your turn', read: 'Read' };
-const missionMax = m => (m.kind === 'read' ? POINTS.call : m.kind === 'watch' ? POINTS.answer + POINTS.call : POINTS.query + POINTS.answer + POINTS.call);
+// The investigative parts (query, answer, analyst call) and, for missions that carry a "Log it", the Casebook part.
+const investigateMax = m => (m.kind === 'read' ? POINTS.call : m.kind === 'watch' ? POINTS.answer + POINTS.call : POINTS.query + POINTS.answer + POINTS.call);
+const missionMax = m => investigateMax(m) + (m.logIt ? CASEBOOK_POINTS : 0);
 const COURSE_MAX = MISSIONS.reduce((s, m) => s + missionMax(m), 0);
-const earned = m => { const r = store.get(m.id); return (m.kind === 'read' ? 0 : m.kind === 'watch' ? 0 : r.q) + (m.kind === 'read' ? 0 : r.a) + r.c; };
+const investigated = m => { const r = store.get(m.id); return (m.kind === 'read' ? 0 : m.kind === 'watch' ? 0 : r.q) + (m.kind === 'read' ? 0 : r.a) + r.c; };
+const earned = m => investigated(m) + (m.logIt ? store.get(m.id).cb : 0);
+const isInvestigated = m => investigated(m) === investigateMax(m);
 const isDone = m => earned(m) === missionMax(m);
+// The Log it block unlocks once the query is correct (Build, Your turn), the answer is read (Watch) or the call is made (Read).
+const logItOpen = m => { const r = store.get(m.id); return m.kind === 'read' ? r.c > 0 : m.kind === 'watch' ? r.a > 0 : r.q > 0; };
+
+// The Casebook: one notebook per case, stored apart from progress. The data model is case-scoped so a later case gets
+// its own casebook and this one stays readable from the case switcher in the drawer.
+const casebook = createCasebook();
+const EVENT_IDS = new Set(EVENTS.map(e => e['metadata.id']));
+const CASES = [{ id: CASE.id, title: CASE.title, eventIds: EVENT_IDS, dayStartHour: new Date(WINDOW.start * 1000).getUTCHours() }];
+const caseInfo = () => CASES[0];
+const hhmm = seconds => new Date(seconds * 1000).toISOString().slice(11, 16);
 
 // Per-mission working state lives only in memory and only for this tab.
 const session = new Map();
@@ -25,6 +41,9 @@ const rangeFor = id => { const r = CASE.ranges.find(x => x.id === id) ?? CASE.ra
 
 const app = document.getElementById('main');
 const topscore = document.getElementById('topscore');
+const cbui = mountCasebook({ host: document.getElementById('casebook'), toggle: document.getElementById('casebook-toggle'), store: casebook, cases: CASES });
+let onBookChange = null; // the current page's repaint hook for casebook changes (the brief and the closed page use it)
+casebook.subscribe(() => onBookChange?.());
 const chapterprog = document.getElementById('chapterprog');
 const chapterDone = ch => ch.missions.filter(mm => isDone(BY_ID.get(mm.id))).length;
 const allDone = () => MISSIONS.every(isDone);
@@ -46,7 +65,7 @@ function paintScore() {
 
 function route() {
   const hash = location.hash.replace(/^#\/?/, '');
-  clear(app);
+  clear(app); onBookChange = null; cbui.setContext(() => ({ query: '', range: '' })); cbui.setCase(CASE.id);
   let title = CASE.title;
   if (hash === 'about') { app.append(aboutPage()); title = 'What this is'; }
   else if (hash === 'closed') { app.append(closedPage()); title = 'Case closed'; }
@@ -92,9 +111,30 @@ function homePage() {
       el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: store.remember, disabled: !store.available, onchange: e => { store.setRemember(e.target.checked); paintScore(); } }),
         el('span', {}, 'Remember my points in this browser. Stores mission IDs, points and hint levels only; never query text or answers. Leave off on a shared device.', store.available ? '' : ' (Storage is unavailable here, so progress is session-only.)')),
       el('div', { class: 'row', style: 'margin-top:10px' }, el('button', { class: 'ghost', text: 'Clear all progress', onclick: () => { if (confirm('Clear all saved and current progress?')) { store.clear(); route(); } } }))),
+    casebookCard(),
     el('section', { class: 'card notice' }, el('strong', { text: 'Boundary. ' }), CASE.boundary, ' ', el('a', { href: '#about', text: 'What this trainer is and is not.' })),
   );
 }
+
+// Home: the casebook's own remembering toggle, its 96 KB meter and a per-case clear. Separate from progress on purpose.
+function casebookCard() {
+  const meterLine = el('span', { class: 'small muted' });
+  const meter = el('div', { class: 'cbmeter', role: 'img' }, el('span'));
+  const paint = () => { const used = casebook.bytes(); meterLine.textContent = `${fmtBytes(used)} of ${fmtBytes(casebook.max)} used`; meter.setAttribute('aria-label', meterLine.textContent); meter.firstChild.style.width = Math.min(100, Math.round(100 * used / casebook.max)) + '%'; };
+  paint(); onBookChangeAlso(paint);
+  const clearBtn = el('button', { class: 'ghost', text: 'Clear this case\u2019s casebook' });
+  let armed = false;
+  clearBtn.addEventListener('click', () => { if (!armed) { armed = true; clearBtn.textContent = 'Confirm: clear the casebook'; return; } casebook.clearCase(CASE.id); armed = false; clearBtn.textContent = 'Clear this case\u2019s casebook'; });
+  return el('section', { class: 'card' },
+    el('div', { class: 'eyebrow', text: 'Remembering the casebook' }),
+    el('label', { class: 'toggle' }, el('input', { type: 'checkbox', checked: casebook.remember, disabled: !casebook.available, onchange: e => { casebook.setRemember(e.target.checked); } }),
+      el('span', {}, 'Remember my casebook in this browser. Stores your own notes for this case (scope, evidence, timeline, hypotheses, pivots, gaps, determination, remediation, handoff) under 96 KB. Off by default; leave off on a shared device.', casebook.available ? '' : ' (Storage is unavailable here, so the casebook is session-only.)')),
+    el('div', { class: 'row', style: 'margin-top:10px;justify-content:space-between' }, meterLine, el('button', { class: 'ghost', text: 'Open the Casebook', onclick: () => cbui.open() })),
+    meter,
+    el('div', { class: 'row', style: 'margin-top:10px' }, clearBtn),
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'The Casebook button in the top bar, or Ctrl+Shift+N, opens it on every page. Export is a local Markdown download; nothing is uploaded.' }));
+}
+const onBookChangeAlso = fn => { const prev = onBookChange; onBookChange = () => { prev?.(); fn(); }; };
 
 // ---------- Chapter ----------
 function chapterPage(ch) {
@@ -140,9 +180,11 @@ function closedPage() {
       el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Still to do' }),
         el('ul', { class: 'list' }, remaining.map(m => el('li', {}, el('a', { href: '#' + m.id, text: `${m.chapterTitle} › ${m.title}` }), el('span', { class: 'pill ' + m.kind, text: KIND_LABEL[m.kind] }))))),
       skillsCard(),
+      closedCasebook(),
       el('div', { class: 'navrow' }, linkBtn('#', '← Back to the case file'), linkBtn('#' + remaining[0].id, 'Next open mission →', true)));
   }
   return el('div', {}, head,
+    closedCasebook(),
     el('div', { class: 'columns' },
       ['Facts', 'Hypotheses', 'Gaps'].map(part => el('section', { class: 'card closed ' + part.toLowerCase(), 'aria-label': part },
         el('div', { class: 'eyebrow', text: part }),
@@ -151,6 +193,30 @@ function closedPage() {
     skillsCard(),
     el('section', { class: 'card notice' }, el('strong', { text: 'What this proves. ' }), 'You can read and write the taught subset of YARA-L 2.0 Search against this fictional data. It does not prove tenant execution; run each shape once in your own tenant before relying on it.'),
     el('div', { class: 'navrow' }, linkBtn('#', '← Back to the case file'), linkBtn('#C06-M04', 'Reread the handoff mission')));
+}
+// Case closed: the learner's own Determination and Handoff ticket, with the export buttons. Repaints as the casebook changes.
+function closedCasebook() {
+  const box = el('section', { class: 'card closedbook', 'aria-label': 'Casebook' });
+  const paint = () => {
+    clear(box); const b = casebook.get(CASE.id); const d = b.determination;
+    const status = el('div', { class: 'small', role: 'status', 'aria-live': 'polite' });
+    const say = (text, cls = '') => { status.textContent = text; status.style.color = cls === 'ok' ? 'var(--ok)' : cls === 'bad' ? 'var(--bad)' : cls === 'warn' ? 'var(--warn)' : 'var(--muted)'; };
+    const fillers = kind => MISSIONS.filter(m => m.logIt?.kind === kind).map(m => el('a', { href: '#' + m.id, text: m.id }));
+    box.append(el('div', { class: 'eyebrow', text: 'Your casebook' }),
+      el('p', { class: 'small muted', text: 'The determination and the engineering handoff you wrote while working the case. The export is a local file; the copy is write-only to your clipboard.' }),
+      el('h2', { class: 'sub', text: 'Determination' }),
+      d ? el('div', {}, el('p', {}, el('strong', { text: (VERDICT_LABEL[d.verdict] ?? d.verdict ?? '—') + ' · confidence ' + (d.confidence || '—') }), ' · decided by ' + ((d.refs ?? []).map(n => '#' + n).join(', ') || '—')), el('p', { text: d.summary }))
+        : el('p', { class: 'small muted' }, 'Not written yet. The mission that asks for it: ', ...fillers('determination').flatMap((a, i) => (i ? [', ', a] : [a])), '.'),
+      el('h2', { class: 'sub', text: 'Handoff ticket' }),
+      b.handoff ? el('pre', { text: handoffText(b, caseInfo()) }) : el('p', { class: 'small muted' }, 'Not written yet. The mission that asks for it: ', ...fillers('handoff').flatMap((a, i) => (i ? [', ', a] : [a])), '.'),
+      el('div', { class: 'row', style: 'margin-top:10px' },
+        el('button', { text: 'Download Markdown', onclick: () => download(casebook.get(CASE.id), caseInfo(), say) }),
+        el('button', { text: 'Copy handoff ticket', onclick: () => copyTicket(casebook.get(CASE.id), caseInfo(), say) }),
+        el('button', { class: 'ghost', text: 'Open the Casebook', onclick: () => cbui.open('handoff') })),
+      status);
+  };
+  paint(); onBookChangeAlso(paint);
+  return box;
 }
 function skillsCard() {
   return el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'What you can now do' }),
@@ -168,7 +234,9 @@ function missionPage(m) {
   const lesson = el('aside', { class: 'lesson' });
   const desk = el('section', { class: 'card desk', 'aria-label': 'Query desk' });
 
-  const clueBox = el('section', { class: 'card clue', hidden: !isDone(m), 'aria-label': 'Case update' }, el('div', { class: 'eyebrow', text: 'Case update' }), el('p', { text: m.clue }));
+  const clueBox = el('section', { class: 'card clue', hidden: !isInvestigated(m), 'aria-label': 'Case update' }, el('div', { class: 'eyebrow', text: 'Case update' }), el('p', { text: m.clue }));
+  const logItBox = m.logIt ? logItCard(m) : null;
+  cbui.setContext(() => ({ query: editor.value, range: CASE.ranges.find(x => x.id === s.rangeId)?.label ?? '' }));
   // Visually hidden status line for events that change the lesson pane while focus is on the desk.
   const announcer = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
   const headerPill = el('span', { class: 'pill' });
@@ -192,10 +260,11 @@ function missionPage(m) {
       el('p', { class: 'beat', text: m.beat }),
       el('div', { class: 'question', text: m.question })),
     el('section', { class: 'card concept' }, el('div', { class: 'eyebrow', text: 'Think like an analyst' }), el('h2', { class: 'sub', text: m.concept.title }), el('p', { text: m.concept.text })),
-    m.explain?.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: m.kind === 'read' ? 'Side by side' : 'Read the query' }),
+    m.brief === 'casebook' ? briefCard(m) : m.explain?.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: m.kind === 'read' ? 'Side by side' : 'Read the query' }),
       el('ul', { class: 'explain' }, m.explain.map(x => el('li', {}, el('code', { text: x.part }), el('span', { text: x.meaning }))))) : null,
     m.hints.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Stuck?' }), hintsBox) : null,
     clueBox,
+    logItBox,
     m.caveat ? el('div', { class: 'caveat' }, el('strong', { text: 'In a real tenant: ' }), m.caveat) : null,
     el('div', { class: 'navrow' }, prev ? linkBtn('#' + prev.id, '← ' + prev.title) : el('span'), next ? linkBtn('#' + next.id, next.title + ' →', isDone(m)) : linkBtn(isDone(m) && allDone() ? '#closed' : '#', isDone(m) && allDone() ? 'Case closed →' : 'Back to the case file', true)),
   );
@@ -205,14 +274,20 @@ function missionPage(m) {
   const say = (cls, title, fix, examples) => { clear(feedback); feedback.hidden = false; feedback.className = 'feedback ' + cls; feedback.append(el('div', { class: 'title', text: title })); if (fix) feedback.append(el('div', { class: 'fix', text: fix })); if (examples) feedback.append(el('div', { class: 'fix examples', text: examples })); };
   const results = el('div', { class: 'results' });
   const scorebox = el('div', { class: 'scorebox' });
+  let doneBefore = isDone(m);
   const paintScoreBox = () => {
     clear(scorebox); const r = store.get(m.id);
     if (m.kind === 'build' || m.kind === 'solo') scorebox.append(el('span', { class: r.q ? 'on' : '', text: `Query ${r.q}/${POINTS.query}` }));
     if (m.kind !== 'read') scorebox.append(el('span', { class: r.a ? 'on' : '', text: `Answer ${r.a}/${POINTS.answer}` }));
     scorebox.append(el('span', { class: r.c ? 'on' : '', text: `Analyst call ${r.c}/${POINTS.call}` }));
-    scorebox.append(el('span', { class: isDone(m) ? 'on' : '', text: isDone(m) ? 'Mission complete' : `${earned(m)} / ${missionMax(m)}` }));
-    const wasHidden = clueBox.hidden; clueBox.hidden = !isDone(m);
-    if (wasHidden && isDone(m)) announcer.textContent = 'Mission complete. A case update is now shown in the lesson pane.';
+    if (m.logIt) scorebox.append(el('span', { class: r.cb ? 'on' : '', text: `Casebook ${r.cb}/${CASEBOOK_POINTS}` }));
+    scorebox.append(el('span', { class: isDone(m) ? 'on' : '', text: isDone(m) ? 'Mission complete' : isInvestigated(m) && m.logIt ? 'Log it to complete' : `${earned(m)} / ${missionMax(m)}` }));
+    const wasHidden = clueBox.hidden; clueBox.hidden = !isInvestigated(m);
+    if (logItBox) logItBox.hidden = !logItOpen(m);
+    const nowDone = isDone(m);
+    if (!doneBefore && nowDone) announcer.textContent = 'Mission complete.' + (wasHidden ? ' A case update is now shown in the lesson pane.' : '');
+    else if (wasHidden && isInvestigated(m)) announcer.textContent = 'A case update is now shown in the lesson pane. Log it in the Casebook to complete the mission.';
+    doneBefore = nowDone;
     paintHeaderPill(); paintScore();
   };
 
@@ -228,7 +303,9 @@ function missionPage(m) {
       el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') }));
     const raw = el('div', { hidden: true, role: 'region', 'aria-label': 'Full record', tabindex: -1 });
     // Opening a record moves focus into the region; closing it returns focus to the button that opened it.
-    const wrap = el('div', { class: 'tablewrap' }, r.count ? resultsTable(r, (rec, opener) => { clear(raw); raw.hidden = false; raw.append(el('div', { class: 'row', style: 'justify-content:space-between;margin-top:8px' }, el('strong', { class: 'small', text: 'Full record ' + rec['metadata.id'] }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; opener?.focus(); } })), rawRecord(rec)); raw.focus(); }) : el('div', { class: 'empty', text: 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.' }));
+    // Insert from results: the selected record's time and metadata.id go into the Evidence draft; the observation stays the learner's.
+    const wrap = el('div', { class: 'tablewrap' }, r.count ? resultsTable(r, (rec, opener) => { clear(raw); raw.hidden = false; raw.append(el('div', { class: 'row', style: 'justify-content:space-between;margin-top:8px' }, el('strong', { class: 'small', text: 'Full record ' + rec['metadata.id'] }),
+      el('span', { class: 'row' }, el('button', { class: 'ghost', text: 'Add to Casebook', 'aria-label': 'Add record ' + rec['metadata.id'] + ' to the Casebook evidence draft', onclick: () => cbui.insertEvidence({ time: hhmm(rec['metadata.event_timestamp.seconds']), id: rec['metadata.id'] }) }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; opener?.focus(); } }))), rawRecord(rec)); raw.focus(); }) : el('div', { class: 'empty', text: 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.' }));
     results.append(head, wrap, raw);
   };
 
@@ -262,8 +339,8 @@ function missionPage(m) {
     if (m.kind !== 'watch') deskButtons.append(el('button', { text: 'Check query', onclick: doCheck }));
     deskButtons.append(el('button', { class: 'ghost', text: 'Reset', onclick: () => { editor.value = s.text = m.starter ?? ''; s.run = null; s.query = null; paintResults(); feedback.hidden = true; } }));
     const keys = (...ks) => ks.flatMap((k, i) => (i ? [' + ', el('kbd', { text: k })] : [el('kbd', { text: k })]));
-    deskButtons.append(el('span', { class: 'small muted keys', id: 'editor-help-' + m.id }, ...keys('Ctrl', 'Enter'), ' runs', m.kind !== 'watch' ? [' · ', ...keys('Ctrl', 'Shift', 'Enter'), ' checks'] : [], ' · ', el('kbd', { text: 'Tab' }), ' leaves the editor'));
-  }
+    deskButtons.append(el('span', { class: 'small muted keys', id: 'editor-help-' + m.id }, ...keys('Ctrl', 'Enter'), ' runs', m.kind !== 'watch' ? [' · ', ...keys('Ctrl', 'Shift', 'Enter'), ' checks'] : [], ' · ', el('kbd', { text: 'Tab' }), ' leaves the editor', ' · ', ...keys('Ctrl', 'Shift', 'N'), ' casebook'));
+  } else deskButtons.append(el('span', { class: 'small muted keys' }, ...(() => { const k = (...ks) => ks.flatMap((x, i) => (i ? [' + ', el('kbd', { text: x })] : [el('kbd', { text: x })])); return k('Ctrl', 'Shift', 'N'); })(), ' opens the casebook'));
 
   const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))));
 
@@ -301,8 +378,73 @@ function missionPage(m) {
     el('div', { class: 'deskbar' }, el('div', { class: 'eyebrow', style: 'margin:0', text: 'Query desk' }), el('label', {}, 'Time range', rangeSel)),
     editor, deskButtons, feedback, results, fieldList, answerPart, callPart, scorebox, announcer,
   );
+  logItBox?.addEventListener('logged', paintScoreBox);
   paintResults(); paintScoreBox();
   return el('div', { class: 'mission' }, lesson, desk);
+}
+
+// Log it: the casebook entry this mission earns and what a good one contains. The check is structural (required
+// fields, UTC times, record IDs that exist, references that resolve, no claim words without a record) plus the
+// presence of the anchors the mission names; it never judges the quality of the thinking and never compares text
+// against a model answer. Passing earns the mission's Casebook points.
+function logItCard(m) {
+  const li = m.logIt; const kind = li.kind;
+  const what = (li.list ? LIST_LABEL[li.list] + ' item' : ENTRY_LABEL[kind]);
+  const token = t => { const alts = t.split('|'); return alts.length === 1 ? alts[0] : alts.length <= 3 ? alts.join(' or ') : `${alts.slice(0, 2).join(' or ')} or another of ${alts.length - 2}`; };
+  const feedback = el('div', { class: 'feedback', hidden: true, role: 'status', 'aria-live': 'polite' });
+  const check = () => {
+    const result = checkLogIt(li, casebook.get(CASE.id), contextFor(casebook.get(CASE.id), EVENT_IDS));
+    clear(feedback); feedback.hidden = false; feedback.className = 'feedback ' + (result.ok ? 'ok' : 'warn');
+    feedback.append(el('div', { class: 'title', text: result.ok ? `Logged. ${result.message}` : result.message }));
+    if (result.ok) { store.record(m.id, 'cb', CASEBOOK_POINTS); card.dispatchEvent(new Event('logged')); }
+    else feedback.append(el('div', { class: 'fix', text: 'Structure is checked, not the quality of your thinking. Fix the entry in the Casebook and check again.' }));
+  };
+  const card = el('section', { class: 'card logit', hidden: !logItOpen(m), 'aria-label': 'Log it' },
+    el('div', { class: 'eyebrow', text: `Log it · ${CASEBOOK_POINTS} pts` }),
+    el('h2', { class: 'sub', text: `This mission earned: ${/^[aeiou]/i.test(what) ? 'an' : 'a'} ${what.toLowerCase()}` }),
+    el('p', { text: li.prompt }),
+    el('p', { class: 'small', text: 'A good one contains:' }),
+    el('ul', {}, li.mustInclude.map(t => el('li', { class: 'mono', text: token(t) }))),
+    el('div', { class: 'row' },
+      el('button', { text: `Open Casebook: ${ENTRY_LABEL[kind].replace(' entry', '').replace(' item', '')}`, onclick: () => cbui.open(kind) }),
+      el('button', { class: 'primary', text: 'Check my Casebook', onclick: check })),
+    feedback,
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'The check is for structure: required fields, HH:MM UTC times, record IDs that exist, references that resolve, and no claim words without a record. It does not grade the quality of your thinking.' }));
+  return card;
+}
+
+// The brief (C06-M04): the learner's casebook assembled into facts, hypotheses, gaps, determination, remediation and
+// the handoff ticket, beside the authored model for self-comparison. Empty sections say which missions fill them.
+function briefCard(m) {
+  const box = el('section', { class: 'card', 'aria-label': 'Your brief beside the model' });
+  const model = part => m.explain.find(e => e.part === part)?.meaning ?? '';
+  const sentences = t => t.split(/\.\s+(?=[A-Z0-9])/).map(x => x.replace(/\.$/, '')).filter(Boolean);
+  const paint = () => {
+    clear(box); const b = casebook.get(CASE.id); const info = caseInfo();
+    const fillers = kinds => MISSIONS.filter(x => kinds.includes(x.logIt?.kind)).map(x => x.id);
+    const missing = (kinds, label) => { const ids = fillers(kinds); return el('p', { class: 'missing' }, `Nothing logged for ${label} yet. Missions whose Log it fills it: `, ...ids.flatMap((id, i) => (i ? [', ', el('a', { href: '#' + id, text: id })] : [el('a', { href: '#' + id, text: id })])), '.'); };
+    const facts = [...b.evidence.map(e => `${e.time} · ${e.observation} (#${e.n}: ${e.records.join(', ')})`), ...sortTimeline(b.timeline, info.dayStartHour).map(t => `${t.time} · ${t.fact} (#${t.ref ?? '—'})`)];
+    const rows = [
+      ['Facts', facts.length ? el('ul', {}, facts.map(t => el('li', { text: t }))) : missing(['evidence', 'timeline'], 'facts'), 'Facts'],
+      ['Hypotheses', b.hypothesis.length ? el('ul', {}, b.hypothesis.map(h => el('li', { text: `${h.status || 'open'} · ${h.statement}` + ((h.supporting ?? []).length ? ` (for: ${h.supporting.map(n => '#' + n).join(', ')})` : '') + ((h.contradicting ?? []).length ? ` (against: ${h.contradicting.map(n => '#' + n).join(', ')})` : '') }))) : missing(['hypothesis'], 'hypotheses'), 'Hypotheses'],
+      ['Gaps', b.gap.length ? el('ul', {}, b.gap.map(g => el('li', { text: `${g.text} · ${g.why}` }))) : missing(['gap'], 'gaps'), 'Gaps'],
+      ['Determination', b.determination ? el('p', { text: `${VERDICT_LABEL[b.determination.verdict] ?? b.determination.verdict ?? '—'} · confidence ${b.determination.confidence || '—'} · decided by ${(b.determination.refs ?? []).map(n => '#' + n).join(', ') || '—'}. ${b.determination.summary}` }) : missing(['determination'], 'the determination'), 'Determination'],
+      ['Remediation', b.remediation.length ? el('ul', {}, LISTS.flatMap(l => b.remediation.filter(r => r.list === l).map(r => el('li', { text: `${LIST_LABEL[l]}: ${r.text} · ${r.owner} · ${r.urgency} · answers ${(r.refs ?? []).map(n => '#' + n).join(', ')}` })))) : missing(['remediation'], 'remediation'), 'Remediation'],
+      ['Handoff', b.handoff ? el('pre', { text: handoffText(b, info) }) : missing(['handoff'], 'the handoff ticket'), 'Handoff'],
+    ];
+    box.append(el('div', { class: 'eyebrow', text: 'Your brief beside the model' }),
+      el('p', { class: 'small muted', text: 'Left: assembled from your Casebook as it stands. Right: the authored brief for this case. Compare the columns yourself; nothing here is graded. Facts come from your Evidence and Timeline tabs.' }));
+    for (const [label, mine, part] of rows) {
+      const modelText = model(part);
+      box.append(el('h2', { class: 'sub', style: 'margin-top:12px', text: label }),
+        el('div', { class: 'brief' },
+          el('div', {}, el('div', { class: 'eyebrow', text: 'Yours' }), mine),
+          el('div', {}, el('div', { class: 'eyebrow', text: 'Model' }), modelText ? el('ul', {}, sentences(modelText).map(t => el('li', { text: t }))) : el('p', { class: 'missing', text: 'No model text for this section.' }))));
+    }
+    box.append(el('div', { class: 'row', style: 'margin-top:12px' }, el('button', { text: 'Open the Casebook', onclick: () => cbui.open('handoff') })));
+  };
+  paint(); onBookChangeAlso(paint);
+  return box;
 }
 
 // Tells the learner where in their own results the answer is read from, without giving the value.
@@ -323,6 +465,8 @@ function aboutPage() {
     el('section', { class: 'card story' }, el('div', { class: 'eyebrow', text: 'What this is' }), el('h1', { text: 'A practice desk for Google SecOps Search' }),
       el('p', { text: 'You write YARA-L 2.0 Search queries against a small fictional dataset of UDM events and see what comes back. Queries are graded by running them: if yours returns the same evidence as the reference, it passes, however you spelled it. Answers are read from your own results. Analyst calls are fixed-choice reasoning checks with an explanation either way.' }),
       el('p', { text: 'Points are formative. Hints never cost anything and the last hint is a full answer. A complete course proves you can read and write the taught subset against this data; it does not prove tenant execution, detection skill or anything an employer should rely on.' })),
+    el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'The Casebook' }),
+      el('p', { text: 'A notebook for the case, opened from the top bar or with Ctrl+Shift+N: scope, evidence with record IDs, a timeline, hypotheses, pivots, gaps, a determination, remediation in four lists and an engineering handoff. Each mission ends by asking for one entry; a deterministic check looks at structure only (required fields, UTC times, record IDs that exist, references that resolve, no claim words without a record) and never at the quality of the thinking. It is session-only unless you turn on remembering on the case file page; the export is a local Markdown download.' })),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'What it is not' }),
       el('ul', {}, ['Not connected to any SIEM, and never will be. Nothing you type leaves this tab.', 'Not Google\'s compiler. The supported subset is documented; valid Google syntax outside it is reported as "not run here", separately from mistakes.', 'Not real data. Every event is generated by a script in this repository; IP addresses come from documentation ranges; people and places are invented.', 'Not a place for workplace values. Practise the shape here; use real identifiers only inside tools your employer authorizes.'].map(t => el('li', { text: t })))),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Supported subset' }),
