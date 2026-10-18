@@ -1,0 +1,35 @@
+{
+  "note": "Reference lists as a tenant would hold them under Detection > Lists. This trainer bundles them; in Google SecOps they are objects you create and maintain, and a query names them with %list_name.",
+  "lists": [
+    {
+      "name": "sponsor_domains",
+      "type": "string",
+      "description": "The names the station's machines are allowed to resolve, written in a hurry the morning after Pledge Night by copying every sponsor-looking name out of the week-one logs. Wider than it should be: read it to the end.",
+      "items": ["cdn.publicradio.example", "streaming.tunecast.example", "mail.harborlightsponsors.example", "harborlightsponsors.example", "updates.vendor.example", "time.sync.example", "weather.harborcast.example", "login.pledgeware.example", "pledgeware.example", "pier9-partners.example", "cdn-sync.pier9-partners.example"]
+    },
+    {
+      "name": "admin_accounts",
+      "type": "string",
+      "description": "Accounts allowed to run as a different user on station hosts.",
+      "items": ["dez.okafor", "svc-playout", "odalys.reyes"]
+    },
+    {
+      "name": "blocked_ranges",
+      "type": "cidr",
+      "description": "Ranges the gateway blocks since the first case.",
+      "items": ["203.0.113.0/24"]
+    },
+    {
+      "name": "station_lan",
+      "type": "cidr",
+      "description": "The station's own network, including the address pool the VPN gateway hands to remote sessions.",
+      "items": ["10.9.4.0/24"]
+    },
+    {
+      "name": "lookalike_patterns",
+      "type": "regex",
+      "description": "Shapes of lookalike sender domains: a known sponsor's name with a hyphen pushed into it, or the station's name with a partner suffix.",
+      "items": ["pier9-[a-z]+\\.example$", "harborlight-[a-z]+\\.example$"]
+    }
+  ]
+}

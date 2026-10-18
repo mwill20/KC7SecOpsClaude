@@ -23,7 +23,8 @@
       "explain": [
         { "part": "A good entry", "meaning": "19:05 to 19:10 UTC · USER_LOGIN · seven FAIL events for pledge-desk from 198.51.100.23 through VPN-GW-01; principal.hostname blank on every one · records evt-00039 to evt-00057 · source: metadata.event_type = \"USER_LOGIN\" and principal.user.userid = \"pledge-desk\", whole night · confidence high. Reproducible, UTC, one claim, no verdict." },
         { "part": "A bad entry", "meaning": "Someone clearly brute-forced the pledge desk around 7 last night and got in. Probably Marco. No query, no range, no record ID, a local time, a verdict and a name in one sentence; nothing in it can be checked by anyone else." },
-        { "part": "The habits", "meaning": "Facts before inference. Reproducible: query, time range, record IDs. UTC, always. Write for the reader at 3 a.m. One claim per entry. Cite a record, or mark it as a hypothesis. Write down what you could not see." }
+        { "part": "The habits", "meaning": "Facts before inference. Reproducible: query, time range, record IDs. UTC, always. Write for the reader at 3 a.m. One claim per entry. Cite a record, or mark it as a hypothesis. Write down what you could not see." },
+        { "part": "FreeForm or the tabs?", "meaning": "The Casebook also has a FreeForm page: a blank sheet with a faded template (ALERT / CASE #, DATE-TIME (UTC), QUERY, RESULTS, OBSERVATION, HYPOTHESIS, PIVOT, NEXT QUERY, DETERMINATION, REMEDIATION, OPEN QUESTIONS). Use it for speed and raw capture: paste a query and its rows, jot a hunch, keep moving while the trail is warm. Use the structured tabs for handoff quality: one claim per entry, record IDs, references that resolve, a check that catches what you left out. Good analysts do both. Capture fast on the page, then structure what survived into the tabs before the shift ends. The page is ungraded; the tabs are what Log it reads." }
       ],
       "starter": "",
       "reference": null,

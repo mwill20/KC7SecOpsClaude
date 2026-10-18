@@ -40,10 +40,13 @@ export function resultsTable(result, onRow, timeCols = new Set()) {
     return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
   }
   const head = el('tr', {}, result.columns.map(c => el('th', { text: c === 'window_start' ? 'window start (UTC)' : short(c) })));
-  const body = result.rows.slice(0, 200).map(r => el('tr', {}, result.columns.map(c => el('td', { text: c === 'window_start' ? fmtTime(r[c]) : timeCols.has(c) && typeof r[c] === 'number' && r[c] > 0 ? `${fmtTime(r[c])} (${r[c]})` : cell(r[c]) }))));
+  const body = result.rows.slice(0, 200).map(r => el('tr', {}, result.columns.map(c => el('td', { class: Array.isArray(r[c]) ? 'arr' : null, text: c === 'window_start' ? fmtTime(r[c]) : timeCols.has(c) && typeof r[c] === 'number' && r[c] > 0 ? `${fmtTime(r[c])} (${r[c]})` : cell(r[c]) }))));
   return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
 }
-const cell = v => v === undefined || v === '' ? '—' : typeof v === 'number' ? fmtNum(v) : String(v);
+// An array outcome renders as a comma-joined list; the display is capped so a 1,000-element array stays readable.
+export const ARRAY_SHOW = 12;
+export const fmtArray = a => a.length ? (a.length > ARRAY_SHOW ? a.slice(0, ARRAY_SHOW).map(String).join(', ') + ` … (+${fmtNum(a.length - ARRAY_SHOW)} more, ${fmtNum(a.length)} in all)` : a.map(String).join(', ')) : '[]';
+const cell = v => v === undefined || v === '' ? '—' : Array.isArray(v) ? fmtArray(v) : typeof v === 'number' ? fmtNum(v) : String(v);
 
 export function rawRecord(r) {
   const entries = Object.entries(r).sort(([a], [b]) => a.localeCompare(b));

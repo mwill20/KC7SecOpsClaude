@@ -1,5 +1,8 @@
-// Generates the fictional Pier Nine Radio dataset. Deterministic: same seed, same bytes.
+// Generates the fictional Pier Nine Radio datasets. Deterministic: same seed, same bytes.
 // Every name, address and domain is invented. IPs use RFC 5737 documentation ranges only.
+// Two cases, two files. Case 1 (data/events.json, Pledge Night) is generated first and must stay byte-identical;
+// the content validator checks its digest. Case 2 (data/events-week-after.json, one week later) is generated after
+// it with its own seed, so nothing added below can move a case-1 event.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +13,7 @@ const T1 = T0 + 12 * 3600;                            // 06:00 next morning
 const at = (hh, mm, ss = 0) => T0 + ((hh - 18 + 24) % 24) * 3600 + mm * 60 + ss;
 
 function prng(seed) { let s = seed >>> 0; return () => { s += 0x6D2B79F5; let t = Math.imul(s ^ (s >>> 15), 1 | s); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-const rnd = prng(91030);
+let rnd = prng(91030);
 const pick = a => a[Math.floor(rnd() * a.length)];
 const between = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
 
@@ -39,7 +42,8 @@ const benignProcs = [
 const C2 = '203.0.113.44', ATTACKER = '198.51.100.23', PHISH = 'pier9-partners.example', BEACON = 'cdn-sync.pier9-partners.example';
 
 const events = [];
-const add = (ts, type, fields) => events.push({ 'metadata.event_timestamp.seconds': ts, 'metadata.event_type': type, ...fields });
+let bucket = events; // the array add() fills; case 2 swaps in its own
+const add = (ts, type, fields) => bucket.push({ 'metadata.event_timestamp.seconds': ts, 'metadata.event_type': type, ...fields });
 const login = (ts, u, { host, ip, action = 'ALLOW', targetUser = '', targetHost = 'DC-01', summary = '', title }) =>
   add(ts, 'USER_LOGIN', { 'metadata.product_name': 'Windows Security', 'principal.user.userid': u.id ?? u, 'principal.user.title': title ?? u.title ?? '', 'principal.hostname': host, 'principal.ip': ip, 'target.hostname': targetHost, 'target.user.userid': targetUser, 'security_result.action': action, 'security_result.summary': summary });
 const proc = (ts, u, host, ip, parent, file, cmd) =>
@@ -132,3 +136,95 @@ const out = { case: 'Static on Pier Nine', window: { start: T0, end: T1 }, gener
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
 fs.writeFileSync(path.join(root, 'data', 'events.json'), JSON.stringify(out));
 console.log('events:', events.length, 'bytes:', fs.statSync(path.join(root, 'data', 'events.json')).size);
+
+// =================================================================================================
+// Case 2: The week after. 2026-03-20 18:00 to 2026-03-21 06:00 UTC, the following Friday's membership drive.
+// After the first case the station reset the pledge-desk password, removed the PledgeSync task, blocked
+// 203.0.113.0/24 at the gateway and wrote an allowlist of sponsor domains in a hurry. The question this week is
+// whether the fix held. The story is subtler: no brute force, no playout PC, a second phished identity.
+// =================================================================================================
+const T2 = Date.parse('2026-03-20T18:00:00Z') / 1000, T3 = T2 + 12 * 3600;
+const at2 = (hh, mm, ss = 0) => T2 + ((hh - 18 + 24) % 24) * 3600 + mm * 60 + ss;
+const events2 = []; bucket = events2; rnd = prng(20260320);
+const lena = people[7], dez = people[3], odalys = people[0];
+const FS = { host: 'FS-01', ip: '10.9.4.50' };
+const VPN_CLIENT = '10.9.4.200';            // the address the gateway hands a remote session
+const C2B = '198.51.100.77', LURE2 = 'harborlight-sponsors.example', BEACON2 = 'files.' + LURE2;
+const DEZ_HOME = '198.51.100.200', ODALYS_HOME = '198.51.100.140';
+
+// ---- Normal evening, same shape as week one with a new seed ------------------------------------
+for (const p of people) {
+  const sessions = between(2, 4);
+  for (let s = 0; s < sessions; s++) {
+    const t = between(T2 + 120, T3 - 1800);   // a failed first try (up to 90 s earlier) must stay inside the window
+    login(t, p, { host: p.host, ip: p.ip });
+    if (rnd() < 0.18) login(t - between(20, 90), p, { host: p.host, ip: p.ip, action: 'FAIL', summary: 'Bad password' });
+    for (let k = 0; k < between(8, 16); k++) { const [f, c] = pick(benignProcs); proc(t + between(5, 1700), p, p.host, p.ip, 'C:\\Windows\\explorer.exe', f, c); }
+    for (let k = 0; k < between(8, 14); k++) { const d = pick(benignDomains); const tt = t + between(5, 1700); dns(tt, p, p.host, p.ip, d); conn(tt + 1, p, p.host, p.ip, benignIps[d], pick([443, 443, 443, 80]), between(300, 60000), between(1000, 900000)); }
+    if (rnd() < 0.3) file(t + between(60, 1500), p, p.host, p.ip, pick(['C:\\Users\\Public\\membership-tally.xlsx', 'C:\\Users\\Public\\run-of-show.docx', 'C:\\Users\\Public\\sponsor-reads.txt']));
+  }
+}
+// Playout service on the rebuilt AUTOMATION-01: the same automation, no PledgeSync task
+for (let t = T2; t < T3; t += 600) {
+  if (rnd() < 0.5) proc(t + between(0, 500), 'svc-playout', AUTOMATION.host, AUTOMATION.ip, 'C:\\Program Files\\Playout\\playout.exe', 'C:\\Program Files\\Playout\\playout_ctl.exe', 'playout_ctl.exe --advance');
+  if (rnd() < 0.6) { dns(t + between(0, 500), 'svc-playout', AUTOMATION.host, AUTOMATION.ip, 'streaming.tunecast.example'); conn(t + between(0, 500), 'svc-playout', AUTOMATION.host, AUTOMATION.ip, '192.0.2.120', 443, between(400, 3000), between(50000, 400000)); }
+}
+add(at2(21, 0, 0), 'SCHEDULED_TASK_CREATION', { 'metadata.product_name': 'Windows Security', 'principal.user.userid': 'svc-playout', 'principal.hostname': AUTOMATION.host, 'principal.ip': AUTOMATION.ip, 'target.file.full_path': 'C:\\Program Files\\Playout\\nightly-backup.cmd', 'security_result.summary': 'Task PlayoutBackup created', 'security_result.action': 'ALLOW' });
+// Lena's own shift at the pledge desk: in at 18:20, back after a break at 21:40. She is at her desk all evening.
+login(at2(18, 20, 14), lena, { host: lena.host, ip: lena.ip });
+login(at2(21, 40, 2), lena, { host: lena.host, ip: lena.ip });
+// Staff working from home through the gateway, legitimately: the engineer and the station manager
+login(at2(21, 0, 10), dez, { host: '', ip: DEZ_HOME, targetHost: 'VPN-GW-01' });
+login(at2(21, 5, 30), dez, { host: AUTOMATION.host, ip: AUTOMATION.ip, targetUser: 'svc-playout', targetHost: AUTOMATION.host, summary: 'Run as different user' });
+proc(at2(21, 6, 12), dez, AUTOMATION.host, AUTOMATION.ip, 'C:\\Windows\\System32\\cmd.exe', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', 'powershell.exe Get-Service PlayoutEngine');
+login(at2(23, 30, 45), odalys, { host: '', ip: ODALYS_HOME, targetHost: 'VPN-GW-01' });
+// Benign mail, including the real sponsor and the hourly totals
+mail(at2(18, 4, 50), 'reads@harborlightsponsors.example', staffMail('tomas.ikeda'), 'Membership drive sponsor reads');
+mail(at2(18, 5, 30), 'reads@harborlightsponsors.example', staffMail('lena.ostrowski'), 'Membership drive sponsor reads');
+mail(at2(18, 25, 0), staffMail('lena.ostrowski'), staffMail('priya.nair'), 'Desk shifts for the drive');
+mail(at2(19, 0, 0), staffMail('odalys.reyes'), staffMail('ruth.calloway'), 'News breaks tonight');
+for (const [h, total] of [[20, '$9,480'], [21, '$15,110'], [22, '$19,760'], [1, '$27,215']]) mail(at2(h, 30, 0), 'noreply@pledgeware.example', staffMail('hal.brunner'), 'Hourly membership total: ' + total);
+mail(at2(22, 50, 0), 'offers@discount-mailer.example', staffMail('kenji.mori'), 'Headphones, half price this weekend', 'http://discount-mailer.example/c/1207', 'QUARANTINE');
+mail(at2(0, 40, 0), staffMail('ruth.calloway'), staffMail('tomas.ikeda'), 'Midnight newscast script');
+for (let k = 0; k < 14; k++) mail(between(T2, T3), staffMail(pick(people).id), staffMail(pick(people).id), pick(['Re: run of show', 'Studio B headphones', 'Parking for volunteers', 'Membership gift inventory', 'Weather cut-in']));
+
+// ---- The return ----------------------------------------------------------------------------------
+// 1. The old lookalike writes again. The hastily written allowlist copied every sponsor-looking domain from last
+//    week's mail log, pier9-partners.example included, so the gateway lets it through. Nobody clicks.
+mail(at2(18, 35, 40), 'sponsorships@' + PHISH, staffMail('hal.brunner'), 'Updated sponsor read list for the membership drive', 'http://' + PHISH + '/portal/login');
+// 2. A new lookalike of the real sponsor, with a hyphen, writes to the membership coordinator and the intern
+mail(at2(18, 58, 12), 'billing@' + LURE2, staffMail('lena.ostrowski'), 'Co-sponsorship invoice: confirm in the sponsor portal before 8 PM', 'http://' + LURE2 + '/portal/login');
+mail(at2(18, 58, 15), 'billing@' + LURE2, staffMail('priya.nair'), 'Co-sponsorship invoice: confirm in the sponsor portal before 8 PM', 'http://' + LURE2 + '/portal/login');
+// 3. Lena opens it from PLEDGE-DESK-01 and signs in with her own, named account
+dns(at2(19, 12, 30), lena, lena.host, lena.ip, LURE2);
+conn(at2(19, 12, 31), lena, lena.host, lena.ip, C2B, 443, 1620, 19800);
+conn(at2(19, 13, 50), lena, lena.host, lena.ip, C2B, 443, 2400, 900);
+// 4. The attacker tries last week's door first: pledge-desk, reset since. Two quiet failures, no burst.
+login(at2(19, 58, 10), 'pledge-desk', { host: '', ip: C2B, targetHost: 'VPN-GW-01', action: 'FAIL', summary: 'Bad password' });
+login(at2(19, 58, 52), 'pledge-desk', { host: '', ip: C2B, targetHost: 'VPN-GW-01', action: 'FAIL', summary: 'Bad password' });
+// 5. Then the phished identity: one clean success through the gateway while Lena is at her desk
+login(at2(20, 3, 21), lena, { host: '', ip: C2B, targetHost: 'VPN-GW-01' });
+// 6. From the gateway-assigned address: the playout PC refuses her, the file server does not
+login(at2(20, 9, 40), lena, { host: '', ip: VPN_CLIENT, targetHost: AUTOMATION.host, action: 'FAIL', summary: 'Logon type not granted' });
+login(at2(20, 11, 2), lena, { host: '', ip: VPN_CLIENT, targetHost: FS.host, summary: 'Network logon' });
+for (const [h, m, sent, recv] of [[20, 11, 12400, 2400000], [20, 40, 9800, 5100000], [1, 55, 7600, 8900000], [2, 30, 15200, 3300000]]) conn(at2(h, m, between(5, 50)), lena, '', VPN_CLIENT, FS.ip, 445, sent, recv);
+// 7. The attacker checks last week's server. The gateway block holds.
+conn(at2(20, 20, 14), lena, '', VPN_CLIENT, C2, 443, 520, 0, 'BLOCK');
+// 8. A new beacon, every fifteen minutes, from the remote session to the new server
+for (let t = at2(20, 4, 5); t < T3; t += 900) {
+  const j = between(0, 7);
+  dns(t + j, lena, '', VPN_CLIENT, BEACON2);
+  conn(t + j + 1, lena, '', VPN_CLIENT, C2B, 443, between(610, 690), between(300, 390));
+}
+// 9. A second remote session in the small hours, a denied run-as, a staged export, a mid-sized upload
+login(at2(2, 14, 33), lena, { host: '', ip: C2B, targetHost: 'VPN-GW-01' });
+login(at2(2, 31, 5), lena, { host: '', ip: VPN_CLIENT, targetUser: 'svc-playout', targetHost: FS.host, action: 'FAIL', summary: 'Run as different user denied' });
+file(at2(2, 52, 18), lena, FS.host, FS.ip, 'C:\\Shares\\Membership\\members-export.zip');
+conn(at2(3, 40, 27), lena, '', VPN_CLIENT, C2B, 443, 6480320, 2100);
+
+// ---- Finish case 2 -------------------------------------------------------------------------------
+events2.sort((a, b) => a['metadata.event_timestamp.seconds'] - b['metadata.event_timestamp.seconds']);
+events2.forEach((e, i) => { e['metadata.id'] = 'evt-' + String(20000 + i + 1).padStart(5, '0'); });
+const out2 = { case: 'The week after', window: { start: T2, end: T3 }, generatedBy: 'tools/gen-data.mjs', events: events2 };
+fs.writeFileSync(path.join(root, 'data', 'events-week-after.json'), JSON.stringify(out2));
+console.log('events (week after):', events2.length, 'bytes:', fs.statSync(path.join(root, 'data', 'events-week-after.json')).size);

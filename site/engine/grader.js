@@ -4,9 +4,10 @@ import { execute, MEMBERS } from './executor.js';
 // Grades by running both queries against the same fictional data and comparing what comes back.
 // Two different-looking queries that return the same evidence both pass; a plausible query that
 // returns different evidence fails with a reason the learner can act on.
-export function runQuery(text, events, range) {
+// ctx carries the reference lists ({ lists }) the parser resolves %names against; without it every list is unknown.
+export function runQuery(text, events, range, ctx = {}) {
   try {
-    const query = parseSearch(text);
+    const query = parseSearch(text, ctx);
     const result = execute(query, events, range);
     return { ok: true, query, result };
   } catch (error) {
@@ -60,11 +61,11 @@ export function compareResults(student, reference) {
 
 export const POINTS = Object.freeze({ query: 60, answer: 25, call: 15 });
 
-export function gradeQuery(text, mission, events, range) {
+export function gradeQuery(text, mission, events, range, ctx = {}) {
   if (mission.kind === 'read') return { status: 'read', points: 0 };
-  const student = runQuery(text, events, range);
+  const student = runQuery(text, events, range, ctx);
   if (!student.ok) return { status: student.status, points: 0, code: student.code, detail: student.detail };
-  const reference = runQuery(mission.reference, events, range);
+  const reference = runQuery(mission.reference, events, range, ctx);
   if (!reference.ok) throw new Error('REFERENCE_BROKEN:' + mission.id);
   const cmp = compareResults(student.result, reference.result);
   return { status: cmp.correct ? 'correct' : 'incorrect', points: cmp.correct ? POINTS.query : 0, comparison: cmp, result: student.result };

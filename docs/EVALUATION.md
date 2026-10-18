@@ -1,16 +1,16 @@
 # Evaluation: what was tested and how
 
-Last run 2026-10-18 on the density branch (49 missions). Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked.
+Last run 2026-10-18 on the session-3 branch (65 missions, two cases). Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked. The session-3 section is at the end of this file.
 
 ## Summary
 
 | Layer | Tool | Count | Result |
 |---|---|---|---|
-| Dataset generation | `tools/gen-data.mjs` | 1,010 events | deterministic (fixed seed), `data/events.json` unchanged by this work |
-| Content validation | `tools/validate-content.mjs` | 49 missions | every reference runs; every authored answer proven against the data; every Build starter fails until completed; every `logIt` block has a kind in the enum, a prompt, a non-empty `mustInclude`, and record IDs that exist; every chapter has 7 or more missions, at most 8 with a query desk, and two Your-turn missions (one in chapter 1) |
-| Unit tests | `node --test` | 59 | pass (41 from the earlier branches + 17 for the Casebook branch + 1 for the density branch, see below) |
-| Browser tests | Playwright 1.64.1, Chromium | 18 | pass (11 + 6 for the Casebook branch + 1 for the density branch), each run at the root and under `/KC7SecOpsClaude/` |
-| Mutation checks on the new tests | manual, see below | 4 + 5 | each mutation failed the intended test |
+| Dataset generation | `tools/gen-data.mjs` | 1,010 + 971 events | deterministic (fixed seeds); `data/events.json` byte-identical to the density branch (sha256 `3c2da175…`), proven by the digest in `content/case.json`; `data/events-week-after.json` new |
+| Content validation | `tools/validate-content.mjs` | 65 missions, 2 cases, 5 lists | every reference runs against its case's data; every authored answer proven; every Build starter fails until completed; every `logIt` block valid; density rule per chapter; each case's window, ranges, chapters and digest; every case fed from Scope to Handoff with one brief mission last; `lists.json` and `casebook.json` shapes |
+| Unit tests | `node --test` | 69 | pass (59 before + 4 FreeForm/name + 4 engine v2 + 1 lists + 1 two-case model) |
+| Browser tests | Playwright 1.64.1, Chromium | 24 | pass (18 before + 4 FreeForm/name + 1 engine v2 + 1 two cases), each run at the root and under `/KC7SecOpsClaude/` |
+| Mutation checks on the new tests | manual, see below | 4 + 5 + 5 | each mutation failed the intended test |
 
 Environment for the recorded run: Linux, Node 22.22.0 (npm warns against `engines: >=24` but runs), Chromium build 1194 driven through `PIER9_CHROMIUM` because the container could not download Playwright's own build 1248. A clean CI run should instead do `npx playwright install --with-deps chromium` on Node 24; nothing in the tests depends on the Chromium build.
 
@@ -241,3 +241,71 @@ Every candidate reference was run against `data/events.json` before a word was w
 
 - Learning effect of the longer chapters: nobody outside the project has played the 49-mission course.
 - `Alt`+`Shift`+`C` on Windows layouts where `Alt`+`Shift` switches input language, and on macOS layouts where it types a character; the handler matches the physical key, and the button remains the fallback.
+
+## Session 3: the Casebook additions, engine v2 and the week after
+
+Branch `claude/tender-euler-3gssj3` (the task named it `cloud/s3`), 2026-10-18. What a learner notices: the Casebook opens on an **investigation name** field and has a **FreeForm** tab between Scope and Evidence (a blank page with a faded template, Insert template, text-only paste, a 24 KB meter, a presence-only structure check; ungraded, and the notes mission says when to use it); the desk accepts `dedup`, `array`/`array_distinct`, `earliest`/`latest`, the UTC time functions, the string functions and reference lists, and carries a **Lists** panel; a non-UTC zone is reported as *not run here* with the reason; the home page has a **case switcher** and a second case, **The week after**, with chapters 7 and 8, its own window and ranges, its own casebook and its own case-closed page. The course total went from 4,355 to 5,620 points. No change to any chapter 1 to 6 reference query, answer value or scoring value; `data/events.json` is byte-identical.
+
+### New missions, by chapter
+
+| Chapter | Mission | Kind | Teaches | Log it |
+|---|---|---|---|---|
+| 7 | C07-M01 The week after | Read | a new case gets a new Scope; "did the fix hold" has two halves | Scope |
+| 7 | C07-M02 One row per account at the gateway | Watch | `dedup:` on an event query lists, does not count: three accounts | Evidence (20:03, evt-20200) |
+| 7 | C07-M03 Every address an account used | Build | `array_distinct(principal.ip)` per account; Lena's desk, outside and gateway-assigned addresses | Evidence |
+| 7 | C07-M04 First and last sighting | Build | `earliest`/`latest(metadata.event_timestamp)` on the grouped `ip`; 19:12 to 05:49 | Timeline (19:12) |
+| 7 | C07-M05 The small hours | Watch | `timestamp.get_hour(…, "UTC") < 6` at the gateway; off-hours is a station claim | Hypothesis (open) |
+| 7 | C07-M06 First seen, per pair | Your turn | account-and-address pairs with `earliest`, ordered: the first-seen table | Evidence (20:11, evt-20210) |
+| 7 | C07-M07 The cadence by hour | Your turn | `$h = timestamp.get_hour(…)` as a match key; ten hours, four each | Pivot (FS-01) |
+| 7 | C07-M08 Where the session went | Build | `dedup: target.ip`: three destinations, one BLOCK | Gap (FS-01) |
+| 8 | C08-M01 Everything but the sponsors | Watch | `not in %sponsor_domains`: two lookalike names survive | Evidence (evt-20135) |
+| 8 | C08-M02 The shape of a lookalike | Build | `in regex %lookalike_patterns`; the allowlist admitted last week's lure | Evidence (18:35, evt-20051) |
+| 8 | C08-M03 Who may run as another user | Build | `not in %admin_accounts` on run-as attempts: one denied at 02:31 | Timeline (02:31) |
+| 8 | C08-M04 Did the block hold? | Watch | `in cidr %blocked_ranges`: one BLOCK, the control refusing | Evidence (20:20, BLOCK) |
+| 8 | C08-M05 Outside addresses, with names | Your turn | `array_distinct` of accounts per outside address | Hypothesis (supported) |
+| 8 | C08-M06 The block that would be too wide | Your turn | `net.ip_in_range_cidr` + `dedup`: four accounts in the range Hal wants blocked | Remediation / Contain |
+| 8 | C08-M07 Did the fix hold? | Read | held item by item, too narrow where it was not applied; four lists | Determination |
+| 8 | C08-M08 Handoff, week two | Read (brief) | the second handoff beside the model | Handoff |
+
+Kinds added: 4 Watch, 5 Build, 4 Your turn, 3 Read. Points: 675 in chapter 7, 590 in chapter 8. Chapter 7 feeds Scope, Evidence (3), Timeline, Hypothesis, Pivot and Gap; chapter 8 feeds Evidence (3), Timeline, Hypothesis, Remediation (Contain), Determination and Handoff, so the second casebook fills from Scope to Handoff and the validator now requires that of every case.
+
+### Method
+
+The second window was generated first (`tools/gen-data.mjs`, seed 20260320, appended after the case-1 generation so no case-1 byte moves; `sha256sum data/events.json` before and after is `3c2da175f2880c4c…`). Every candidate chapter-7 and chapter-8 query was run against `data/events-week-after.json` through the real engine before a word was written, and every number, time and record ID in a beat, clue, hint or Log it prompt was taken from those rows. The engine v2 pages were checked against Google's documentation through search summaries (the container's proxy refuses `docs.cloud.google.com`); the URLs are in `site/engine/catalog.js` and on the About page, and the summaries are quoted in the PR. Each new construct got a passing case and a should-fail case in `tests/unit/engine.test.mjs` (V1 to V4) before the content used it. The chapters were then played through Chromium (browser cases test): C07-M02 end to end into the week-after casebook with a case-1 record ID refused, C08-M02 graded by execution, both closed pages.
+
+### Friction log
+
+| # | Where | What a learner would say | What changed |
+|---|---|---|---|
+| S1 | Name field and FreeForm page | Typing one character and losing it: the drawer repainted on every store change and replaced the input under the cursor. | Saves from the two typed fields run with the repaint suppressed; everything else still repaints. Browser FreeForm test 1 types a sentence and checks the value. |
+| S2 | Scope tab | The Scope passed the structure check without a name, so the "first field" was optional in practice. | `NEEDS_NAME` on the Scope check when the casebook has no name; the Log it for the Scope fails with *Name the investigation in the field at the top of the Casebook.* (tests F1, N4; browser name test). |
+| S3 | FreeForm structure check | "A query line" was going to mean any line with `=`, which a timeline note like `DATE-TIME (UTC): 19:05` does not have, but `HYPOTHESIS: x = y` does. | Kept simple and said so: a line containing `=` or a section keyword counts. The check reports presence only and the UI says it is ungraded (test F4). |
+| S4 | C08-M02 call prompt | *The block held* in the prompt for the BLOCK answer; the leak check reads `block` as the answer, case-insensitively, and it is right to. | Reworded as *The gateway refused the range*; five other new prompts had restated a count, a time or a name and were reworded the same way (test C7). |
+| S5 | Chapters 7 and 8 record IDs | Moving one benign session inside the window (a failed first try at −60 s fell before 18:00) shifted every later case-2 ID by one, and the validator did not mind because the shifted IDs still exist. | IDs are resolved by time and type from the data and re-cited; `LIMITATIONS.md` names the gap (an existing-but-wrong ID is invisible to the validator). Candidate for session 4: `mustInclude` IDs checked against the reference query's own rows. |
+| S6 | `dedup` placement | Google's example dedups after outcomes and orders by an outcome; the task's should-fail list named "dedup without match", which the docs allow on a plain event query. | Followed the docs: `dedup` is accepted between `condition` and `order`, keeps the first row per key after ordering, and on a summary table may name only match keys or outcomes (`DEDUP_KEY_NOT_GROUPED`). Said so in `LIMITATIONS.md`. |
+| S7 | Time zones | `timestamp.get_hour(ts, "America/Los_Angeles")` is valid Google syntax; silently running it as UTC would teach a wrong hour. | Reported as *not run here* with the zone named and the reason (the dataset is read in UTC); `"UTC"`, `"GMT"` and the omitted argument run (test V3; browser engine test). |
+| S8 | Browser suite | One run reported a console 404 in the CSP test that did not recur in four later runs of the same build; the container's egress proxy was refusing a Chromium component host at the time. | Left alone and recorded here. The test asserts loopback-only requests, which held. |
+| S9 | Home page | With two cases the single "Open the case" button and "N of 49" line no longer said which case. | A case switcher (two linked tabs with accessible names), per-case counts beside the course count, per-case chapter grid, people and casebook card; `#case/week-after` and `#closed/week-after` routes; `#closed` stays the first case's. |
+| S10 | Lists panel | A learner who had never seen a tenant would read the bundled lists as the product. | The panel, the About page, chapter 8 and the list descriptions say lists live under Detection > Lists and that the trainer bundles them; `sponsor_domains` says in its own description that it was written in a hurry. |
+
+### Mutation checks
+
+| Mutation | Test that failed |
+|---|---|
+| `dedup` keeps the last row per key instead of the first | V1 (and C1, because C07-M02's authored answer no longer derives) |
+| The digest comparison removed from `validateCase` | C12 |
+| FreeForm text truncated at 24 KB instead of refused | F2 |
+| Any time zone accepted by the parser | V3 |
+| The Scope check no longer requires the name | N1, N4, F1 |
+
+### Left for session 4
+
+- Multi-event joins and entity context (chapters 9 and 10) as planned; the case model is a `cases` array with per-case windows, ranges, datasets and casebooks, so a third case is a new entry, a new data file and new chapters.
+- `mustInclude` record IDs checked against the mission's reference rows, not only for existence (S5).
+- An engine hint for the backslash count (D4 from the density pass) is still open.
+
+### Not verified
+
+- Tenant execution of any engine v2 shape; the Google pages were read through search summaries, not fetched.
+- Learning effect of the second case: nobody outside the project has played it.
+- The second case's data on a thirty-day baseline, which the chapters mention and the trainer does not have.

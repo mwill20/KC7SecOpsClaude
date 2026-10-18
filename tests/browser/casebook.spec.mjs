@@ -17,7 +17,7 @@ test('Drawer: Alt+Shift+C and the top-bar button open it beside the desk, arrows
   await expect(cb).toBeVisible();
   await expect(page.locator('#casebook-toggle')).toHaveAttribute('aria-expanded', 'true');
   expect((await active(page)).id).toBe('cb-title');
-  await expect(cb.getByRole('tab')).toHaveCount(9);
+  await expect(cb.getByRole('tab')).toHaveCount(10);
   await expect(cb.getByRole('tab', { name: 'Evidence' })).toHaveAttribute('aria-selected', 'true');
   // Wide layout: the desk shifts left of the drawer; nothing is covered.
   const desk = await page.locator('.desk').boundingBox(); const box = await cb.boundingBox();
@@ -109,7 +109,7 @@ test('Insert from results drafts the evidence entry, the note check passes, Log 
   await expect(logit.locator('.feedback')).toHaveClass(/ok/);
   await expect(logit.locator('.feedback')).toContainText('Logged. Evidence #1 passes the structure check');
   await expect(page.locator('.scorebox')).toContainText('Casebook 10/10');
-  await expect(page.locator('#topscore')).toHaveText('70 / 4,355 pts');
+  await expect(page.locator('#topscore')).toHaveText('70 / 5,620 pts');
 
   // 5. Should-fail: a second entry with a claim word and no record fails with the claim rule and the records rule, in plain language.
   await page.keyboard.press('Alt+Shift+C');
@@ -209,7 +209,7 @@ test('320 px: the casebook is a full-screen sheet with no horizontal overflow on
   await expect(cb).toHaveAttribute('aria-modal', 'true');
   const box = await cb.boundingBox();
   expect(box.width).toBe(320); expect(box.x).toBe(0);
-  for (const name of ['Scope', 'Evidence', 'Timeline', 'Hypotheses', 'Pivots', 'Gaps', 'Determination', 'Remediation', 'Handoff']) {
+  for (const name of ['Scope', 'FreeForm', 'Evidence', 'Timeline', 'Hypotheses', 'Pivots', 'Gaps', 'Determination', 'Remediation', 'Handoff']) {
     await cb.getByRole('tab', { name }).click();
     expect(await overflow(), name).toBeLessThanOrEqual(0);
     expect(await cb.evaluate(n => n.scrollWidth - n.clientWidth), name + ' sheet').toBeLessThanOrEqual(0);

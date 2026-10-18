@@ -13,9 +13,13 @@ export const MAX_BYTES = 98304;          // 96 KB for every casebook together
 export const MAX_STRING = 4000;          // one field
 export const MAX_ENTRIES = 200;          // one list
 export const MAX_LIST_ITEMS = 50;        // records or refs on one entry
+export const MAX_NAME = 120;             // the investigation name
+export const MAX_FREEFORM = 24576;       // 24 KB of free-form notes, measured in UTF-8 bytes
 
 export const KINDS = ['scope', 'evidence', 'timeline', 'hypothesis', 'pivot', 'gap', 'determination', 'remediation', 'handoff'];
-export const KIND_LABEL = { scope: 'Scope', evidence: 'Evidence', timeline: 'Timeline', hypothesis: 'Hypotheses', pivot: 'Pivots', gap: 'Gaps', determination: 'Determination', remediation: 'Remediation', handoff: 'Handoff' };
+// The drawer's tabs: the entry kinds plus FreeForm, a single bounded text field that no check grades.
+export const TABS = ['scope', 'freeform', 'evidence', 'timeline', 'hypothesis', 'pivot', 'gap', 'determination', 'remediation', 'handoff'];
+export const KIND_LABEL = { scope: 'Scope', freeform: 'FreeForm', evidence: 'Evidence', timeline: 'Timeline', hypothesis: 'Hypotheses', pivot: 'Pivots', gap: 'Gaps', determination: 'Determination', remediation: 'Remediation', handoff: 'Handoff' };
 export const ENTRY_LABEL = { scope: 'Scope', evidence: 'Evidence entry', timeline: 'Timeline entry', hypothesis: 'Hypothesis', pivot: 'Pivot', gap: 'Gap', determination: 'Determination', remediation: 'Remediation item', handoff: 'Handoff ticket' };
 export const LISTS = ['contain', 'eradicate', 'recover', 'harden'];
 export const LIST_LABEL = { contain: 'Contain', eradicate: 'Eradicate', recover: 'Recover', harden: 'Harden' };
@@ -98,7 +102,7 @@ const PREFIX = { evidence: 'e', timeline: 't', hypothesis: 'h', pivot: 'p', gap:
 const spec = kind => FIELDS[kind] ?? null;
 
 export function emptyState() { return { v: 1, cases: {} }; }
-export function emptyCase() { return { scope: null, evidence: [], timeline: [], hypothesis: [], pivot: [], gap: [], determination: null, remediation: [], handoff: null, seq: 0, nextRef: 1 }; }
+export function emptyCase() { return { name: '', freeform: '', scope: null, evidence: [], timeline: [], hypothesis: [], pivot: [], gap: [], determination: null, remediation: [], handoff: null, seq: 0, nextRef: 1 }; }
 
 // ---------- times ----------
 const HM = '(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?';
@@ -140,10 +144,13 @@ function validEntry(kind, e, withId) {
 export function validateCase(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const out = emptyCase();
-  const keys = new Set([...KINDS, 'seq', 'nextRef']);
+  const keys = new Set([...KINDS, 'seq', 'nextRef', 'name', 'freeform']);
   if (Object.keys(raw).some(k => !keys.has(k))) return null;
   if (!isInt(raw.seq ?? 0, 0, 999999) || !isInt(raw.nextRef ?? 1, 1, 999999)) return null;
   out.seq = raw.seq ?? 0; out.nextRef = raw.nextRef ?? 1;
+  if (raw.name !== undefined && !isStr(raw.name, MAX_NAME)) return null;
+  if (raw.freeform !== undefined && (typeof raw.freeform !== 'string' || freeformBytes(raw.freeform) > MAX_FREEFORM)) return null;
+  out.name = raw.name ?? ''; out.freeform = raw.freeform ?? '';
   for (const kind of KINDS) {
     const v = raw[kind];
     if (SINGLE.has(kind)) { if (v === undefined || v === null) continue; if (!validEntry(kind, v, false)) return null; out[kind] = { ...v }; continue; }
@@ -187,6 +194,27 @@ const toRef = v => { if (Number.isInteger(v) && v >= 1) return v; const m = /^\s
 export const toRefs = v => { const parts = Array.isArray(v) ? v : String(v ?? '').split(/[,\s;]+/); const out = []; for (const p of parts) { const n = toRef(p); if (n && !out.includes(n)) out.push(n); } return out; };
 const toRecords = v => { const parts = Array.isArray(v) ? v : String(v ?? '').split(/[,\s;]+/); const out = []; for (const p of parts) { const s = String(p ?? '').trim(); if (!s) continue; if (s.length > 40) return null; if (!out.includes(s)) out.push(s); } return out; };
 export const isBlank = entry => !entry || allBlank(entry);
+
+// ---------- the investigation name and the FreeForm page ----------
+// Both are plain strings. The name is trimmed, stripped of control characters and cut at MAX_NAME. FreeForm text is
+// normalised (Windows line endings become \n, control characters other than tab and newline and invisible
+// direction/zero-width marks are dropped) and refused, never truncated, when it would pass MAX_FREEFORM bytes.
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]/g;
+export const cleanName = v => String(v ?? '').replace(CONTROL, '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
+export const normalizePaste = v => String(v ?? '').replace(/\r\n?/g, '\n').replace(CONTROL, '');
+export const freeformBytes = v => new TextEncoder().encode(String(v ?? '')).length;
+// A safe file name from the investigation name: lower case, ASCII letters, digits and hyphens, at most 40 characters.
+export const exportFilename = (name, caseId) => { const slug = String(name ?? '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, ''); return `casebook-${slug || caseId}.md`; };
+// The optional FreeForm structure check: reports only whether a UTC clock time, a query line and a record ID are
+// present. It never reads meaning and never compares with a model.
+export const FREEFORM_RE = Object.freeze({ time: /\b(?:[01]\d|2[0-3]):[0-5]\d\b/, query: /^[^\n]*(?:=|\b(?:match|outcome|condition|order|limit|dedup|events)\s*:)[^\n]*$/m, record: /\bevt-\d{5}\b/g });
+export function checkFreeform(text, eventIds = null) {
+  const t = String(text ?? '');
+  const records = [...new Set(t.match(FREEFORM_RE.record) ?? [])];
+  const known = eventIds ? records.filter(id => eventIds.has(id)) : records;
+  const unknown = eventIds ? records.filter(id => !eventIds.has(id)) : [];
+  return { time: FREEFORM_RE.time.test(t), query: FREEFORM_RE.query.test(t), record: known.length > 0, records: known, unknown };
+}
 const allBlank = e => Object.values(e).every(v => v === '' || v === null || v === false || (Array.isArray(v) && !v.length) || (v && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every(x => x === '')));
 
 // ---------- the store ----------
@@ -214,7 +242,16 @@ export function createCasebook(storage = safeStorage()) {
     max: MAX_BYTES,
     cases() { return Object.keys(state.cases); },
     get(id) { return JSON.parse(JSON.stringify(caseOf(id))); },
-    isEmpty(id) { const c = caseOf(id); return KINDS.every(k => SINGLE.has(k) ? !c[k] : !c[k].length); },
+    isEmpty(id) { const c = caseOf(id); return !c.name && !c.freeform && KINDS.every(k => SINGLE.has(k) ? !c[k] : !c[k].length); },
+    setName(id, text) {
+      if (!CASE_ID.test(id)) return { ok: false, reason: 'KIND' };
+      const name = cleanName(text); const r = commit(id, { ...caseOf(id), name }); if (r.ok) { notify(); return { ok: true, name }; } return r;
+    },
+    setFreeform(id, text) {
+      if (!CASE_ID.test(id)) return { ok: false, reason: 'KIND' };
+      const freeform = normalizePaste(text); if (freeformBytes(freeform) > MAX_FREEFORM) return { ok: false, reason: 'FREEFORM_FULL' };
+      const r = commit(id, { ...caseOf(id), freeform }); if (r.ok) { notify(); return { ok: true, freeform }; } return r;
+    },
     setSingle(id, kind, fields) {
       if (!SINGLE.has(kind) || !CASE_ID.test(id)) return { ok: false, reason: 'KIND' };
       const s = sanitize(kind, fields); if (!s.ok) return s;
@@ -270,6 +307,7 @@ export const RULES = {
   NEEDS_CONTRA: () => 'A refuted hypothesis needs at least one contradicting Evidence reference.',
   NEEDS_TEST: () => 'An open hypothesis needs a "test next": what would move it to supported or refuted.',
   BAD_ENUM: (f, opts) => `${f} must be one of: ${opts.join(', ')}.`,
+  NEEDS_NAME: () => 'Name the investigation in the field at the top of the Casebook.',
   CLAIM_WORD: w => `"${w}" is a claim. Cite a record on this entry, or write what the record shows instead.`,
 };
 export function checkEntry(kind, entry, ctx = {}) {
@@ -293,6 +331,8 @@ export function checkEntry(kind, entry, ctx = {}) {
     if (f.type === 'refs') for (const n of v) if (!refs.has(n)) push('BAD_REF', n);
     if (f.type === 'ref' && !refs.has(v)) push('BAD_REF', v);
   }
+  // The Scope is complete only when the investigation has a name; the name lives on the casebook, not the entry.
+  if (kind === 'scope' && ctx.name !== undefined && !String(ctx.name ?? '').trim()) push('NEEDS_NAME');
   if (kind === 'hypothesis') {
     if (entry.status === 'supported' && !(entry.supporting ?? []).length) push('NEEDS_SUPPORT');
     if (entry.status === 'refuted' && !(entry.contradicting ?? []).length) push('NEEDS_CONTRA');
@@ -309,7 +349,7 @@ export function checkEntry(kind, entry, ctx = {}) {
   return problems;
 }
 export const evidenceRefs = casebook => new Set((casebook?.evidence ?? []).map(e => e.n));
-export const contextFor = (casebook, eventIds) => ({ eventIds, evidenceRefs: evidenceRefs(casebook) });
+export const contextFor = (casebook, eventIds) => ({ eventIds, evidenceRefs: evidenceRefs(casebook), name: casebook?.name ?? '' });
 
 // ---------- a mission's "Log it" ----------
 // logIt: { kind, prompt, mustInclude: [token, ...], list? }. A token may offer alternatives separated by |.
@@ -360,10 +400,12 @@ export function handoffText(casebook, caseInfo = {}) {
 
 export function toMarkdown(casebook, caseInfo = {}) {
   const dayStart = caseInfo.dayStartHour ?? 0; const title = caseInfo.title ?? caseInfo.id ?? 'Casebook';
-  const s = casebook.scope, d = casebook.determination, h = casebook.handoff;
-  const md = [`# Casebook: ${title}`, '', 'Written in the Pier Nine trainer. Everything below is the analyst\'s own notes about a fictional case; times are UTC.', ''];
-  md.push('## Scope', '');
-  if (s) md.push(`- Question asked: ${s.question}`, `- Requested by: ${s.requestedBy}`, `- Time window (UTC): ${s.window}`, `- In scope: ${s.inScope}`, `- Out of scope: ${s.outScope}`); else md.push('_Not written._');
+  const s = casebook.scope, d = casebook.determination, h = casebook.handoff; const name = (casebook.name ?? '').trim();
+  const md = [`# Casebook: ${name ? `${name} (${title})` : title}`, '', 'Written in the Pier Nine trainer. Everything below is the analyst\'s own notes about a fictional case; times are UTC.', ''];
+  md.push('## Scope', '', `- Investigation: ${name || '_(unnamed)_'}`);
+  if (s) md.push(`- Question asked: ${s.question}`, `- Requested by: ${s.requestedBy}`, `- Time window (UTC): ${s.window}`, `- In scope: ${s.inScope}`, `- Out of scope: ${s.outScope}`); else md.push('- _Scope not written._');
+  md.push('', '## Free-form notes', '');
+  if ((casebook.freeform ?? '').trim()) md.push('```text', casebook.freeform.replace(/```/g, "'''"), '```'); else md.push('_No free-form notes._');
   md.push('', '## Evidence', '');
   if (!casebook.evidence.length) md.push('_No entries._');
   for (const e of casebook.evidence) {

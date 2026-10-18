@@ -1,0 +1,548 @@
+{
+  "id": "C08",
+  "title": "The lists the station keeps",
+  "subtitle": "Reference lists: tuning out the known-good, and the danger of a list that is too wide",
+  "intro": "On Saturday morning Dez wrote four lists: the sponsor names the station's machines may resolve, the accounts allowed to run as another user, the range the gateway blocks, and the station's own network. In Google SecOps those are reference lists, created under Detection > Lists and named in a query with %. This trainer bundles them; the Lists panel on the desk shows each one. This chapter uses them to tune out the known-good, and shows what happens when a list written in a hurry is wider than it should be.",
+  "concepts": [
+    "A reference list is an object the tenant keeps; a query names it with %list and never contains it",
+    "String lists match whole values, CIDR lists match ranges with in cidr, regex lists match shapes with in regex",
+    "not in %list is how you tune out the known-good; what is left is the question",
+    "A list that is too wide hides the thing it was written to catch",
+    "A block that is too wide cuts off the people who work from home"
+  ],
+  "recap": [
+    "Name a reference list in a query with in %, in cidr % and in regex %, and say where lists live in a tenant",
+    "Tune out the known-good with not in %list and read what is left as the question, not the answer",
+    "Spot a list that is too wide by finding the known-bad inside it, and say what the list should have been",
+    "Use the admin list to find a privilege used by an account that should not have it",
+    "Show a fix holding with the record of the control refusing, and show where the fix was too narrow",
+    "Close a second case with a determination and a handoff that say what held, what did not, and what to change"
+  ],
+  "missions": [
+    {
+      "id": "C08-M01",
+      "kind": "watch",
+      "title": "Everything but the sponsors",
+      "beat": "Dez's allowlist is sponsor_domains: every name the station's machines are expected to resolve. Ask the opposite question. Which names were resolved tonight that are not on the list?",
+      "question": "Which DNS names did the station resolve tonight that are not on the sponsor allowlist?",
+      "concept": {
+        "title": "not in %list tunes out the known-good",
+        "text": "A reference list is an object the tenant keeps under Detection > Lists; a query names it with % and never contains its items. field in %list keeps events whose value is on the list; not in %list keeps the rest. Tuning out the known-good does not find the bad; it shrinks the pile to what you have to read. Open the Lists panel on the desk to see the list before you trust it."
+      },
+      "explain": [
+        {
+          "part": "network.dns.questions.name not in %sponsor_domains",
+          "meaning": "Keep lookups whose name is not on the list. A string list compares whole values; a subdomain of a listed name is not on the list."
+        },
+        {
+          "part": "The Lists panel",
+          "meaning": "Shows the list's type, its description and its items. Read to the end: the last two items are last week's lookalike and its beacon name, copied in by mistake."
+        }
+      ],
+      "starter": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name not in %sponsor_domains",
+      "reference": "metadata.event_type = \"NETWORK_DNS\"\nnetwork.dns.questions.name not in %sponsor_domains",
+      "hints": [
+        "Run it as written. Forty-one lookups are left after the list is tuned out. Count the different names.",
+        "Open two rows: one from PLEDGE-DESK-01 at 19:12, the rest from 10.9.4.200 every fifteen minutes.",
+        "Two names: harborlight-sponsors.example, once, from Lena's desk at 19:12; and files.harborlight-sponsors.example, forty times, from the remote session. A hyphen pushed into the real sponsor's name."
+      ],
+      "answer": {
+        "prompt": "How many different network.dns.questions.name values are in your results?",
+        "value": "2",
+        "check": {
+          "type": "distinct",
+          "field": "network.dns.questions.name"
+        }
+      },
+      "call": {
+        "prompt": "Only lookalikes of the real sponsor survive the allowlist. A colleague says the allowlist worked. What is the precise claim?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The allowlist found the lookalike by matching it against the sponsor names, which is exactly what an allowlist is written to do"
+          },
+          {
+            "id": "B",
+            "label": "The allowlist left the lookalike in the pile because it was not listed; what it does to a listed lookalike is the next question"
+          },
+          {
+            "id": "C",
+            "label": "The allowlist proves every other name resolved tonight is safe, since each one is a sponsor the station approved"
+          }
+        ],
+        "correct": "B",
+        "why": "not in %list keeps what is not listed; it did not match anything. And \"on the list\" means \"tuned out\", which is exactly the danger if the list holds something it should not."
+      },
+      "clue": "Two names, both built from the real sponsor with a hyphen: harborlight-sponsors.example, resolved once from PLEDGE-DESK-01 at 19:12, and files.harborlight-sponsors.example, resolved every fifteen minutes from the remote session. The allowlist did not hide them. It would have hidden something else.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry: 19:12 UTC, PLEDGE-DESK-01 resolves harborlight-sponsors.example, a lookalike of harborlightsponsors.example with a hyphen, record evt-20136; from 20:04 the remote session resolves files.harborlight-sponsors.example every fifteen minutes. Source: this query, whole night. Confidence high.",
+        "mustInclude": [
+          "harborlight-sponsors.example",
+          "evt-20136"
+        ]
+      },
+      "caveat": "In a tenant, a list is only as good as its last edit. Reference lists have owners, change history and limits; a query that names one should say in the brief which version of the list it ran against."
+    },
+    {
+      "id": "C08-M02",
+      "kind": "build",
+      "title": "The shape of a lookalike",
+      "beat": "Two lookalikes in two weeks, both the same trick: a known name with a hyphen pushed into it. Dez wrote a regex list of that shape, lookalike_patterns. Run the mail log against it and look at the action column.",
+      "question": "Which emails tonight came from a sender whose domain matches the lookalike patterns?",
+      "concept": {
+        "title": "A regex list matches shapes, and the keyword must match the list",
+        "text": "Google documents three list types. A string list is used as in %name, a CIDR list as in cidr %name, and a regex list as in regex %name; the keyword must match the list's type or the query is refused. A regex list is for shapes: pier9-anything, harborlight-anything. Every pattern in it runs through the same guard as a pattern you type."
+      },
+      "explain": [
+        {
+          "part": "network.email.from in regex %lookalike_patterns",
+          "meaning": "Keep mail whose sender matches any pattern on the list. The Lists panel shows the two patterns."
+        },
+        {
+          "part": "security_result.action",
+          "meaning": "Read it for every row. ALLOW on a sender you already know is bad is the finding."
+        }
+      ],
+      "starter": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in ___ %lookalike_patterns",
+      "reference": "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in regex %lookalike_patterns",
+      "hints": [
+        "The keyword after in names the list's type. Open the Lists panel: lookalike_patterns is a regex list.",
+        "Fill the gap with regex.",
+        "metadata.event_type = \"EMAIL_TRANSACTION\"\nnetwork.email.from in regex %lookalike_patterns"
+      ],
+      "answer": {
+        "prompt": "How many emails match the lookalike patterns?",
+        "value": "3",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "Every lure in the table is ALLOW. One is from pier9-partners.example, the domain the whole station knows from last week. Why did the gateway let it through?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Because the mail gateway does not read reference lists at all and the regex list only exists for the analyst's own queries on the desk"
+          },
+          {
+            "id": "B",
+            "label": "Because the gateway's allowlist is sponsor_domains, written by copying every sponsor-looking name from last week's logs, lookalike included"
+          },
+          {
+            "id": "C",
+            "label": "Because the lure was sent at 18:35, before the drive began, when the gateway's policy for the night had not yet been applied"
+          }
+        ],
+        "correct": "B",
+        "why": "Scroll to the end of sponsor_domains in the Lists panel: pier9-partners.example and its beacon name are on it. A list written in a hurry by copying the log allowlisted the thing the log was about. Too wide hides what it was meant to catch."
+      },
+      "clue": "Three emails: last week's lookalike to Hal at 18:35, this week's to Lena and Priya at 18:58. All ALLOW. The old one got through because it is on the allowlist, copied there from the week-one logs on Saturday morning.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the allowlist mistake: 18:35 UTC, mail from sponsorships@pier9-partners.example to hal.brunner, action ALLOW, record evt-20051, and the sponsor_domains list carries pier9-partners.example. Source: this query, whole night. Observation: a known lookalike is on the allowlist. No verdict.",
+        "mustInclude": [
+          "pier9-partners.example",
+          "18:35",
+          "evt-20051"
+        ]
+      },
+      "caveat": "Google caps the number of in-statements per query (ten, with separate caps for regex and CIDR lists on some pages) and a regex that starts with a wildcard defeats index pruning in Search. Anchor the patterns; the ones here end in $."
+    },
+    {
+      "id": "C08-M03",
+      "kind": "build",
+      "title": "Who may run as another user",
+      "beat": "admin_accounts is the short list of accounts allowed to run as a different user on station hosts. A run-as by anyone else is a privilege being tried by an account that should not have it.",
+      "question": "Which run-as attempts tonight came from accounts that are not on the admin list?",
+      "concept": {
+        "title": "Lists make a baseline a filter",
+        "text": "target.user.userid set on a USER_LOGIN is a run-as: one account acting as another. The admin list says who may. principal.user.userid not in %admin_accounts keeps the attempts by everyone else, and the action column says whether the attempt worked. One row tonight, FAIL. The fix held for svc-playout; the attempt is still a fact."
+      },
+      "explain": [
+        {
+          "part": "target.user.userid = \"svc-playout\"",
+          "meaning": "Run-as attempts targeting the playout service account."
+        },
+        {
+          "part": "principal.user.userid not in %admin_accounts",
+          "meaning": "By accounts that are not on the list. Dez's legitimate run-as at 21:05 is tuned out; he is on it."
+        }
+      ],
+      "starter": "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %___",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %admin_accounts",
+      "hints": [
+        "The gap wants the name of the list of accounts allowed to run as another user. Open the Lists panel.",
+        "Fill the gap with admin_accounts.",
+        "metadata.event_type = \"USER_LOGIN\"\ntarget.user.userid = \"svc-playout\"\nprincipal.user.userid not in %admin_accounts"
+      ],
+      "answer": {
+        "prompt": "At what time (HH:MM, UTC) was the run-as attempt by a non-admin account?",
+        "value": "02:31",
+        "also": [
+          "02:31:05"
+        ],
+        "check": {
+          "type": "time",
+          "index": 0
+        }
+      },
+      "call": {
+        "prompt": "The attempt failed with \"Run as different user denied\" on FS-01. Which sentence is the fact for the Timeline?",
+        "options": [
+          {
+            "id": "A",
+            "label": "02:31, the attacker tried to escalate to svc-playout and was stopped by last week's password reset"
+          },
+          {
+            "id": "B",
+            "label": "02:31, lena.ostrowski from 10.9.4.200 attempted run-as svc-playout on FS-01 and was denied"
+          },
+          {
+            "id": "C",
+            "label": "02:31, the admin list blocked an unauthorised privilege escalation on the file server"
+          }
+        ],
+        "correct": "B",
+        "why": "The record names an account, an address, a host, a target account and an outcome. Who was at the keyboard, why it failed and whether a list did it are inferences; the second one is probably right and still belongs in Hypotheses."
+      },
+      "clue": "One row: 02:31:05, lena.ostrowski from 10.9.4.200, run as svc-playout on FS-01, FAIL, denied. The playout account was not reset last week, but the remote session did not have its password. The attempt is the fact; the denial is the control.",
+      "logIt": {
+        "kind": "timeline",
+        "prompt": "Add a Timeline entry: 02:31 UTC, lena.ostrowski from 10.9.4.200 attempts to run as svc-playout on FS-01, denied, record evt-20796. Reference an Evidence entry; add one for this record if none fits.",
+        "mustInclude": [
+          "02:31"
+        ]
+      },
+      "caveat": "In a tenant the admin list would also be used by a rule, and the rule would fire on this record. Here it is a query. The habit is the same: a list of who may, applied as not in, finds who tried."
+    },
+    {
+      "id": "C08-M04",
+      "kind": "watch",
+      "title": "Did the block hold?",
+      "beat": "The gateway blocks 203.0.113.0/24 since last week. blocked_ranges is that list, as a CIDR list. Ask the log whether anything tried to reach the range, and what the gateway did.",
+      "question": "What happened to connections to the blocked range tonight?",
+      "concept": {
+        "title": "A CIDR list matches ranges",
+        "text": "target.ip in cidr %blocked_ranges keeps connections to any range on the list; the keyword cidr is required for a CIDR list and refused for the others. A control that holds leaves a record of itself refusing. One BLOCK row at 20:20 is the fix holding for the range it covers, and the source of that row is the remote session."
+      },
+      "explain": [
+        {
+          "part": "target.ip in cidr %blocked_ranges",
+          "meaning": "Connections to any address in a listed range. One list, one range, one row."
+        },
+        {
+          "part": "security_result.action",
+          "meaning": "BLOCK. The gateway refused it. Open the row: it came from 10.9.4.200 at 20:20."
+        }
+      ],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip in cidr %blocked_ranges",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip in cidr %blocked_ranges",
+      "hints": [
+        "Run it as written. One row. Read the action column.",
+        "Open the row: the source is the remote session, the destination is last week's server.",
+        "BLOCK at 20:20:14 from 10.9.4.200 to 203.0.113.44. The remote session tried last week's server; the gateway refused."
+      ],
+      "answer": {
+        "prompt": "What is the security_result.action of the connection to the blocked range?",
+        "value": "BLOCK",
+        "check": {
+          "type": "field",
+          "field": "security_result.action",
+          "index": 0
+        }
+      },
+      "call": {
+        "prompt": "The gateway refused the range. The same session then talked to 198.51.100.77 every fifteen minutes, unrefused. What does the brief say about the control?",
+        "options": [
+          {
+            "id": "A",
+            "label": "That the block failed, because the attacker was able to beacon out all night regardless of what the gateway refused"
+          },
+          {
+            "id": "B",
+            "label": "That the block held for the range it covered and the attacker returned through one it did not: correct, and too narrow"
+          },
+          {
+            "id": "C",
+            "label": "That the block should be widened to every outside range the station has ever seen, since the attacker will keep moving between them"
+          }
+        ],
+        "correct": "B",
+        "why": "A control is judged against what it was asked to do. It refused the range. The new server is outside the range, which is the gap in the control, not a failure of it. The next mission shows why widening blindly is its own mistake."
+      },
+      "clue": "BLOCK, 20:20:14, from 10.9.4.200 to 203.0.113.44. The fix held for the range it covers. The new server is 198.51.100.77, a different range, and nothing on any list says no to it.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the control holding: 20:20 UTC, 10.9.4.200 to 203.0.113.44 on port 443, action BLOCK, record evt-20228. Source: this query, whole night. Observation: the gateway refused the connection to the blocked range. Confidence high.",
+        "mustInclude": [
+          "203.0.113.44",
+          "20:20",
+          "BLOCK"
+        ]
+      },
+      "caveat": "A CIDR list in a tenant can hold many ranges and is also usable with net.ip_in_range_cidr one range at a time. Lists are for the ranges you maintain; the function is for the one you are testing right now."
+    },
+    {
+      "id": "C08-M05",
+      "kind": "solo",
+      "title": "Outside addresses, with names",
+      "beat": "Three outside addresses succeeded at the gateway tonight. Put a name beside each one and count the sessions, so the brief can say which address carries which account and how often.",
+      "question": "For each outside address at the gateway, which accounts used it and how many times?",
+      "concept": {
+        "title": "Group by the address, list the accounts",
+        "text": "Group gateway successes by principal.ip and take array_distinct of the account. One address, one list of names, one count. Two sessions from one address for one account that was also at her desk is the row that supports the hypothesis you wrote in chapter 7; the other two rows are the baseline that makes it stand out."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.hostname = \"VPN-GW-01\"\nsecurity_result.action = \"ALLOW\"\nmatch:\n  principal.ip\noutcome:\n  $accounts = array_distinct(principal.user.userid)\n  $n = count(metadata.id)\norder:\n  $n desc",
+      "hints": [
+        "Filter successful USER_LOGIN events at VPN-GW-01. Group by principal.ip. Two outcomes: array_distinct of principal.user.userid and a count. Order by the count, descending.",
+        "match:\n  principal.ip\noutcome:\n  $accounts = array_distinct(principal.user.userid)\n  $n = count(metadata.id)\norder:\n  $n desc",
+        "metadata.event_type = \"USER_LOGIN\"\ntarget.hostname = \"VPN-GW-01\"\nsecurity_result.action = \"ALLOW\"\nmatch:\n  principal.ip\noutcome:\n  $accounts = array_distinct(principal.user.userid)\n  $n = count(metadata.id)\norder:\n  $n desc"
+      ],
+      "answer": {
+        "prompt": "How many successful sessions does the row for 198.51.100.77 count?",
+        "value": "2",
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.ip": "198.51.100.77"
+          },
+          "column": "$n"
+        }
+      },
+      "call": {
+        "prompt": "Your chapter-7 hypothesis is that the lena.ostrowski credential is used from 198.51.100.77 by someone who is not Lena. What moves it from open to supported?",
+        "options": [
+          {
+            "id": "A",
+            "label": "This table alone, since two sessions from one outside address is more than either of the other addresses has, and more is the signal"
+          },
+          {
+            "id": "B",
+            "label": "Nothing in Search can; only Lena confirming she was not remote would support it, so it stays open in the handoff"
+          },
+          {
+            "id": "C",
+            "label": "The desk logins at 18:20 and 21:40 beside the gateway sessions at 20:03 and 02:14, cited as supporting refs"
+          }
+        ],
+        "correct": "C",
+        "why": "Supported means at least one Evidence entry supports it, and the ones that do are the overlapping desk and gateway sessions. Session counts are not the support; the overlap is. Lena's confirmation is a gap to record, and a good one."
+      },
+      "clue": "198.51.100.77: lena.ostrowski, twice. 198.51.100.140: odalys.reyes, once. 198.51.100.200: dez.okafor, once. Two of the three outside addresses belong to staff who told you they would be remote. All three sit in the same documentation range.",
+      "logIt": {
+        "kind": "hypothesis",
+        "prompt": "Update your Hypothesis to supported, or write it: the lena.ostrowski credential is used from 198.51.100.77 by someone who is not Lena. Supporting refs: the gateway sessions and the desk logins that overlap them. Contradicting: none yet. Test next: Lena's own account of her evening.",
+        "mustInclude": [
+          "198.51.100.77",
+          "lena.ostrowski"
+        ]
+      },
+      "caveat": "A thirty-day version of this table is the baseline the station should keep. Tonight's version is one night, and the brief should say so."
+    },
+    {
+      "id": "C08-M06",
+      "kind": "solo",
+      "title": "The block that would be too wide",
+      "beat": "Hal wants 198.51.100.0/24 blocked at the gateway tonight, the whole range, because the attacker is in it. Before anyone types that into the gateway, ask the log who else is in it.",
+      "question": "Which accounts signed in at the gateway from 198.51.100.0/24 tonight, one row each?",
+      "concept": {
+        "title": "A block that is too wide is the allowlist mistake in reverse",
+        "text": "net.ip_in_range_cidr tests one range you are considering; dedup on the account gives one row per account seen from it. Four accounts, and two of them are the engineer and the station manager working from home. The right contain item is the one address, 198.51.100.77/32, plus the one account, not the range. Lists cut both ways: too wide hides the bad, too wide also cuts off the good."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"USER_LOGIN\"\ntarget.hostname = \"VPN-GW-01\"\nnet.ip_in_range_cidr(principal.ip, \"198.51.100.0/24\")\ndedup:\n  principal.user.userid",
+      "hints": [
+        "Filter USER_LOGIN events at VPN-GW-01 whose principal.ip is in 198.51.100.0/24, using net.ip_in_range_cidr. Then dedup by principal.user.userid for one row per account. Include failures: the question is who is in the range.",
+        "net.ip_in_range_cidr(principal.ip, \"198.51.100.0/24\")\ndedup:\n  principal.user.userid",
+        "metadata.event_type = \"USER_LOGIN\"\ntarget.hostname = \"VPN-GW-01\"\nnet.ip_in_range_cidr(principal.ip, \"198.51.100.0/24\")\ndedup:\n  principal.user.userid"
+      ],
+      "answer": {
+        "prompt": "How many rows does the deduplicated table have (one per account seen from the range)?",
+        "value": "4",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "The range holds pledge-desk (failing), lena.ostrowski, dez.okafor and odalys.reyes. What is the Contain item?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Block 198.51.100.0/24 at the gateway now and tell Dez and Odalys to drive in; the drive is more important than their convenience"
+          },
+          {
+            "id": "B",
+            "label": "Block 198.51.100.77 only, disable the lena.ostrowski account and end its sessions, and leave the range alone"
+          },
+          {
+            "id": "C",
+            "label": "Do nothing at the gateway, since blocking any address would alert the attacker before the investigation is finished"
+          }
+        ],
+        "correct": "B",
+        "why": "The evidence names one address and one credential. Contain those. The range holds the station manager's home connection; a block written as wide as Hal wants would do to the station what the allowlist did to the mail gateway."
+      },
+      "clue": "Four accounts from the range. Two of them are the engineer and the station manager at home. A /24 block would cut both off and leave the attacker one hop away in the next range. Contain the address and the credential, not the neighbourhood.",
+      "logIt": {
+        "kind": "remediation",
+        "list": "contain",
+        "prompt": "Write a Contain item: block 198.51.100.77/32 at VPN-GW-01, disable the lena.ostrowski account and end its two remote sessions, and reset her password through a channel that is not email. Answers: your gateway, address-list and cadence evidence. Owner role: network engineer. Urgency: now.",
+        "mustInclude": [
+          "198.51.100.77",
+          "lena.ostrowski"
+        ]
+      },
+      "caveat": "Blocking by range is a legitimate control when the range is the attacker's and only the attacker's. Documentation ranges in this trainer stand in for real ones; the habit of checking who else is in a range before blocking it is the lesson."
+    },
+    {
+      "id": "C08-M07",
+      "kind": "read",
+      "title": "Did the fix hold?",
+      "beat": "05:40. Odalys asks her question again. You have the records to answer it in two halves, and a remediation list for the half that did not hold.",
+      "question": "What held, what did not, and what is the determination?",
+      "concept": {
+        "title": "A fix is judged item by item",
+        "text": "Pledge-desk reset: two failures at 19:58, no success. Held. PledgeSync removed: no lookups from AUTOMATION-01 but its own stream. Held. The /24 block: one BLOCK at 20:20. Held. Everything the fix did not cover: a second phished identity, a second lookalike, a new server in a new range, the file server, 6.4 MB out. The determination is a confirmed incident, and the honest sentence is that the fix held where it was applied and was too narrow."
+      },
+      "explain": [
+        {
+          "part": "Held",
+          "meaning": "pledge-desk failed twice from 198.51.100.77 at 19:58 and never succeeded. AUTOMATION-01 resolved only streaming.tunecast.example and refused Lena's remote logon at 20:09. The gateway blocked 10.9.4.200 to 203.0.113.44 at 20:20."
+        },
+        {
+          "part": "Did not hold",
+          "meaning": "A lure from harborlight-sponsors.example reached Lena and Priya at 18:58 as ALLOW. PLEDGE-DESK-01 reached 198.51.100.77 at 19:12. lena.ostrowski succeeded at the gateway from that address at 20:03 and 02:14 while at her desk. The session reached FS-01 four times, wrote members-export.zip at 02:52, and sent 6.4 MB to 198.51.100.77 at 03:40, with a fifteen-minute beacon in between."
+        },
+        {
+          "part": "The lists",
+          "meaning": "sponsor_domains tuned the lookalikes in, not out, and allowlisted last week's lure. admin_accounts caught the run-as at 02:31. blocked_ranges caught one connection. A /24 block on the new range would cut off two staff."
+        },
+        {
+          "part": "Contain",
+          "meaning": "Block 198.51.100.77/32. Disable lena.ostrowski, end its sessions, reset through a channel that is not email. Isolate nothing: no station host is persisting for the attacker this week."
+        },
+        {
+          "part": "Eradicate",
+          "meaning": "Remove the lure from Priya's inbox. Remove pier9-partners.example and its beacon name from sponsor_domains, and add the real sponsor's exact names only. Verify no task or file on FS-01 beyond members-export.zip."
+        },
+        {
+          "part": "Recover",
+          "meaning": "Tell the members whose data is in the export what left, once the share's audit log says what members-export.zip held. Confirm with Lena what she clicked at 19:12."
+        },
+        {
+          "part": "Harden",
+          "meaning": "MFA at VPN-GW-01 for every account. A regex list of lookalike shapes applied at the mail gateway, not only in Search. File-share auditing on FS-01. A thirty-day first-seen baseline for account and address pairs at the gateway."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Hal says: \"So the fix failed.\" Which sentence goes in the determination?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The fix failed; the attacker returned, so every item from last week should be redone from the start and the brief should say plainly that the remediation did not work"
+          },
+          {
+            "id": "B",
+            "label": "The fix held for each item it covered, shown by the controls refusing, and was too narrow: a second identity, lookalike and range sat outside it"
+          },
+          {
+            "id": "C",
+            "label": "The fix held in full, since nothing aired and the playout PC was never reached, and the file-server activity is a separate incident for a separate brief"
+          }
+        ],
+        "correct": "B",
+        "why": "Each control has a record of itself working. Each gap has a record of the attacker walking through it. Both halves are facts, and a brief that keeps them apart is the one the board can act on."
+      },
+      "clue": "Odalys reads it twice. \"Held and too narrow.\" She disables Lena's account herself, calls Dez about the /32, and asks for the allowlist to be rewritten by hand, name by name, before Monday.",
+      "logIt": {
+        "kind": "determination",
+        "prompt": "Write the Determination: confirmed incident, confidence high. Deciding refs: the gateway session, the address list, the cadence, the file-server pivot and the BLOCK. Summary, two sentences: the fix held for each item it covered; a second phished identity (lena.ostrowski) reached FS-01 through 198.51.100.77, a range and a server the fix did not cover.",
+        "mustInclude": [
+          "198.51.100.77",
+          "FS-01"
+        ]
+      },
+      "caveat": "The second week of an incident is where the brief is read most carefully, because the first one promised something. Write \"held\" only beside a record of the control refusing."
+    },
+    {
+      "id": "C08-M08",
+      "kind": "read",
+      "brief": "casebook",
+      "title": "Handoff, week two",
+      "beat": "06:05. Same desk, same pad. Write the handoff for a case whose first line is that last week's handoff was right and not enough.",
+      "question": "What goes in the second handoff, and what did the first one teach?",
+      "concept": {
+        "title": "Facts, hypotheses, gaps, again",
+        "text": "The columns do not change. The content does: the facts are quieter, the hypotheses are about a named account rather than a shared one, the gaps are about a file share and a person's own account of her evening. The ticket names the lists by name, because the engineer who picks it up will edit them."
+      },
+      "explain": [
+        {
+          "part": "Facts",
+          "meaning": "18:35 a lure from pier9-partners.example to hal.brunner, ALLOW, sender on the allowlist. 18:58 lures from harborlight-sponsors.example to lena.ostrowski and priya.nair, ALLOW. 19:12 PLEDGE-DESK-01 resolves and connects to 198.51.100.77. 19:58 two pledge-desk failures from 198.51.100.77. 20:03 lena.ostrowski succeeds at VPN-GW-01 from 198.51.100.77 while her desk sessions continue. 20:09 AUTOMATION-01 refuses the remote logon. 20:11 to 02:30 four connections from 10.9.4.200 to FS-01. 20:20 connection to 203.0.113.44 blocked. 20:04 to 05:49 beacon to 198.51.100.77 every fifteen minutes. 02:14 second gateway session. 02:31 run-as svc-playout on FS-01 denied. 02:52 members-export.zip written on FS-01. 03:40 6.4 MB sent to 198.51.100.77."
+        },
+        {
+          "part": "Hypotheses",
+          "meaning": "Lena entered her password into the lookalike portal at 19:12. The 6.4 MB upload was members-export.zip. The attacker read last week's remediation from the station's own behaviour and chose a different account, range and host."
+        },
+        {
+          "part": "Gaps",
+          "meaning": "Which files on the membership share were read. The contents of the export. Lena's own account of 19:12. The server behind 198.51.100.77. Whether Priya's copy of the lure was opened on another device."
+        },
+        {
+          "part": "Determination",
+          "meaning": "Confirmed incident, high confidence. The fix held for each item it covered and was too narrow. A second phished identity reached the file server through an unblocked range and a new lookalike that the hastily written allowlist did not catch, while the same allowlist let last week's lookalike through."
+        },
+        {
+          "part": "Remediation",
+          "meaning": "Contain: block 198.51.100.77/32, disable lena.ostrowski and end its sessions. Eradicate: remove the lure from Priya's inbox; rewrite sponsor_domains by hand without last week's lookalike; verify FS-01 beyond the export. Recover: tell the members whose data is in the export, once the share's audit says what it held; confirm with Lena. Harden: MFA at the gateway; the lookalike regex list applied at the mail gateway; share auditing on FS-01; a thirty-day first-seen baseline."
+        },
+        {
+          "part": "Handoff",
+          "meaning": "Problem: a second phished, named credential reached the file server through a range and a server the first remediation did not cover, and the sponsor allowlist was wide enough to admit a known lure. Assets: FS-01, PLEDGE-DESK-01, VPN-GW-01, lena.ostrowski, the lists sponsor_domains and blocked_ranges. Controls: the Harden list. Detections: an account succeeding at the gateway while it has an active desk session; a DNS name not on the sponsor list resolved on a fixed cadence; an outbound connection over 1 MB from a gateway-assigned address; a run-as by an account not on the admin list. Acceptance: each rule fires on tonight's records replayed and stays quiet on a normal drive night; the rewritten sponsor_domains contains no name that was ever a lure. Open: the share audit, the export contents, Lena, the server, Priya's device."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez asks whether the ticket should say the allowlist was his mistake. What belongs in the handoff?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The fact: sponsor_domains held pier9-partners.example and admitted a known lure; the control: lists are reviewed before use"
+          },
+          {
+            "id": "B",
+            "label": "Nothing about the list, since the engineer who built the allowlist will read the ticket first and the brief should keep the peace in a small station"
+          },
+          {
+            "id": "C",
+            "label": "A line naming the engineer who wrote the list, so the board can see who is accountable for the second week"
+          }
+        ],
+        "correct": "A",
+        "why": "The ticket records what the list contained and what the control should be. Names belong to HR, not the handoff; silence belongs to nobody. The habit from chapter 1 holds: facts, then the fix."
+      },
+      "clue": "The ticket goes to the engineer who will rewrite the lists. The first line of the Harden section is the sentence the whole week was about: a list is a control, and a control written in a hurry is wide in the wrong direction.",
+      "logIt": {
+        "kind": "handoff",
+        "prompt": "Write the Handoff ticket. Press Assemble from casebook, then write the rest. Affected assets: FS-01, PLEDGE-DESK-01, VPN-GW-01, lena.ostrowski, the lists sponsor_domains and blocked_ranges. Detection ideas, in words: an account succeeding at the gateway while it has an active desk session; a DNS name not on the sponsor list resolved on a fixed cadence; an outbound connection over 1 MB from a gateway-assigned address; a run-as by an account not on the admin list. Acceptance criteria: how the engineer proves each control and each list is right.",
+        "mustInclude": [
+          "FS-01",
+          "lena.ostrowski",
+          "198.51.100.77"
+        ]
+      },
+      "caveat": "This case is fiction. The second-week habit is not: judge a fix item by item, and write \"held\" only beside the record of the control refusing."
+    }
+  ]
+}

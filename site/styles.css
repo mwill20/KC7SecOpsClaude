@@ -38,6 +38,10 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 .app { max-width: 1400px; margin: 0 auto; padding: 20px; }
 .foot { max-width: 1400px; margin: 30px auto; padding: 0 20px 30px; color: var(--muted); font-size: 13px; }
 
+/* Case switcher on the home page: one tab per case, the current one outlined, a finished one green. */
+.cases ol { display: flex; flex-wrap: wrap; gap: 10px; list-style: none; margin: 0 0 14px; padding: 0; }
+.casetab { display: flex; flex-direction: column; gap: 2px; min-width: 180px; max-width: 100%; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); text-decoration: none; }
+.casetab.current { border-color: var(--teal); background: rgba(58,209,196,.08); } .casetab.done { border-color: var(--ok); } .casetab:hover { border-color: var(--teal); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
 .card + .card { margin-top: 14px; }
 .eyebrow { font: 600 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--teal); margin-bottom: 8px; }
@@ -120,6 +124,10 @@ textarea.editor:disabled { opacity: .7; }
 .scorebox span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); } .scorebox span.on { color: var(--ok); border-color: var(--ok); }
 .fields { margin-top: 8px; } .fields summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .fields ul { columns: 2; list-style: none; padding: 0; margin: 8px 0 0; font-family: var(--mono); font-size: 12px; } .fields li { padding: 2px 0; } .fields li span { color: var(--muted); }
+.lists { margin-top: 8px; } .lists summary { cursor: pointer; color: var(--muted); font-size: 13px; } .lists ul { list-style: none; padding: 0; margin: 4px 0 0; }
+.lists .listlist { columns: 1; } .lists .listlist li { padding: 8px 0; border-top: 1px solid var(--line); } .lists .listlist li:first-child { border-top: 0; }
+.lists .listlist code { color: var(--accent); } .lists .items { font-family: var(--mono); font-size: 12px; color: var(--text); overflow-wrap: anywhere; margin-top: 3px; }
+.tablewrap td.arr { white-space: normal; max-width: 420px; overflow-wrap: anywhere; }
 kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media (max-width: 480px) { .app { padding: 14px; } h1 { font-size: 24px; } .top { padding: 10px 14px; } .brand-text { display: none; } }
@@ -132,6 +140,10 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
 .casebook[hidden] { display: none; }
 .cbhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; } .cbhead h2 { margin: 0; font-size: 18px; }
 .cbintro { margin: 6px 0 10px; }
+.cbname { margin-top: 8px; } .cbname > label { display: block; margin-bottom: 3px; }
+.cbname input { width: 100%; font: inherit; font-weight: 600; background: var(--panel-2); color: var(--text); border: 1px solid var(--control); border-radius: 8px; padding: 7px 10px; }
+.cbname input::placeholder, textarea.freeform::placeholder { color: var(--muted); opacity: .7; }
+textarea.freeform { width: 100%; min-height: 260px; resize: vertical; background: #0a0f1b; color: var(--text); border: 1px solid var(--control); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-top: 6px; }
 .cbtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .cbtabs [role="tab"] { padding: 5px 9px; font-size: 13px; border-radius: 999px; background: transparent; color: var(--muted); }
 .cbtabs [role="tab"].on { color: var(--text); border-color: var(--teal); background: rgba(58,209,196,.08); }

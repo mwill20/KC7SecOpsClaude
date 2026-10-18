@@ -69,7 +69,7 @@ test('G3 structural mistakes are named', () => {
   fails('metadata.event_type = "USER_LOGIN"\nmatch:\n  $u\noutcome:\n  $c = count(metadata.id)', 'UNBOUND_VARIABLE');
   fails('metadata.event_type = "USER_LOGIN"\norder:\n  $c desc', 'ORDER_UNKNOWN_OUTCOME');
   fails('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.hostname over 1h\noutcome:\n  $c = count(metadata.id)', 'OVER_WINDOW', 'unsupported');
-  fails('metadata.event_type = "USER_LOGIN"\noutcome:\n  $a = array_distinct(principal.hostname)', 'UNSUPPORTED_AGGREGATE', 'unsupported');
+  fails('metadata.event_type = "USER_LOGIN"\noutcome:\n  $a = stddev(network.sent_bytes)', 'UNSUPPORTED_AGGREGATE', 'unsupported');
   fails('metadata.event_type = "USER_LOGIN"\noutcome:\n  $s = sum(principal.hostname)', 'AGGREGATE_NEEDS_NUMBER');
 });
 
@@ -78,7 +78,8 @@ test('G4 other languages and rule syntax are reported as unsupported, not as wro
   fails('rule failed_logins { meta: }', 'LOOKS_LIKE_RULE', 'unsupported');
   fails('SELECT * FROM events', 'LOOKS_LIKE_SQL', 'unsupported');
   fails('$e1.principal.hostname = "a" $e2.principal.hostname = "b"', 'MULTI_EVENT', 'unsupported');
-  fails('principal.hostname = "x"\ndedup:\n  principal.hostname', 'UNSUPPORTED_SECTION', 'unsupported');
+  fails('principal.hostname = "x"\noption:\n  allow_zero_values = true', 'UNSUPPORTED_SECTION', 'unsupported');
+  fails('principal.hostname = "x"\n$h = math.abs(target.port)', 'UNSUPPORTED_FUNCTION', 'unsupported');
 });
 
 test('G4 broken syntax is reported as invalid with a position', () => {
@@ -133,7 +134,7 @@ test('G9 an unfilled starter gap is named as such, before any other diagnostic',
   fails('metadata.event_type = "USER_LOGIN"\noutcome:\n  $n = ___(principal.user.userid)', 'STARTER_GAP', 'invalid');
   fails('metadata.event_type = "USER_LOGIN"\nmatch:\n  ___\noutcome:\n  $n = count(metadata.id)', 'STARTER_GAP', 'invalid');
   // should-fail: without the gap the same shapes get their ordinary diagnostics, and a lone underscore is not a gap
-  fails('metadata.event_type = "USER_LOGIN"\noutcome:\n  $n = array_distinct(principal.user.userid)', 'UNSUPPORTED_AGGREGATE', 'unsupported');
+  fails('metadata.event_type = "USER_LOGIN"\noutcome:\n  $n = median(network.sent_bytes)', 'UNSUPPORTED_AGGREGATE', 'unsupported');
   assert.equal(run('principal.user.userid = "a_b"').count, 0);
 });
 
@@ -164,4 +165,112 @@ test('G10 stats comparison separates missing rows, extra rows and same-key rows 
   // should-fail: the members behind a row are not a column and do not reach the table or JSON
   assert.deepEqual(Object.keys(ref.rows[0]), ['principal.user.userid', '$c']);
   assert.ok(!JSON.stringify(ref.rows).includes('e2'));
+});
+
+// ---------- engine v2: dedup, array outcomes, earliest/latest, functions, reference lists ----------
+const LISTS = [
+  { name: 'known_ips', type: 'string', items: ['10.0.0.1', '10.0.0.2'] },
+  { name: 'ext_ranges', type: 'cidr', items: ['203.0.113.0/24'] },
+  { name: 'ps_shapes', type: 'regex', items: ['powershell\\.exe$', '(a+)+$'] },
+  { name: 'hosts', type: 'string', items: ['pc-1'] },
+];
+const ctx = { lists: LISTS };
+const runL = t => execute(parseSearch(t, ctx), mini);
+const failsL = (t, code, status) => { try { parseSearch(t, ctx); } catch (e) { assert.ok(e instanceof QueryError, 'QueryError'); assert.equal(e.code, code); if (status) assert.equal(e.status, status); return; } assert.fail('expected ' + code); };
+
+test('V1 dedup on an event query keeps the first event per key, on a statistics query the first row per key after ordering; should-fail cases are named', () => {
+  assert.deepEqual(ids(runL('metadata.event_type = "USER_LOGIN"\ndedup:\n  principal.user.userid')), ['e1', 'e3', 'e4']);
+  assert.deepEqual(ids(runL('metadata.event_type = "USER_LOGIN"\n$u = principal.user.userid\ndedup:\n  $u, security_result.action')), ['e1', 'e2', 'e3', 'e4']);
+  const r = runL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.user.userid, security_result.action\noutcome:\n  $c = count(metadata.id)\ndedup:\n  principal.user.userid\norder:\n  $c desc');
+  assert.equal(r.deduped, true); assert.deepEqual(r.rows.map(x => [x['principal.user.userid'], x.$c]), [['', 1], ['ana', 1], ['bo', 1]]);
+  assert.equal(runL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.user.userid\noutcome:\n  $c = count(metadata.id)\ndedup:\n  $c').rows.length, 2, 'dedup by an outcome value');
+  // the deduped event table grades against a reference by record ids like any other
+  const ref = runQuery('metadata.event_type = "USER_LOGIN"\ndedup:\n  principal.user.userid', mini, null, ctx).result;
+  assert.equal(compareResults(runQuery('metadata.event_type = "USER_LOGIN"\n$who = principal.user.userid\ndedup:\n  $who', mini, null, ctx).result, ref).correct, true);
+  assert.equal(compareResults(runQuery('metadata.event_type = "USER_LOGIN"', mini, null, ctx).result, ref).correct, false);
+  failsL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.user.userid\noutcome:\n  $c = count(metadata.id)\ndedup:\n  principal.hostname', 'DEDUP_KEY_NOT_GROUPED');
+  failsL('metadata.event_type = "USER_LOGIN"\noutcome:\n  $c = count(metadata.id)\ndedup:\n  principal.hostname', 'DEDUP_KEY_NOT_GROUPED', 'invalid');
+  failsL('metadata.event_type = "USER_LOGIN"\ndedup:\n  principal.user.userid, principal.user.userid', 'DUPLICATE_KEY');
+  failsL('metadata.event_type = "USER_LOGIN"\ndedup:\n  hostname', 'GROUPED_FIELD_HERE');
+  failsL('metadata.event_type = "USER_LOGIN"\ndedup:\n  $u', 'UNBOUND_VARIABLE');
+  failsL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.user.userid\noutcome:\n  $c = count(metadata.id)\norder:\n  $c\ndedup:\n  principal.user.userid', 'SECTION_ORDER');
+  failsL('metadata.event_type = "USER_LOGIN"\ndedup:\n  principal.user.userid\nmatch:\n  principal.user.userid\noutcome:\n  $c = count(metadata.id)', 'SECTION_ORDER');
+});
+
+test('V2 array and array_distinct return lists cut at 1,000; earliest and latest return timestamps; should-fail: non-timestamp argument, array in condition or order', () => {
+  const r = runL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.hostname\noutcome:\n  $users = array(principal.user.userid)\n  $distinct = array_distinct(principal.user.userid)\n  $first = earliest(metadata.event_timestamp)\n  $last = latest(metadata.event_timestamp.seconds)');
+  const pc1 = r.rows.find(x => x['principal.hostname'] === 'PC-1');
+  assert.deepEqual(pc1.$users, ['ana', 'ana']); assert.deepEqual(pc1.$distinct, ['ana']); assert.equal(pc1.$first, 1000); assert.equal(pc1.$last, 1100);
+  assert.deepEqual(r.arrayCols, ['$users', '$distinct']); assert.deepEqual(r.timeCols, ['$first', '$last']);
+  const many = Array.from({ length: 1200 }, (_, i) => ({ 'metadata.id': 'm' + i, 'metadata.event_timestamp.seconds': i, 'metadata.event_type': 'USER_LOGIN', 'principal.user.userid': 'u' + i }));
+  const big = execute(parseSearch('metadata.event_type = "USER_LOGIN"\noutcome:\n  $a = array(principal.user.userid)\n  $d = array_distinct(principal.user.userid)'), many).rows[0];
+  assert.equal(big.$a.length, 1000); assert.equal(big.$d.length, 1000); assert.equal(big.$a[0], 'u0');
+  assert.equal(execute(parseSearch('metadata.event_type = "USER_LOGIN"\noutcome:\n  $d = array_distinct(principal.user.userid)'), many.map(e => ({ ...e, 'principal.user.userid': 'same' }))).rows[0].$d.length, 1, 'distinct before truncation');
+  // min/max on the timestamp still read as time columns, and the old shapes still run
+  assert.deepEqual(runL('metadata.event_type = "USER_LOGIN"\noutcome:\n  $m = min(metadata.event_timestamp.seconds)').timeCols, ['$m']);
+  failsL('metadata.event_type = "USER_LOGIN"\noutcome:\n  $e = earliest(principal.hostname)', 'TIME_AGGREGATE_NEEDS_TIMESTAMP', 'invalid');
+  failsL('metadata.event_type = "USER_LOGIN"\noutcome:\n  $e = latest(target.port)', 'TIME_AGGREGATE_NEEDS_TIMESTAMP');
+  failsL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.hostname\noutcome:\n  $a = array(principal.user.userid)\ncondition:\n  $a > 1', 'CONDITION_ON_ARRAY');
+  failsL('metadata.event_type = "USER_LOGIN"\nmatch:\n  principal.hostname\noutcome:\n  $a = array(principal.user.userid)\norder:\n  $a desc', 'ORDER_ON_ARRAY');
+  failsL('metadata.event_type = "USER_LOGIN"\noutcome:\n  $a = array_distinct(hostname)', 'GROUPED_FIELD_HERE');
+});
+
+test('V3 timestamp and string functions in filters and placeholders, UTC only; should-fail: another zone is unsupported with a reason, wrong argument types are invalid', () => {
+  // mini timestamps are seconds after the epoch: 1000 s = 00:16:40 UTC on 1970-01-01, 1800 s = 00:30:00
+  assert.deepEqual(ids(runL('timestamp.get_hour(metadata.event_timestamp.seconds, "UTC") = 0\ntimestamp.get_minute(metadata.event_timestamp) >= 30')), ['e7']);
+  assert.deepEqual(ids(runL('timestamp.get_date(metadata.event_timestamp.seconds) = "1970-01-01"\nmetadata.event_type = "USER_LOGIN"')), ['e1', 'e2', 'e3', 'e4']);
+  const hours = runL('metadata.event_type = "USER_LOGIN"\n$h = timestamp.get_hour(metadata.event_timestamp.seconds, "UTC")\nmatch:\n  $h\noutcome:\n  $c = count(metadata.id)');
+  assert.deepEqual(hours.columns, ['timestamp.get_hour(metadata.event_timestamp.seconds)', '$c']); assert.deepEqual(hours.rows, [{ 'timestamp.get_hour(metadata.event_timestamp.seconds)': 0, $c: 4 }]);
+  assert.deepEqual(ids(runL('strings.to_lower(principal.hostname) = "pc-2"\nmetadata.event_type = "USER_LOGIN"')), ['e3']);
+  assert.deepEqual(ids(runL('strings.to_upper(principal.user.userid) = "BO"')), ['e3', 'e5']);
+  const keyed = runL('metadata.event_type = "USER_LOGIN"\n$key = strings.concat(principal.hostname, ":", principal.user.userid)\nmatch:\n  $key\noutcome:\n  $c = count(metadata.id)');
+  assert.deepEqual(keyed.rows.map(r => r['strings.concat(principal.hostname, ":", principal.user.userid)']).sort(), [':', 'PC-1:ana', 'PC-2:bo']);
+  assert.deepEqual(ids(runL('strings.to_lower(target.process.file.full_path) = /powershell\\.exe$/')), ['e5'], 'a regex on a function result');
+  assert.deepEqual(ids(runL('$lo = strings.to_lower(principal.hostname)\n$lo = "pc-1"\nmetadata.event_type = "NETWORK_CONNECTION"')), ['e7'], 'a placeholder set from a function and then compared');
+  // the regex guard still applies on a function result, and the grader compares function tables by their names
+  failsL('strings.to_lower(principal.hostname) = /(a+)+$/', 'REGEX_NESTED_QUANTIFIER');
+  const ref = runQuery('metadata.event_type = "USER_LOGIN"\n$h = timestamp.get_hour(metadata.event_timestamp.seconds, "UTC")\nmatch:\n  $h\noutcome:\n  $c = count(metadata.id)', mini).result;
+  assert.equal(compareResults(runQuery('metadata.event_type = "USER_LOGIN"\n$hour = timestamp.get_hour(metadata.event_timestamp)\nmatch:\n  $hour\noutcome:\n  $n = count(metadata.id)', mini).result, ref).correct, true);
+  failsL('timestamp.get_hour(metadata.event_timestamp.seconds, "America/Los_Angeles") = 19', 'TIMEZONE_UNSUPPORTED', 'unsupported');
+  failsL('timestamp.get_hour(metadata.event_timestamp.seconds, "-08:00") = 19', 'TIMEZONE_UNSUPPORTED', 'unsupported');
+  failsL('timestamp.get_hour(metadata.event_timestamp.seconds, 0) = 19', 'TIMEZONE_NEEDS_STRING', 'invalid');
+  failsL('timestamp.get_hour(target.port, "UTC") = 19', 'TIMESTAMP_FN_NEEDS_TIMESTAMP', 'invalid');
+  failsL('timestamp.get_hour(metadata.event_timestamp.seconds, "UTC") = "19"', 'NUMBER_NEEDS_NUMBER');
+  failsL('strings.to_lower(target.port) = "443"', 'STRING_FN_NEEDS_STRING', 'invalid');
+  failsL('strings.to_lower(principal.hostname, principal.ip) = "x"', 'STRING_FN_NEEDS_STRING');
+  failsL('strings.concat(principal.hostname) = "x"', 'CONCAT_NEEDS_ARGS');
+  failsL('strings.to_lower(principal.hostname) = 1', 'STRING_NEEDS_QUOTES');
+  failsL('strings.to_lower(principal.hostname) > "a"', 'STRING_OPERATOR');
+  failsL('metadata.event_type = "USER_LOGIN"\noutcome:\n  $s = sum(strings.to_lower(principal.hostname))', 'AGGREGATE_NEEDS_NUMBER');
+  failsL('strings.reverse(principal.hostname) = "x"', 'UNSUPPORTED_FUNCTION', 'unsupported');
+  failsL('timestamp.get_week(metadata.event_timestamp.seconds) = 3', 'UNSUPPORTED_FUNCTION', 'unsupported');
+});
+
+test('V4 reference lists: in %string, in cidr %cidr, in regex %regex, not in, nocase; should-fail: unknown list, wrong keyword for the list type, wrong field type, too many lists', () => {
+  assert.deepEqual(ids(runL('principal.ip in %known_ips\nmetadata.event_type = "USER_LOGIN"')), ['e1', 'e2', 'e3']);
+  assert.deepEqual(ids(runL('metadata.event_type = "USER_LOGIN"\nprincipal.ip not in %known_ips')), ['e4']);
+  assert.deepEqual(ids(runL('metadata.event_type = "USER_LOGIN"\nnot principal.ip in %known_ips')), ['e4']);
+  assert.deepEqual(ids(runL('target.ip in cidr %ext_ranges')), ['e6']);
+  assert.deepEqual(ids(runL('ip in cidr %ext_ranges')), ['e4', 'e6'], 'a grouped field expands across the list test');
+  assert.deepEqual(ids(runL('target.process.file.full_path in regex %ps_shapes')), [], 'regex lists are case-sensitive without nocase');
+  assert.deepEqual(ids(runL('target.process.file.full_path in regex %ps_shapes nocase')), ['e5']);
+  assert.deepEqual(ids(runL('principal.hostname in %hosts')), []);
+  assert.deepEqual(ids(runL('principal.hostname in %hosts nocase\nmetadata.event_type = "USER_LOGIN"')), ['e1', 'e2']);
+  assert.deepEqual(ids(runL('strings.to_lower(principal.hostname) in %hosts\nmetadata.event_type = "USER_LOGIN"')), ['e1', 'e2'], 'a function result can be tested against a list');
+  assert.deepEqual(parseSearch('principal.ip in %known_ips OR target.ip in cidr %ext_ranges', ctx).lists, ['known_ips', 'ext_ranges']);
+  failsL('principal.ip in %nobody_home', 'UNKNOWN_LIST', 'invalid');
+  failsL('principal.ip in cidr %known_ips', 'LIST_TYPE_MISMATCH', 'invalid');
+  failsL('principal.ip in %ext_ranges', 'LIST_TYPE_MISMATCH', 'invalid');
+  failsL('principal.hostname in regex %hosts', 'LIST_TYPE_MISMATCH');
+  failsL('principal.hostname in cidr %ext_ranges', 'LIST_NEEDS_IP', 'invalid');
+  failsL('target.port in %known_ips', 'LIST_ON_NUMBER', 'invalid');
+  failsL('target.port in regex %ps_shapes', 'LIST_ON_NUMBER');
+  failsL('target.ip in cidr %ext_ranges nocase', 'NOCASE_ON_CIDR_LIST');
+  failsL('principal.ip in %', 'BAD_LIST_NAME');
+  failsL('principal.ip in known_ips', 'EXPECTED_LIST');
+  failsL(Array.from({ length: 11 }, () => 'principal.ip in %known_ips').join(' OR '), 'TOO_MANY_LISTS');
+  // without lists in the context every list is unknown, so the engine stays usable where none are bundled
+  fails('principal.ip in %known_ips', 'UNKNOWN_LIST');
+  // a list that fails the regex guard is skipped, never compiled: (a+)+$ is in ps_shapes and matches nothing here
+  assert.deepEqual(ids(runL('principal.user.userid in regex %ps_shapes')), []);
 });
