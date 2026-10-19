@@ -130,12 +130,10 @@ export function validateRuleMission(m, where, events, ctx) {
   const ref = runFor(m, m.reference, events, null, ctx);
   if (!ref.ok) return [...problems, `${where}: reference rule does not run (${ref.code})`];
   if (ref.result.rule.keys.length !== r.mustFire.key.length) problems.push(`${where}: the reference groups by ${ref.result.rule.keys.length} keys but the test cases name ${r.mustFire.key.length}`);
+  // The reference is graded exactly as a learner's rule is: it must fire on the must-fire case and stay quiet on the
+  // must-not-fire key (RULE_MISSED, RULE_WRONG_WINDOW, RULE_NOISY name what is wrong).
   const g = gradeRuleCases(ref.result, r, ctx.window);
   if (!g.correct) problems.push(`${where}: the reference rule fails its own test cases (${g.reason})`);
-  // the must-not-fire key must be a key the reference's events could form, or the test is empty
-  const names = ref.result.rule.keys;
-  const present = ref.result.rows.some(row => names.every((n, i) => String(row[n]) === String(r.mustNotFire.key[i])));
-  if (present) problems.push(`${where}: the reference fires on the must-not-fire key`);
   return problems;
 }
 

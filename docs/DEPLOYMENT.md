@@ -14,7 +14,7 @@ Status: the workflow exists on `main`; whether it has been run, and at what URL,
 | `browser` | `contents: read` | Installs Chromium and runs the Playwright suite against the same commit, once at the origin root and once under `/KC7SecOpsClaude/`. Runs in parallel with `build` and **does not gate** `deploy`. |
 | `deploy` | `pages: write`, `id-token: write` | Takes the uploaded artifact and deploys it through the `github-pages` environment. Needs `build` only. |
 
-Why the browser tests do not gate the deploy: the Chromium download and its system packages add a minute or more to every run, and the artifact is already proven before upload by the content validator (every authored answer against the data, every Build starter failing until completed), the unit tests (41, including the artifact should-fail cases) and the artifact check. A red `browser` job is still visible on the run and is a bug to fix on `main`. To make it gate, change the deploy job to `needs: [build, browser]`.
+Why the browser tests do not gate the deploy: the Chromium download and its system packages add a minute or more to every run, and the artifact is already proven before upload by the content validator (every authored answer against the data, every Build starter failing until completed), the unit tests (82, including the artifact should-fail cases) and the artifact check. A red `browser` job is still visible on the run and is a bug to fix on `main`. To make it gate, change the deploy job to `needs: [build, browser]`.
 
 Other properties of the workflow:
 

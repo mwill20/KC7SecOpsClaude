@@ -284,6 +284,29 @@ test('C12 two cases: case 1 events are byte-identical to the density branch (dig
   assert.ok(validate(content, data).some(p => p.includes('case week-after') && p.includes('no dataset')));
 });
 
+test('C15 rule missions validate against their own test cases; should-fail: a reference that fires on the must-not-fire key, a must-fire minute the reference does not cover, test cases on a Search mission, a missing case, a key count that does not match', () => {
+  const rules = missions.filter(m => m.mode === 'rule');
+  assert.deepEqual(rules.map(m => m.id), ['C11-M02', 'C11-M03', 'C11-M04', 'C11-M05', 'C11-M06', 'C11-M07', 'C11-M08', 'C12-M08']);
+  for (const m of rules) { assert.ok(m.rule.mustFire.key.length >= 1 && /^\d{2}:\d{2}$/.test(m.rule.mustFire.at), m.id); assert.ok(m.rule.mustNotFire.key.length >= 1, m.id); assert.match(m.reference, /^rule [a-z_]+ \{/, m.id); }
+  const noisy = JSON.parse(JSON.stringify(content)); noisy.chapters[10].missions.find(m => m.id === 'C11-M02').rule.mustNotFire.key = ['marco.vela'];
+  assert.ok(validate(noisy, datasets).some(p => p.includes('C11-M02') && p.includes('RULE_NOISY')));
+  const late = JSON.parse(JSON.stringify(content)); late.chapters[10].missions.find(m => m.id === 'C11-M02').rule.mustFire.at = '23:50';
+  assert.ok(validate(late, datasets).some(p => p.includes('C11-M02') && p.includes('RULE_WRONG_WINDOW')));
+  const missed = JSON.parse(JSON.stringify(content)); missed.chapters[10].missions.find(m => m.id === 'C11-M02').rule.mustFire.key = ['hal.brunner'];
+  assert.ok(validate(missed, datasets).some(p => p.includes('C11-M02') && p.includes('RULE_MISSED')));
+  const onSearch = JSON.parse(JSON.stringify(content)); onSearch.chapters[0].missions[1].rule = { mustFire: { key: ['x'], at: '19:00' }, mustNotFire: { key: ['y'] } };
+  assert.ok(validate(onSearch, datasets).some(p => p.includes('C01-M01') && p.includes('rule test cases belong')));
+  const noCases = JSON.parse(JSON.stringify(content)); delete noCases.chapters[10].missions.find(m => m.id === 'C11-M03').rule;
+  assert.ok(validate(noCases, datasets).some(p => p.includes('C11-M03') && p.includes('mustFire')));
+  const twoKeys = JSON.parse(JSON.stringify(content)); twoKeys.chapters[10].missions.find(m => m.id === 'C11-M03').rule.mustFire.key = ['lena.ostrowski', 'FS-01']; twoKeys.chapters[10].missions.find(m => m.id === 'C11-M03').rule.mustNotFire.key = ['dez.okafor', 'FS-01'];
+  assert.ok(validate(twoKeys, datasets).some(p => p.includes('C11-M03') && p.includes('keys')));
+  // a Build rule starter whose gap is filled wrongly is not a passing answer, and the hint 3 rule is
+  const badHint = JSON.parse(JSON.stringify(content)); const m3 = badHint.chapters[10].missions.find(m => m.id === 'C11-M03'); m3.hints[2] = m3.hints[2].replace('$e1 and $e2', '$e1');
+  assert.ok(validate(badHint, datasets).some(p => p.includes('C11-M03') && p.includes('hint 3')));
+  const passingStarter = JSON.parse(JSON.stringify(content)); const m4 = passingStarter.chapters[10].missions.find(m => m.id === 'C11-M04'); m4.starter = m4.reference;
+  assert.ok(validate(passingStarter, datasets).some(p => p.includes('C11-M04') && p.includes('starter')));
+});
+
 test('C14 the third case: its own dataset (fictional, on its own LAN, inside its window, own id range, digest proven), its own directory, chapter 12 as the capstone (eight desk missions with no explain blocks, mostly Your turn, one in rule mode, a Determination and a Handoff brief last), the engineering bridge; should-fail: a bad bridge, a directory asset off its LAN, a moved event', () => {
   const c3 = content.cases[2]; const d3 = datasets.saltmarsh;
   assert.equal(c3.id, 'saltmarsh'); assert.equal(c3.entities, 'entities-saltmarsh.json'); assert.equal(c3.digest, digestOf(d3.events));
