@@ -83,7 +83,7 @@ test('Build mission end to end with the keyboard only: invalid, correct, answer,
   await expect(page.locator('.scorebox')).toContainText('Log it to complete');
   await expect(page.locator('.desk .sr-only[role="status"]')).toContainText('Log it in the Casebook to complete the mission');
   await expect(page.locator('.logit')).toBeVisible();
-  await expect(page.locator('#topscore')).toHaveText('100 / 6,970 pts');
+  await expect(page.locator('#topscore')).toHaveText('100 / 8,600 pts');
 
   // 6. The next-mission control (in the lesson pane, before the desk in DOM order) is a real link: Enter on it navigates.
   await tabTo(page, 'a.btn[href="#C01-M07"]', 80, true);
@@ -134,7 +134,7 @@ test('Hints reveal one at a time, move focus to the new hint, cost nothing, and 
   await expect(hints.nth(2).locator('pre')).toContainText('security_result.action = "FAIL"');
   await expect(page.getByRole('button', { name: /Show/ })).toHaveCount(0);
   await expect(page.locator('.hints')).toContainText('Hints never cost points');
-  await expect(page.locator('#topscore')).toHaveText('0 / 6,970 pts');
+  await expect(page.locator('#topscore')).toHaveText('0 / 8,600 pts');
 });
 
 test('Record drill-down opens a full record, moves focus into it, and returns focus on close', async ({ page }) => {
@@ -339,7 +339,7 @@ test('Starter gap, wrong-query feedback with example record IDs, and the keyboar
 test('Top-bar chapter progress updates as a mission completes, and the chapter page carries a recap card', async ({ page }) => {
   await page.goto('#C01');
   const seg = page.locator('#chapterprog .chap');
-  await expect(seg).toHaveCount(10);
+  await expect(seg).toHaveCount(12);
   await expect(seg.first()).toHaveAttribute('aria-current', 'page');
   await expect(seg.first()).toHaveAttribute('aria-label', 'Chapter 1, Dead air at 03:10: 0 of 11 missions complete');
   await expect(seg.nth(1)).not.toHaveAttribute('aria-current', 'page');
@@ -421,8 +421,8 @@ test('Case-closed page: lists what is left while the case is open, and the three
   const ids = await (async () => { const p = await ctx.newPage(); await p.goto('./'); const r = await p.evaluate(async () => { const { CONTENT } = await import('./bundle.js'); return CONTENT.chapters.flatMap(c => c.missions.map(m => [m.id, m.kind, Boolean(m.logIt)])); }); await p.close(); return r; })();
   await seedProgress(page, ids);
   await page.goto('./');
-  await expect(page.locator('#topscore')).toHaveText('6,970 / 6,970 pts');
-  await expect(page.locator('#chapterprog .chap.done')).toHaveCount(10);
+  await expect(page.locator('#topscore')).toHaveText('8,600 / 8,600 pts');
+  await expect(page.locator('#chapterprog .chap.done')).toHaveCount(12);
   await page.getByRole('link', { name: 'Read the case-closed handoff →' }).click();
   await expect(page).toHaveURL(/#closed$/);
   await expect(page.locator('h1')).toHaveText('The handoff');

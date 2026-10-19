@@ -3,8 +3,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseSearch } from '../site/engine/parser.js';
-import { execute } from '../site/engine/executor.js';
-import { runQuery, compareResults, normalizeAnswer } from '../site/engine/grader.js';
+import { execute, MEMBERS } from '../site/engine/executor.js';
+import { runQuery, compareResults, normalizeAnswer, runFor, gradeQuery } from '../site/engine/grader.js';
+import { gradeRuleCases } from '../site/engine/rules.js';
 import { LIST_TYPES, ENTITY_TYPES, EMPLOYMENT_STATUSES, ACCOUNT_TYPES, ENTITY_ID_PREFIX } from '../site/engine/catalog.js';
 import { guardRegex, parseCidr } from '../site/engine/safety.js';
 
@@ -21,15 +22,21 @@ export function loadContent() {
   const casebook = JSON.parse(fs.readFileSync(path.join(root, 'content', 'casebook.json'), 'utf8'));
   const lists = JSON.parse(fs.readFileSync(path.join(root, 'content', 'lists.json'), 'utf8'));
   const tables = JSON.parse(fs.readFileSync(path.join(root, 'content', 'tables.json'), 'utf8'));
-  const entities = JSON.parse(fs.readFileSync(path.join(root, 'content', 'entities.json'), 'utf8'));
-  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, tables, entities, boundary: caseFile.boundary };
+  // Each case names its directory file (default content/entities.json, the station's); entitiesByCase maps case id to
+  // the raw directory, entityFiles maps file name to it (so a shared file is validated once), and entities stays the
+  // first case's directory for the earlier shape.
+  const entityFiles = {}; const entitiesByCase = {};
+  for (const c of cases) { const f = c.entities ?? 'entities.json'; entityFiles[f] ??= JSON.parse(fs.readFileSync(path.join(root, 'content', f), 'utf8')); entitiesByCase[c.id] = entityFiles[f]; }
+  const entities = entitiesByCase[cases[0].id];
+  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, tables, entities, entitiesByCase, entityFiles, boundary: caseFile.boundary };
 }
 export function loadData(file = 'events.json') { return JSON.parse(fs.readFileSync(path.join(root, 'data', file), 'utf8')); }
 // Every case's dataset, keyed by case id.
 export function loadDatasets(content = loadContent()) { return Object.fromEntries(content.cases.map(c => [c.id, loadData(c.data)])); }
 export const digestOf = events => crypto.createHash('sha256').update(JSON.stringify(events)).digest('hex');
 
-const hhmm = s => new Date(s * 1000).toISOString().slice(11, 16);
+// A missing or non-numeric value reads as itself, so a reference that returns no row yields an answer mismatch rather than a throw.
+const hhmm = s => (Number.isFinite(s) ? new Date(s * 1000).toISOString().slice(11, 16) : String(s));
 
 // Entity records as the engine reads them: content/entities.json (users and assets with ISO validity intervals) becomes
 // flat graph.* records with the interval in seconds and a stable ent-NNNNN id, in file order. Mirrors site/app.js.
@@ -48,12 +55,13 @@ const caseWindow = c => ({ start: Date.parse(c.window.start) / 1000, end: Date.p
 // Derives a mission's expected answer from its reference query, so authored answers cannot drift from the data.
 // ctxFor(content, caseId) scopes the entity records to that case's window; without a case every record is in.
 export const ctxFor = (content, caseId = null) => {
-  const all = entityRecords(content?.entities);
+  const all = entityRecords((caseId && content?.entitiesByCase?.[caseId]) ?? content?.entities);
   const c = caseId ? content.cases.find(x => x.id === caseId) : null;
   return { lists: content?.lists?.lists ?? [], tables: content?.tables?.tables ?? [], entities: c ? entitiesFor(all, caseWindow(c)) : all };
 };
 export function deriveAnswer(mission, events, ctx = {}) {
-  const r = execute(parseSearch(mission.reference, ctx), events, null, ctx.entities ?? []);
+  // A rule mission's answer is read from its detections (count, cell, field); a Search mission's from its rows.
+  const r = mission.mode === 'rule' ? (() => { const x = runFor(mission, mission.reference, events, null, ctx); if (!x.ok) throw new Error('REFERENCE_BROKEN:' + x.code); return x.result; })() : execute(parseSearch(mission.reference, ctx), events, null, ctx.entities ?? []);
   const c = mission.answer.check;
   if (c.type === 'count') return String(r.count);
   if (c.type === 'distinct') return String(new Set(r.rows.map(x => x[c.field])).size);
@@ -82,14 +90,21 @@ export const LOGIT_KINDS = ['scope', 'evidence', 'timeline', 'hypothesis', 'pivo
 const LOGIT_LISTS = ['contain', 'eradicate', 'recover', 'harden'];
 
 // logIt: { kind, prompt, mustInclude: [token|alternative, ...], list? }. Every token that looks like a record ID must
-// exist in the dataset, so a mission can never ask for a record the learner cannot find.
-export function validateLogIt(li, where, eventIds) {
+// exist in the dataset, so a mission can never ask for a record the learner cannot find; on a desk mission it must also
+// be one of the records the mission's reference query returns (refIds: the rows' ids and the records behind each
+// aggregated row), so an authored id cannot drift to a neighbouring event the learner's results never show.
+const RECORD_ID = /^(?:evt|ent)-\d{5}$/;
+export function validateLogIt(li, where, eventIds, refIds = null) {
   const problems = [];
   if (!li || typeof li !== 'object' || Array.isArray(li)) return [`${where}: logIt shape`];
   if (!LOGIT_KINDS.includes(li.kind)) problems.push(`${where}: logIt.kind "${li.kind}" not in ${LOGIT_KINDS.join('/')}`);
   if (typeof li.prompt !== 'string' || li.prompt.trim().length < 20) problems.push(`${where}: logIt.prompt missing or too short`);
   if (!Array.isArray(li.mustInclude) || !li.mustInclude.length || li.mustInclude.some(t => typeof t !== 'string' || !t.trim())) problems.push(`${where}: logIt.mustInclude must be a non-empty list of strings`);
-  else for (const token of li.mustInclude) for (const alt of token.split('|')) if (/^evt-\d{5}$/.test(alt.trim()) && !eventIds.has(alt.trim())) problems.push(`${where}: logIt.mustInclude names ${alt.trim()}, which is not in the dataset`);
+  else for (const token of li.mustInclude) for (const alt of token.split('|')) {
+    const id = alt.trim(); if (!RECORD_ID.test(id)) continue;
+    if (!eventIds.has(id)) problems.push(`${where}: logIt.mustInclude names ${id}, which is not in the dataset`);
+    else if (refIds && !refIds.has(id)) problems.push(`${where}: logIt.mustInclude names ${id}, which the reference query does not return`);
+  }
   if (li.list !== undefined && (li.kind !== 'remediation' || !LOGIT_LISTS.includes(li.list))) problems.push(`${where}: logIt.list "${li.list}" only applies to remediation and must be one of ${LOGIT_LISTS.join('/')}`);
   if (Object.keys(li).some(k => !['kind', 'prompt', 'mustInclude', 'list'].includes(k))) problems.push(`${where}: logIt has unknown keys`);
   return problems;
@@ -99,6 +114,28 @@ export function validateLogIt(li, where, eventIds) {
 // desk (Watch, Build, Your turn). Read missions carry no desk and frame the chapter, so they sit outside the ceiling.
 // Every chapter after the first needs DENSITY.solo Your-turn missions; the first chapter may have one.
 export const DENSITY = Object.freeze({ min: 7, maxDesk: 8, solo: 2, soloFirst: 1 });
+
+// A rule mission (mode "rule") carries its two test cases: rule.mustFire = { key: [one value per match key], at: "HH:MM" }
+// and rule.mustNotFire = { key: [...] }. The reference rule must fire on the first and stay quiet on the second; the
+// learner's rule is graded the same way. ctx.window is the case window the clock time is read in.
+// The record ids a result stands on: event and entity rows by id, aggregated rows and detections by the records behind them.
+export const referenceIds = result => new Set(result.rows.flatMap(row => [row['metadata.id'], ...(row[MEMBERS] ?? [])].filter(Boolean)));
+
+export function validateRuleMission(m, where, events, ctx) {
+  const problems = [];
+  const r = m.rule;
+  if (!r || typeof r !== 'object' || !r.mustFire || !Array.isArray(r.mustFire.key) || !r.mustFire.key.length || !/^\d{2}:\d{2}$/.test(String(r.mustFire.at ?? '')) || !r.mustNotFire || !Array.isArray(r.mustNotFire.key) || !r.mustNotFire.key.length) return [`${where}: a rule mission needs rule.mustFire { key, at HH:MM } and rule.mustNotFire { key }`];
+  if (r.mustFire.key.length !== r.mustNotFire.key.length) problems.push(`${where}: mustFire and mustNotFire keys differ in length`);
+  if (JSON.stringify(r.mustFire.key) === JSON.stringify(r.mustNotFire.key)) problems.push(`${where}: mustFire and mustNotFire name the same key`);
+  const ref = runFor(m, m.reference, events, null, ctx);
+  if (!ref.ok) return [...problems, `${where}: reference rule does not run (${ref.code})`];
+  if (ref.result.rule.keys.length !== r.mustFire.key.length) problems.push(`${where}: the reference groups by ${ref.result.rule.keys.length} keys but the test cases name ${r.mustFire.key.length}`);
+  // The reference is graded exactly as a learner's rule is: it must fire on the must-fire case and stay quiet on the
+  // must-not-fire key (RULE_MISSED, RULE_WRONG_WINDOW, RULE_NOISY name what is wrong).
+  const g = gradeRuleCases(ref.result, r, ctx.window);
+  if (!g.correct) problems.push(`${where}: the reference rule fails its own test cases (${g.reason})`);
+  return problems;
+}
 
 // content/casebook.json: the FreeForm template (3 to 40 short lines, each ending in a colon so it reads as a prompt)
 // and the teaching line shown above the page.
@@ -167,10 +204,15 @@ export function validateTables(raw) {
 // validity interval. Values stay fictional (station LAN addresses, lower-case dotted userids, upper-case hostnames) and
 // the versions of one entity may not overlap.
 const ISO = iso => typeof iso === 'string' && !Number.isNaN(Date.parse(iso));
+// The fictional LANs an organisation's assets may sit on: the station's and the co-operative's. Same rule as the
+// dataset tests and the artifact check, which also allow the RFC 5737 documentation ranges.
+export const FICTIONAL_LANS = Object.freeze(['10.9.4.', '10.77.3.']);
 export function validateEntities(raw) {
   const problems = [];
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.users) || !Array.isArray(raw.assets)) return ['entities.json: shape'];
   if (typeof raw.product !== 'string' || !raw.product) problems.push('entities.json: product');
+  const lan = raw.lan ?? FICTIONAL_LANS[0];
+  if (!FICTIONAL_LANS.includes(lan)) problems.push(`entities.json: lan must be one of ${FICTIONAL_LANS.join(' ')}`);
   const interval = (r, where) => {
     if (!ISO(r.valid_from) || !ISO(r.valid_to) || Date.parse(r.valid_to) <= Date.parse(r.valid_from)) problems.push(`${where}: valid_from and valid_to must be ISO times with the end after the start`);
   };
@@ -196,7 +238,7 @@ export function validateEntities(raw) {
     const where = `entities.json asset ${a?.hostname ?? '?'}`;
     if (!a || typeof a !== 'object') { problems.push(`${where}: shape`); continue; }
     if (!/^[A-Z][A-Z0-9-]{1,30}$/.test(a.hostname ?? '')) problems.push(`${where}: hostname must be an upper-case station name`);
-    if (!/^10\.9\.4\.\d{1,3}$/.test(a.ip ?? '')) problems.push(`${where}: ip must be on the fictional station LAN`);
+    if (!String(a.ip ?? '').startsWith(lan) || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a.ip ?? '')) problems.push(`${where}: ip must be on the fictional station LAN ${lan}0/24`);
     if (!userids.has(a.owner)) problems.push(`${where}: owner ${a.owner} is not a user in the directory`);
     if (typeof a.role !== 'string' || !a.role) problems.push(`${where}: role`);
     if (!['LOW', 'MEDIUM', 'HIGH'].includes(a.criticality)) problems.push(`${where}: criticality must be LOW, MEDIUM or HIGH`);
@@ -204,7 +246,7 @@ export function validateEntities(raw) {
     if (Object.keys(a).some(k => !assetKeys.includes(k))) problems.push(`${where}: unknown keys`);
   }
   overlap(raw.users, 'userid', 'user'); overlap(raw.assets, 'hostname', 'asset');
-  if (Object.keys(raw).some(k => !['note', 'product', 'users', 'assets'].includes(k))) problems.push('entities.json: unknown keys');
+  if (Object.keys(raw).some(k => !['note', 'product', 'lan', 'users', 'assets'].includes(k))) problems.push('entities.json: unknown keys');
   return problems;
 }
 
@@ -224,23 +266,34 @@ export function validateCase(c, chapterIds, data) {
     if (data && data.events.some(e => e['metadata.event_timestamp.seconds'] < data.window.start || e['metadata.event_timestamp.seconds'] > data.window.end)) problems.push(`${where}: an event lies outside the window`);
   }
   if (!Array.isArray(c.chapters) || !c.chapters.length || c.chapters.some(id => !chapterIds.has(id))) problems.push(`${where}: chapters must name existing chapter files`);
+  if (c.entities !== undefined && !/^[a-z0-9-]+\.json$/.test(c.entities)) problems.push(`${where}: entities must name a content/*.json directory file`);
+  // The engineering bridge (optional): the case-closed page's exit to the engineering course, a title, an intro and
+  // three to six headed paragraphs.
+  if (c.bridge !== undefined) {
+    const b = c.bridge;
+    if (!b || typeof b !== 'object' || typeof b.title !== 'string' || !b.title || typeof b.intro !== 'string' || b.intro.length < 40 || !Array.isArray(b.items) || b.items.length < 3 || b.items.length > 6 || b.items.some(x => !x || typeof x.heading !== 'string' || !x.heading || typeof x.text !== 'string' || x.text.length < 60)) problems.push(`${where}: bridge needs a title, an intro and 3 to 6 items of { heading, text }`);
+    if (b && Object.keys(b).some(k => !['title', 'intro', 'items'].includes(k))) problems.push(`${where}: bridge has unknown keys`);
+  }
   if (!data) problems.push(`${where}: no dataset`);
   else if (digestOf(data.events) !== c.digest) problems.push(`${where}: events changed (digest ${digestOf(data.events).slice(0, 12)}… does not match case.json). Regenerate deliberately and update the digest, or restore the data.`);
   return problems;
 }
 
-export function validate({ cases, chapters, chapterCase, casebook, lists, tables, entities }, datasets) {
+export function validate({ cases, chapters, chapterCase, casebook, lists, tables, entities, entitiesByCase, entityFiles }, datasets) {
   const problems = [];
   if (casebook !== undefined) problems.push(...validateCasebookContent(casebook));
   if (lists !== undefined) problems.push(...validateLists(lists));
   if (tables !== undefined) problems.push(...validateTables(tables));
-  if (entities !== undefined) problems.push(...validateEntities(entities));
+  // Every directory file a case names is validated once; the earlier shape (one entities object) still works.
+  const dirs = entityFiles ?? (entities !== undefined ? { 'entities.json': entities } : {});
+  for (const [f, raw] of Object.entries(dirs)) problems.push(...validateEntities(raw).map(p => p.replace(/^entities\.json/, f)));
   if (lists && tables && lists.lists?.some(l => tables.tables?.some(t => t.name === l.name))) problems.push('lists.json and tables.json share a name; a learner could not tell %name from %name.column');
-  const content = { cases, lists, tables, entities: problems.some(p => p.startsWith('entities.json')) ? undefined : entities };
-  const ctxOf = {}; const ctxForCase = id => (ctxOf[id] ??= ctxFor(content, cases?.some(c => c.id === id && c.window) ? id : null));
-  const ids = new Set();
+  const dirsOk = !problems.some(p => Object.keys(dirs).some(f => p.startsWith(f)));
+  const content = { cases, lists, tables, entities: dirsOk ? entities : undefined, entitiesByCase: dirsOk ? entitiesByCase : undefined };
   // Accept a single dataset (earlier branches) as the first case's.
   const sets = datasets?.events ? { [cases[0].id]: datasets } : datasets ?? {};
+  const ctxOf = {}; const ctxForCase = id => (ctxOf[id] ??= { ...ctxFor(content, cases?.some(c => c.id === id && c.window) ? id : null), window: sets[id]?.window ?? null });
+  const ids = new Set();
   const chapterIds = new Set(chapters.map(ch => ch.id));
   if (!Array.isArray(cases) || !cases.length) problems.push('case.json: cases array');
   for (const c of cases ?? []) problems.push(...validateCase(c, chapterIds, sets[c.id]));
@@ -266,22 +319,30 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
       if (ids.has(m.id)) problems.push(`${where}: duplicate id`); ids.add(m.id);
       if (!['watch', 'build', 'solo', 'read'].includes(m.kind)) problems.push(`${where}: kind`);
       if (!m.call || !m.call.options?.some(o => o.id === m.call.correct)) problems.push(`${where}: call.correct not among options`);
-      if (m.logIt !== undefined) problems.push(...validateLogIt(m.logIt, where, eventIds));
+      // Read missions have no query: their record ids are checked for existence. Desk missions are checked against the
+      // reference's rows once the reference has run, below.
+      if (m.logIt !== undefined && m.kind === 'read') problems.push(...validateLogIt(m.logIt, where, eventIds));
       if (m.brief !== undefined && (m.brief !== 'casebook' || m.kind !== 'read' || !['Facts', 'Hypotheses', 'Gaps', 'Determination', 'Remediation', 'Handoff'].every(part => m.explain?.some(e => e.part === part)))) problems.push(`${where}: brief must be "casebook" on a read mission whose explain carries all six brief sections`);
       if (m.logIt?.kind === 'scope' && ch.missions.indexOf(m) > 1) problems.push(`${where}: a Scope Log it belongs to the first or second mission of a case's first chapter`);
       if (m.kind === 'read') { if (m.reference) problems.push(`${where}: read mission has a reference`); continue; }
       if (!m.reference) { problems.push(`${where}: missing reference`); continue; }
-      const ref = runQuery(m.reference, data.events, null, ctx);
+      if (m.mode !== undefined && m.mode !== 'rule') problems.push(`${where}: mode must be "rule" or absent`);
+      const isRule = m.mode === 'rule';
+      if (isRule) { const rp = validateRuleMission(m, where, data.events, ctx); if (rp.length) { problems.push(...rp); continue; } }
+      else if (m.rule !== undefined) problems.push(`${where}: rule test cases belong to a mission in rule mode`);
+      const ref = runFor(m, m.reference, data.events, null, ctx);
       if (!ref.ok) { problems.push(`${where}: reference does not run (${ref.code})`); continue; }
+      if (m.logIt !== undefined) problems.push(...validateLogIt(m.logIt, where, eventIds, referenceIds(ref.result)));
+      // A text passes when it grades correct in the mission's mode: the same evidence as the reference for a Search
+      // mission, the must-fire and must-not-fire cases for a rule mission.
+      const passes = text => gradeQuery(text, m, data.events, null, ctx).status === 'correct';
       if (m.hints.length !== 3) problems.push(`${where}: expected 3 hints`);
       if (m.kind !== 'watch') { // watch missions already show the full query; their hints are reading prompts
-        const full = runQuery(m.hints[2], data.events, null, ctx);
-        if (!full.ok || !compareResults(full.result, ref.result).correct) problems.push(`${where}: hint 3 is not a passing answer`);
+        if (!passes(m.hints[2])) problems.push(`${where}: hint 3 is not a passing answer`);
       }
       if (m.kind === 'build') {
         if (!m.starter.includes('___')) problems.push(`${where}: build starter has no gap`);
-        const st = runQuery(m.starter, data.events, null, ctx);
-        if (st.ok && compareResults(st.result, ref.result).correct) problems.push(`${where}: starter already passes`);
+        if (passes(m.starter)) problems.push(`${where}: starter already passes`);
       }
       if (m.kind === 'solo' && m.starter !== '') problems.push(`${where}: solo starter must be empty`);
       if (m.kind === 'watch' && m.starter !== m.reference) problems.push(`${where}: watch starter should equal reference`);
@@ -292,12 +353,11 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
   }
   const named = (cases ?? []).flatMap(c => c.chapters ?? []);
   if (new Set(named).size !== chapters.length || named.length !== chapters.length) problems.push('case.chapters mismatch');
-  // Every case ends with exactly one brief mission (the handoff beside the model) in its last chapter, and each case's
-  // missions ask for every casebook entry kind, so a fresh casebook fills from Scope to Handoff.
+  // Every case ends with a brief mission (the handoff beside the model) in its last chapter (a case may show an earlier
+  // brief too), and each case's missions ask for every casebook entry kind, so a fresh casebook fills from Scope to Handoff.
   for (const c of cases ?? []) {
     const ms = chapters.filter(ch => (c.chapters ?? []).includes(ch.id)).flatMap(ch => ch.missions);
-    const briefs = ms.filter(m => m.brief === 'casebook');
-    if (briefs.length !== 1 || ms.at(-1)?.brief !== 'casebook') problems.push(`case ${c.id}: the last mission must be the one brief mission`);
+    if (ms.at(-1)?.brief !== 'casebook') problems.push(`case ${c.id}: the last mission must be a brief mission`);
     const kinds = new Set(ms.map(m => m.logIt?.kind).filter(Boolean));
     for (const k of LOGIT_KINDS) if (!kinds.has(k)) problems.push(`case ${c.id}: no mission asks for a ${k} entry`);
     if (ms.findIndex(m => m.logIt?.kind === 'scope') > 1) problems.push(`case ${c.id}: the Scope must be asked for at the start`);

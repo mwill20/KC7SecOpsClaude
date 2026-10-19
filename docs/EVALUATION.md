@@ -1,16 +1,16 @@
 # Evaluation: what was tested and how
 
-Last run 2026-10-18 on the session-4 branch (82 missions, two cases, ten chapters). Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked. The session-3 and session-4 sections are at the end of this file.
+Last run 2026-10-19 on the session-5 branch `cloud/s5` (101 missions, three cases, twelve chapters). Everything below is reproducible with `npm run verify`; nothing was verified by hand only unless marked. The session-3, session-4 and session-5 sections are at the end of this file; the summary table is the session-5 run.
 
 ## Summary
 
 | Layer | Tool | Count | Result |
 |---|---|---|---|
-| Dataset generation | `tools/gen-data.mjs` | 1,010 + 973 events | deterministic (fixed seeds); `data/events.json` byte-identical to the density branch (sha256 `3c2da175…`), proven by the digest in `content/case.json`; `data/events-week-after.json` gained two appended records in session 4 with every earlier id unchanged (new digest `c7b7e9ef…`) |
-| Content validation | `tools/validate-content.mjs` | 82 missions, 2 cases, 5 lists, 4 tables, 25 entity records | every reference runs against its case's data (joins and entity queries included); every authored answer proven; every Build starter fails until completed; every `logIt` block valid (event or entity record ids); density rule per chapter; each case's window, ranges, chapters and digest; every case fed from Scope to Handoff with one brief mission last; `lists.json`, `tables.json`, `entities.json` and `casebook.json` shapes |
-| Unit tests | `node --test` | 74 | pass (69 before + V5 data tables and limits + V6 joins (two tests) + V7 entity context + C13 tables and directory) |
-| Browser tests | Playwright 1.64.1, Chromium | 25 | pass (24 before + 1 entities and joins on the desk), each run at the root and under `/KC7SecOpsClaude/` |
-| Mutation checks on the new tests | manual, see below | 4 + 5 + 5 + 7 | each mutation failed the intended test |
+| Dataset generation | `tools/gen-data.mjs` | 1,010 + 973 + 675 events | deterministic (fixed seeds); `data/events.json` and `data/events-week-after.json` byte-identical to session 4 (digests `a2ddb67f…` and `c7b7e9ef…` unchanged in `content/case.json`); `data/events-saltmarsh.json` new (digest `748f83d4…`) |
+| Content validation | `tools/validate-content.mjs` | 101 missions, 3 cases, 5 lists, 4 tables, 42 entity records in 2 directories | every reference runs against its case's data and directory (Search or rule); every authored answer proven; every Build starter fails and every hint 3 passes in the mission's mode; every `logIt` block valid, with record ids that exist and are returned by the mission's reference; every rule mission's reference passes its own must-fire and must-not-fire cases; density rule per chapter; each case's window, ranges, chapters, directory file, bridge and digest; every case fed from Scope to Handoff with a brief mission last |
+| Unit tests | `node --test` | 82 | pass (74 before + R1 to R4 rule mode (four tests) + C14 the third case + C15 rule missions; C9 gained the drifted-id case) |
+| Browser tests | Playwright 1.64.1, Chromium | 27 | pass (25 before + rule mode on the desk + the third case and its bridge), each run at the root and under `/KC7SecOpsClaude/` |
+| Mutation checks on the new tests | manual, see below | 4 + 5 + 5 + 7 + 10 | each mutation failed the intended test, except one redundant validator line that was removed and replaced by a test (session 5) |
 
 Environment for the recorded run: Linux, Node 22.22.0 (npm warns against `engines: >=24` but runs), Chromium build 1194 driven through `PIER9_CHROMIUM` because the container could not download Playwright's own build 1248. A clean CI run should instead do `npx playwright install --with-deps chromium` on Node 24; nothing in the tests depends on the Chromium build.
 
@@ -399,3 +399,103 @@ Applied, run, reverted:
 - The entity field names against a tenant's entity graph: they mirror UDM entity nouns as the team reads them, and the roles, criticality and remote_access values are the station's own labels.
 - Learning effect of the two new chapters: nobody outside the project has played them.
 - Same environment as before: Node 22 with an existing Chromium build (1194) through `PIER9_CHROMIUM`, one engine, no assistive technology session.
+
+## Session 5: rule mode, chapter 11, the third case and chapter 12
+
+Branch `cloud/s5`, 2026-10-19. What a learner notices: a **Mode** switch beside the time range on every desk, with **Search** and **Rule**; chapter 11, **From search to detection**, in the second case, whose missions start in Rule mode, show a **Test cases** card beside the question (must fire: a key and a minute; must not fire: a key), return **detections** with window start and end instead of rows, and grade a rule by those two cases with the false positives counted in the feedback; a third case, **A different pier**, on the home page's case switcher, with its own people, directory, time ranges and a chapter whose desk missions carry the question, three hints and the Log it and nothing else; and, once that case is complete, a **Cybersecurity Engineering bridge** on its case-closed page. The course total went from 6,970 to 8,600 points over 101 missions. No chapter 1 to 10 reference query, answer value or scoring value changed; two Log it record ids were corrected (below); `data/events.json` and `data/events-week-after.json` are byte-identical.
+
+### Documentation, as verified by the owner's reviewer
+
+The build container cannot reach `docs.cloud.google.com`. The owner's reviewer read the pages on 2026-10-18 and the facts below are recorded as authoritative in `site/engine/catalog.js`, chapter 11 and the About page:
+
+- A YARA-L 2.0 rule has the shape `rule name { meta: ... events: ... match: $key over 1h  outcome: ... condition: ... }`.
+- In rules every field is written with an event variable (`$e.metadata.event_type`); `match` uses `over N`, a sliding window; `condition` is mandatory.
+- **UDM search compared with rule results**: Search and rules run on different engines, evaluate different time windows and handle repeated fields and deduplication differently, so counts differ.
+- Match variables skip zero values unless `allow_zero_values` is set in `options`.
+- The rule-engine data-table join form is `$e.field = %table.column`; reference lists and tables are usable in `events` and `outcome`.
+
+The trainer runs a subset of this (LIMITATIONS lists what it does not run) and models the sliding window as: per match key, a window opens at the first unconsumed event and covers `[t0, t0 + N]`; if the condition holds on the events inside it they are one detection and the window moves past them; otherwise it moves to the next event. Severity is restricted to LOW, MEDIUM, HIGH and CRITICAL to teach the habit; Google's `meta` is free text and the caveat on C11-M04 says so.
+
+### New missions, by chapter
+
+| Chapter | Mission | Kind | Teaches | Log it |
+|---|---|---|---|---|
+| 11 | C11-M01 A query answers once; a rule keeps answering | Read | the envelope, the variable, the window, the condition; the two engines; must-fire and must-not-fire | Gap (engine, tenant) |
+| 11 | C11-M02 The burst, as a rule | Watch (rule) | the chapter 6 bucket query as a rule at `>= 2`; a threshold is a memory of the last attack; 2 detections (pledge-desk 19:58, marco.vela 23:50) | Evidence (evt-20189, evt-20190, 19:58) |
+| 11 | C11-M03 Login, then a file, as a rule | Build (rule) | the chapter 9 join as a rule, `condition: $e1 and $e2`; Odalys's desk-then-home pair as a counted false positive | Pivot (thirty days, the workstation class) |
+| 11 | C11-M04 Say it to the SOC | Build (rule) | `meta`: author, description, severity as communication; the gap is the severity | Remediation / Harden (HIGH, evt-20863) |
+| 11 | C11-M05 The blank hostname | Build (rule) | `allow_zero_values`: a rule keyed on the gateway's blank hostname is silent until the option is set | Gap (allow_zero_values, hostname) |
+| 11 | C11-M06 A table inside a rule | Your turn (rule) | `$e.principal.user.userid = %privileged_accounts.account`, outcomes reading `%privileged_accounts.may_run_as` and `granted_by`; a LOW review rule | Evidence (evt-20294, dez.okafor, odalys.reyes) |
+| 11 | C11-M07 Tuning: the engineer's maintenance | Your turn (rule) | the noisy run-as rule in the question; tune through `not ... in %privileged_accounts.account`, not a name; Dez must not fire | Hypothesis (supported; privileged_accounts, evt-20796) |
+| 11 | C11-M08 Same data, two counts | Watch (rule) | `over 3m` returns 2 detections where Search `by 3m` returns 1 row (marco.vela straddles a clock boundary); the Mode switch shows both | Gap (bucket versus sliding) |
+| 11 | C11-M09 Deploy, replay, approve | Read (brief) | replay, severity and owner, who approves; the detection handoff with each rule's two cases beside the model | Handoff (evt-20863, must not, replay) |
+| 12 | C12-M01 Which hosts installed the update | Your turn | scope before suspect; three installer launches at 09:30 | Scope (Marguerite Doyle, 06:00, 16:00) |
+| 12 | C12-M02 What the installer left behind | Your turn | the plugin launched by the signed client at 09:31 on three hosts | Evidence (evt-30165, tw-telemetry) |
+| 12 | C12-M03 Persistence | Your turn | three `TideWatchTelemetry` tasks about a hundred seconds after each installer | Timeline (09:31, TideWatchTelemetry) |
+| 12 | C12-M04 Where it talks, and how often | Your turn | per-host cadence to 198.51.100.210: 21, 20 and 20 connections; one host sent more | Hypothesis (open; 198.51.100.210, svc-tidewatch) |
+| 12 | C12-M05 The deckhand's morning | Build | `latest()` as the gap; rafael.quinn's account ends at 08:40 and never returns | Pivot (rafael.quinn, 08:40) |
+| 12 | C12-M06 What the service account wrote | Your turn | three files, the archive m.zip at 13:06 after a hidden `Compress-Archive` of the manifests share | Evidence (evt-30458, m.zip) |
+| 12 | C12-M07 What left the pier | Build | `network.sent_bytes > 1000000`: 2,814,400 bytes to the beacon's destination at 13:20 | Gap (198.51.100.210, the archive's contents) |
+| 12 | C12-M08 The detection | Your turn (rule) | a host connecting more than once in an hour on port 8443, keyed by host; must fire DISPATCH-01 09:32, must not fire OFFICE-02; 18 detections | Remediation / Contain (198.51.100.210, TideWatchTelemetry) |
+| 12 | C12-M09 Determination | Read | confirmed incident, high confidence, the person cleared in the same sentence; the model in the case update | Determination |
+| 12 | C12-M10 Handoff, for an engineer | Read (brief) | the ticket beside the model; the bridge on the closed page | Handoff (DISPATCH-01, TideWatch, FS-GULL) |
+
+Kinds added: 3 Watch, 5 Build, 8 Your turn, 3 Read. Points: chapter 11 700, chapter 12 930; case 2 2,615 → 3,315; case 3 930; course 6,970 → 8,600.
+
+### Method
+
+Every rule and query in chapters 11 and 12 was run through the real engine against its case's data before a word of prose was written (the probe scripts ran `runRule` and `runQuery` with the case context); every number, time and record id in a beat, clue, hint, test case or Log it prompt was taken from those rows and detections. The validator then proved them again: each rule reference against its own must-fire and must-not-fire cases, each answer derived from detections or rows, each Build starter failing and each hint 3 passing in the mission's mode, and each Log it record id among the reference's rows. Each new engine construct got a passing case and a should-fail case in `tests/unit/rules.test.mjs` before the content used it. The desk was then driven in Chromium (`tests/browser/rules.spec.mjs`, `capstone.spec.mjs`): the Mode switch, the Test cases card, detections with their window columns, a Build rule failing the must-not-fire case with the false-positive count and then passing, the rule messages, the Search count on the same data, the third case's directory and casebook, a capstone mission without explained parts, and the bridge once the case is complete.
+
+### Friction log
+
+| # | Where | What a learner would say | What changed |
+|---|---|---|---|
+| R1 | C11-M02 | "The chapter 6 rule says > 3 and tonight nothing fires; is the rule broken?" | The Watch rule is written at `>= 2` and the concept says why: a threshold tuned to last week's burst sleeps through this week's two quiet tries. The tuning mission closes the loop. |
+| R2 | The rule executor's first draft | A two-minute window from the first failure held only two of ana's four failures in the unit data, and the test expected three. | The test was wrong, not the executor: 0, 70 and 130 seconds span more than 120. The expectation now shows the slide (the window that fires opens at the second failure), and R1 documents it. |
+| R3 | `match: $a` with no window in a rule | Reported as "wrong window form", which pointed at `by`. | A key without any window now reads `RULE_NEEDS_WINDOW`: write `match: $account over 5m`. |
+| R4 | `order:` inside a rule | The section was swallowed into `condition` and reported as a section-order problem. | The section splitter leaves unknown words to the body parser, which names them: `RULE_NO_SECTION`, dedup, order and limit belong to Search. |
+| R5 | A doubled `}` | Reported as an unexpected token at the end. | `RULE_BRACE`. |
+| R6 | C11 and C12 analyst calls | The first draft's correct options were the longest in every chapter 11 mission and all sat at B; three prompts restated their answers ("two", "twenty", "08:40", "13:06", "eighteen"). | Test C7 caught each one: options rebalanced to within 1.13× and spread over A, B and C; prompts reworded. The course-wide longest-is-correct share is under the 40 % ceiling. |
+| R7 | The cases browser test | `locator('.deskbar select')` matched both the new Mode switch and the time range. | The test asks for the time range by its label. |
+| R8 | C12-M08 | The authored count said 21 detections (seven per host, one an hour); the engine said 18, because the beacon jitter lets some sliding windows hold four connections. | The authored answer and prose follow the engine (six per host); the validator refused the draft before the browser did. |
+| R9 | The capstone browser test | Asserting a record id in the table body failed: the id lives only in the Open button's accessible name. | The test asserts the button. |
+| R10 | The third case's resolver | Case 3's DNS events pointed at the station's DC (10.9.4.2) because the generator helper hard-coded it. | A `DNS_SERVER` variable with the same default, set to 10.77.3.2 for case 3; cases 1 and 2 stay byte-identical. |
+| R11 | Chapter 10's brief | With chapter 11 appended to case 2, the one-brief-per-case rule would have forced the Monday handoff to lose its model comparison. | The validator requires the last mission to be a brief and allows an earlier one; C10-M08 is untouched and C11-M09 is the case's final brief. |
+| R12 | `deriveAnswer` on an invalid directory | A should-fail test that broke the co-operative's directory made the validator throw ("Invalid time value") instead of reporting. | A missing value reads as itself, so the validator reports an answer mismatch and the directory problem together. |
+
+### Mutation checks
+
+Applied with a script, run against the unit suite, reverted:
+
+| Mutation | Test that failed |
+|---|---|
+| Rule keys no longer skip zero values | R2 (the blank hostname forms a detection without the option) |
+| `condition` no longer mandatory | R3 |
+| A bare field accepted in a rule | R3 |
+| The window no longer slides (tumbles from the first event) | R1 (the burst that starts at the second event is missed) and R4 |
+| The grader ignores the must-not-fire case | R4 |
+| The validator ignores reference rows for Log it ids | C9 (the drifted-id case) |
+| An unknown option accepted | R3 |
+| `over N` accepted on a single-event Search query | G3, V6 and R3 |
+| The directory asset LAN check removed | C13 and C14 |
+| The validator's separate must-not-fire check on a rule reference removed | nothing: the line duplicated `gradeRuleCases`, which already fails the reference with `RULE_NOISY`. The line was removed and C15 now asserts the `RULE_NOISY`, `RULE_WRONG_WINDOW` and `RULE_MISSED` validator reports directly. |
+
+### Log it record ids corrected (C1)
+
+The new validator rule found two ids outside their mission's reference rows; both are in chapters the owner asked not to change otherwise, and neither touches a reference query, an answer value or a scoring value:
+
+- **C03-M03** offered `evt-00140` (the `schtasks.exe` process launch at 19:35:21) as an alternative to `evt-00141` (the `SCHEDULED_TASK_CREATION` at 19:35:22). The reference returns task-creation events only; the alternative is removed and the prompt already named `evt-00141`.
+- **C08-M01** cited `evt-20136` (the 19:12:31 connection from PLEDGE-DESK-01 to 198.51.100.77) for the DNS lookup of `harborlight-sponsors.example`; the lookup is `evt-20135`, one second earlier, and the reference (`not in %sponsor_domains` over DNS) returns it. The prompt and the anchor now say `evt-20135`. C07-M04, which cites `evt-20136` for the connection, was right.
+
+### Left open after session 5
+
+- Tenant execution of any query or rule, and a replay of the chapter 11 and 12 rules against the case data exported to a tenant.
+- Entity context inside rules (chapter 10's terminated-account and `remote_access` detections are proposed in words in the C11 handoff; rule mode reports entity variables as not run here).
+- Non-existence conditions, rules without `match`, three-way joins, `by first hour`.
+- A must-not-fire key that the data never holds is accepted by the validator (T20 in the threat model); chapter 11 and 12 keys were chosen by hand from the data.
+- A learner outside the project.
+
+### Not verified
+
+- Tenant execution; the sliding-window model against the real rule engine's detection timing; the Search-versus-rule differences on repeated fields and deduplication, which the flat dataset cannot show.
+- Same environment as before: Node 22 with an existing Chromium build (1194) through `PIER9_CHROMIUM`, one engine, no assistive-technology session.

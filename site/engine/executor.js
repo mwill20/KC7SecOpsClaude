@@ -14,7 +14,8 @@ const ENTITY_START = 'graph.metadata.interval.start_time.seconds', ENTITY_END = 
 const tsOf = e => (Object.hasOwn(e, TIMESTAMP_FIELD) ? e[TIMESTAMP_FIELD] : e[ENTITY_TIMESTAMP_FIELD] ?? 0);
 const isEntity = e => !Object.hasOwn(e, TIMESTAMP_FIELD) && Object.hasOwn(e, ENTITY_TIMESTAMP_FIELD);
 const inRange = (e, range) => !range || (isEntity(e) ? e[ENTITY_START] <= range.end && e[ENTITY_END] >= range.start : tsOf(e) >= range.start && tsOf(e) <= range.end);
-const byTime = (a, b) => tsOf(a) - tsOf(b) || String(a['metadata.id']).localeCompare(String(b['metadata.id']));
+export const byTime = (a, b) => tsOf(a) - tsOf(b) || String(a['metadata.id']).localeCompare(String(b['metadata.id']));
+export { tsOf, inRange };
 
 // Evaluates an expression (field, literal or function) for one event. Time functions read the timestamp in UTC; the
 // parser has already refused any other zone. Google documents get_hour as 0 to 23, get_minute as 0 to 59 and
@@ -23,6 +24,8 @@ export function evalExpr(e, x, evar = null) {
   if (x.kind === 'field') return get(e, x.name);
   if (x.kind === 'lit') return x.value;
   if (x.kind === 'join') { const part = x.parts.find(pp => pp.evar === evar) ?? x.parts[0]; return evalExpr(e, part.expr, evar); }
+  // A joined data-table column (rule mode): the column of the first row whose join column equals the event's field.
+  if (x.kind === 'tablecol') { const i = x.joinItems.indexOf(String(evalExpr(e, x.joinField, evar))); return i < 0 ? '' : x.items[i]; }
   const args = x.args.map(a => evalExpr(e, a, evar));
   switch (x.name) {
     case 'timestamp.get_hour': return new Date(Number(args[0]) * 1000).getUTCHours();
@@ -46,7 +49,7 @@ function compileList(node) {
   return v => set.has(nocase ? String(v).toLowerCase() : String(v));
 }
 
-function compileFilter(node) {
+export function compileFilter(node) {
   if (!node || node.type === 'true') return () => true;
   if (node.type === 'and') { const ks = node.children.map(compileFilter); return e => ks.every(k => k(e)); }
   if (node.type === 'or') { const ks = node.children.map(compileFilter); return e => ks.some(k => k(e)); }
@@ -54,6 +57,8 @@ function compileFilter(node) {
   const { field, op, value, nocase } = node;
   const read = e => evalExpr(e, field);
   if (node.type === 'inlist') { const test = compileList(node); return e => test(read(e)); }
+  // Rule mode: $e.field = %table.column joins the event to the rows whose column holds the field's value.
+  if (node.type === 'tablejoin') { const set = new Set(node.items.map(String)); return e => set.has(String(read(e))); }
   if (op === 'cidr') { const c = parseCidr(value.value); return e => ipInCidr(read(e), c); }
   if (op === 'regex' || op === 'not_regex') { const re = compileRegex(value.value, nocase); return e => testRegex(re, read(e)) === (op === 'regex'); }
   const ftype = node.ftype ?? (field.kind === 'field' ? FIELDS[field.name] : 'string');
@@ -69,7 +74,7 @@ function compileFilter(node) {
 // Aggregates (Google: "Analyze search data with statistics"). array keeps every value in time order and
 // array_distinct the distinct values, both cut at LIMITS.arrayMax as Search cuts at 1,000. earliest and latest are
 // the smallest and largest timestamp; count_distinct counts the empty string as a value until it is filtered.
-function aggregate(fn, values) {
+export function aggregate(fn, values) {
   if (fn === 'count') return values.length;
   if (fn === 'count_distinct') return new Set(values).size;
   if (fn === 'array') return values.slice(0, LIMITS.arrayMax);
@@ -89,25 +94,25 @@ function dedupRows(rows, keyOf) {
 }
 
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+// A condition as a test on one row: outcome comparisons read the row's columns, #var reads the per-variable event
+// counts under COUNTS. Shared with the rule executor.
+export function compileCondition(n) {
+  if (n.type === 'and') { const ks = n.children.map(compileCondition); return r => ks.every(k => k(r)); }
+  if (n.type === 'or') { const ks = n.children.map(compileCondition); return r => ks.some(k => k(r)); }
+  if (n.type === 'not') { const k = compileCondition(n.child); return r => !k(r); }
+  const v = n.value.value, f = n.field, read = n.count ? r => r[COUNTS]?.[n.count] ?? 0 : r => r[f];
+  return { '=': r => read(r) === v, '!=': r => read(r) !== v, '<': r => read(r) < v, '<=': r => read(r) <= v, '>': r => read(r) > v, '>=': r => read(r) >= v }[n.op];
+}
 // condition, order, dedup and limit on a statistics table, shared by single-event and join queries.
 function finishStats(query, out) {
-  if (query.condition) {
-    const test = n => {
-      if (n.type === 'and') return r => n.children.map(test).every(k => k(r));
-      if (n.type === 'or') return r => n.children.map(test).some(k => k(r));
-      if (n.type === 'not') { const k = test(n.child); return r => !k(r); }
-      const v = n.value.value, f = n.field, read = n.count ? r => r[COUNTS]?.[n.count] ?? 0 : r => r[f];
-      return { '=': r => read(r) === v, '!=': r => read(r) !== v, '<': r => read(r) < v, '<=': r => read(r) <= v, '>': r => read(r) > v, '>=': r => read(r) >= v }[n.op];
-    };
-    const t = test(query.condition); out = out.filter(t);
-  }
+  if (query.condition) { const t = compileCondition(query.condition); out = out.filter(t); }
   if (query.order.length) out.sort((a, b) => { for (const o of query.order) { const c = cmp(a[o.name], b[o.name]); if (c) return o.dir === 'desc' ? -c : c; } return cmp(JSON.stringify(a), JSON.stringify(b)); });
   else out.sort((a, b) => cmp(JSON.stringify(a), JSON.stringify(b)));
   if (query.dedup) out = dedupRows(out, r => query.dedup.keys.map(k => r[k.outcome ?? k.column]));
   if (query.limit) out = out.slice(0, query.limit);
   return out;
 }
-const timeColsOf = query => query.outcomes.filter(o => o.time || (['min', 'max'].includes(o.fn) && [TIMESTAMP_FIELD, ENTITY_TIMESTAMP_FIELD].includes(o.fieldName))).map(o => o.name);
+export const timeColsOf = query => query.outcomes.filter(o => o.time || (['min', 'max'].includes(o.fn) && [TIMESTAMP_FIELD, ENTITY_TIMESTAMP_FIELD].includes(o.fieldName))).map(o => o.name);
 
 // Entities: the bundled entity records (graph.* fields), passed by the caller beside the events. A single-variable
 // query reads one source or the other; a join may read one of each.

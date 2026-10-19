@@ -4,14 +4,41 @@
 
 1. Open the case file (home). The case switcher at the top names each case with its progress; the page below is the selected case's file. Read the opening and the people table. Pick a chapter, or press **Open the case** to go to the first unfinished mission of that case.
 2. On a mission, the left pane is the lesson: the story beat, the question, the concept, the explained query parts, hints and the case update once you finish. The right pane is the query desk.
-3. Type in the editor and press **Run query** (or `Ctrl`+`Enter`). The results table shows what the data returns for the selected time range.
-4. Press **Check query** on Build and Your-turn missions. Your query and the reference both run; you pass if they return the same evidence, however you spelled it.
+3. Type in the editor and press **Run query** (or `Ctrl`+`Enter`). The results table shows what the data returns for the selected time range. The **Mode** switch beside the time range chooses the parser: **Search** runs the editor as a YARA-L 2.0 Search query and returns rows; **Rule** runs it as a detection rule and returns detections. A mission in chapter 11 or the capstone's rule mission starts in Rule mode; any mission can be switched to compare.
+4. Press **Check query** (or **Check rule**) on Build and Your-turn missions. On a Search mission your query and the reference both run and you pass if they return the same evidence, however you spelled it. On a rule mission your rule runs and passes if it fires on the **must-fire** case (a key and a minute, shown in the Test cases card beside the question) and produces no detection for the **must-not-fire** key; the feedback also counts the detections on other keys as false positives for you to read. The reference is never the test.
 5. Read the answer from your own results, type it in **From your results**, press **Check answer** (or `Enter`).
 6. Pick an **Analyst call** option and press **Check call**. You get an explanation either way.
 7. When the query, answer and call are correct, the **Case update** card appears in the lesson pane. A **Log it** block has already appeared (after the query is correct on Build and Your-turn missions, after the answer on Watch missions, after the call on Read missions): it names the Casebook entry this mission earned and what a good one contains. Write the entry in the Casebook, press **Check my Casebook**, and the mission is complete; the next-mission link turns primary.
 8. Each chapter page ends with a **recap card**: what the chapter will teach, which turns into "you can now" once every mission in it is complete. Each chapter page also opens with a **mission map**: one segment per mission, coloured by kind (Watch, Build, Your turn, Read) and filled as the mission completes; each segment is a link. When every mission in a case is complete, that case's home page and last mission link to **Case closed** (`#closed` for the first case, `#closed/week-after` for the second), the handoff laid out as facts, hypotheses and gaps, with your own Determination and Handoff ticket beside it, and a link to the next case.
 
-Watch-one missions skip step 4 (the query is given). Read missions skip steps 3 to 5 (no query). The first mission teaches note-keeping and has no Log it.
+Watch-one missions skip step 4 (the query is given). Read missions skip steps 3 to 5 (no query). The first mission teaches note-keeping and has no Log it. Chapter 12's desk missions carry the question, the hints and the Log it only: no explained query parts.
+
+## Rule mode
+
+A rule in the trainer's subset is written as Google documents it:
+
+```
+rule failures_in_five_minutes {
+  meta:
+    author = "signal desk"
+    description = "Two or more failed logins by one account within five minutes"
+    severity = "MEDIUM"
+  events:
+    $e.metadata.event_type = "USER_LOGIN"
+    $e.security_result.action = "FAIL"
+    $e.principal.user.userid = $account
+  match:
+    $account over 5m
+  outcome:
+    $failures = count($e.metadata.id)
+  condition:
+    $e and $failures >= 2
+  options:
+    allow_zero_values = true
+}
+```
+
+`meta` needs at least `author`, `description` and `severity` (LOW, MEDIUM, HIGH or CRITICAL). Every field carries its event variable. `match` takes one to four keys `over N`, a sliding window of at most 48 hours; `by N` and `over every N` are Search's buckets and are refused in a rule. `outcome` takes the Search aggregates; in a two-variable rule each names its variable. `condition` is mandatory and takes `$e` (at least one event), `#e > n`, outcome comparisons and `and`/`or`/`not`. `options` takes `allow_zero_values`; without it a blank or zero match key (the gateway's empty hostname) forms no detection. A data table joins with `$e.field = %table.column` and its other columns read as `%table.column` in `outcome`. The results bar names the rule, its severity, its keys and window; the detections table shows each key, the window start and end as UTC times, and the outcomes. Not run in rule mode, and said so: rules without `match`, non-existence conditions, entity variables, three or more event variables, other options, `dedup`, `order`, `limit`. Google says Search and rule counts differ by design; chapter 11's last Watch mission measures the window difference on the same data.
 
 ## The Casebook
 
@@ -42,7 +69,7 @@ One casebook per case; the drawer's case select switches between them, and every
 - **Results.** Up to 200 rows are shown. The first column of an event table has an **Open** button per row; it opens the full record below the table, moves focus there, and **Close** returns focus to the row. Click anywhere on a row to do the same with a mouse.
 - **Field list.** A collapsed list of every UDM field in the dataset with its type, and the functions that run here.
 - **Lists and tables.** A collapsed panel naming every bundled data table (`%station_allowlist`, `%privileged_accounts`, `%gateway_blocks`, `%lookalike_shapes`) with its typed columns, description and rows, then every legacy reference list (`%sponsor_domains`, `%admin_accounts`, `%blocked_ranges`, `%station_lan`, `%lookalike_patterns`) with its type, description and items, and the line that in a tenant tables live under *Detection > Data tables*, lists under *Detection > Lists*, and legacy lists retire in July 2027. A query names a string column as `in %table.column`, a CIDR column as `in cidr %table.column`, a regex column as `in regex %table.column`, and a legacy list the same way with `%name`; `not in` and `nocase` work as documented (`nocase` on string and regex only). Search allows seven `in` tests per query, four regex and two cidr; the eighth is refused with the limit named.
-- **Entities.** A collapsed panel naming the entity fields (`graph.metadata.*`, `graph.entity.user.*`, `graph.entity.asset.*`), how many directory records are valid in this case's window, and the two ways to read them: an entity-only query (`graph.metadata.entity_type = "ASSET"`) and the event-to-entity join (`$e.principal.user.userid = $uid` with `$u.graph.entity.user.userid = $uid`, then `match: $uid`), labelled as rule-context syntax to verify in a tenant. Entity results render with their validity interval first; an entity record's `ent-NNNNN` id can be cited in the Casebook like an event's.
+- **Entities.** A collapsed panel naming the entity fields of the case's own directory (the station's for the first two cases, the co-operative's for the third) (`graph.metadata.*`, `graph.entity.user.*`, `graph.entity.asset.*`), how many directory records are valid in this case's window, and the two ways to read them: an entity-only query (`graph.metadata.entity_type = "ASSET"`) and the event-to-entity join (`$e.principal.user.userid = $uid` with `$u.graph.entity.user.userid = $uid`, then `match: $uid`), labelled as rule-context syntax to verify in a tenant. Entity results render with their validity interval first; an entity record's `ent-NNNNN` id can be cited in the Casebook like an event's.
 - **Joins.** Two event variables joined by a shared placeholder run as one query; the results bar says `joined $e1 and $e2 within 1h` (or `by 1h buckets`). Each outcome names its variable (`count($e1.metadata.id)`); `condition` takes `#e1`, `$e1` and outcome comparisons. The should-fail messages say what is missing (the join key, the variable on a field, the match section) in plain language.
 - **Results, engine v2.** A deduplicated table says so in the results bar. `array` and `array_distinct` cells show the first dozen values and the total; `earliest` and `latest` cells read as UTC clock times with the raw seconds beside them, like `min` and `max` on the timestamp.
 - **Reset.** Restores the starter query and clears results.
@@ -50,7 +77,7 @@ One casebook per case; the drawer's case select switches between them, and every
 
 ## Keyboard
 
-Everything works without a mouse. `Tab` moves through the header (including the six chapter-progress segments, each a link to its chapter, and the **Casebook** button), the lesson pane (breadcrumbs, hints, Log it, previous/next links) and then the desk (time range, editor, Run, Check, Reset, field list, result rows, answer box, analyst-call radios, Check call). `Shift`+`Tab` goes back. In the editor, `Ctrl`+`Enter` runs, `Ctrl`+`Shift`+`Enter` checks (Build and Your-turn missions), and `Tab` leaves the editor rather than inserting a tab; the hint under the editor lists all three and the casebook shortcut. Arrow keys move between analyst-call options. `Alt`+`Shift`+`C` opens and closes the Casebook from any page (the earlier `Ctrl`+`Shift`+`N` was reserved by Chrome for an incognito window); inside it, `Left`/`Right`/`Home`/`End` move between tabs and `Escape` closes it with focus returned. The shortcut is matched on the physical C key as well as the character, because `Alt`+`Shift` changes the character some keyboard layouts report. The Casebook button in the top bar is always one `Tab` stop away if a layout or browser swallows the combination. The first `Tab` on any page reaches **Skip to content**, which moves focus into the page without changing the route.
+Everything works without a mouse. `Tab` moves through the header (including the twelve chapter-progress segments, each a link to its chapter, and the **Casebook** button), the lesson pane (breadcrumbs, hints, Log it, previous/next links) and then the desk (time range, editor, Run, Check, Reset, field list, result rows, answer box, analyst-call radios, Check call). `Shift`+`Tab` goes back. In the editor, `Ctrl`+`Enter` runs, `Ctrl`+`Shift`+`Enter` checks (Build and Your-turn missions), and `Tab` leaves the editor rather than inserting a tab; the hint under the editor lists all three and the casebook shortcut. Arrow keys move between analyst-call options. `Alt`+`Shift`+`C` opens and closes the Casebook from any page (the earlier `Ctrl`+`Shift`+`N` was reserved by Chrome for an incognito window); inside it, `Left`/`Right`/`Home`/`End` move between tabs and `Escape` closes it with focus returned. The shortcut is matched on the physical C key as well as the character, because `Alt`+`Shift` changes the character some keyboard layouts report. The Casebook button in the top bar is always one `Tab` stop away if a layout or browser swallows the combination. The first `Tab` on any page reaches **Skip to content**, which moves focus into the page without changing the route.
 
 ## Progress
 
@@ -62,4 +89,4 @@ The dataset is fiction. Do not paste real hostnames, user IDs, addresses or quer
 
 ## Reading the scores
 
-Query 60, answer 25, analyst call 15, Casebook 10 (Watch missions have no query points; Read missions only the call and the Casebook; the first mission only the call). Course total 6,970 over 82 missions: 4,355 in the first case and 2,615 in the second. Points are formative: hints are free, the last hint is the answer, the Casebook check is structural, and local progress is editable. Nothing here is a credential.
+Query or rule 60, answer 25, analyst call 15, Casebook 10 (Watch missions have no query points; Read missions only the call and the Casebook; the first mission only the call). Course total 8,600 over 101 missions: 4,355 in the first case, 3,315 in the second and 930 in the third. Points are formative: hints are free, the last hint is the answer, the Casebook check is structural, and local progress is editable. Nothing here is a credential.

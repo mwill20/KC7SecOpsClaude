@@ -1,5 +1,6 @@
 import { parseSearch, QueryError } from './parser.js';
 import { execute, MEMBERS } from './executor.js';
+import { runRule, gradeRuleCases } from './rules.js';
 
 // Grades by running both queries against the same fictional data and comparing what comes back.
 // Two different-looking queries that return the same evidence both pass; a plausible query that
@@ -62,8 +63,22 @@ export function compareResults(student, reference) {
 
 export const POINTS = Object.freeze({ query: 60, answer: 25, call: 15 });
 
+// A mission in rule mode (mission.mode === 'rule') is graded by running the learner's rule and checking the authored
+// must-fire and must-not-fire cases (mission.rule), never by comparing with the reference's detections: the reference is
+// one tuning that passes, and the learner reads their own false-positive count. ctx.window is the case window.
+export function gradeRule(text, mission, events, range, ctx = {}) {
+  if (mission.kind === 'read') return { status: 'read', points: 0 };
+  const student = runRule(text, events, range, ctx);
+  if (!student.ok) return { status: student.status, points: 0, code: student.code, detail: student.detail };
+  const cmp = gradeRuleCases(student.result, mission.rule, ctx.window ?? range ?? null);
+  return { status: cmp.correct ? 'correct' : 'incorrect', points: cmp.correct ? POINTS.query : 0, comparison: cmp, result: student.result };
+}
+// Runs a mission's text in the mission's mode: a rule for rule missions, a Search query otherwise.
+export const runFor = (mission, text, events, range, ctx = {}) => (mission.mode === 'rule' ? runRule(text, events, range, ctx) : runQuery(text, events, range, ctx));
+
 export function gradeQuery(text, mission, events, range, ctx = {}) {
   if (mission.kind === 'read') return { status: 'read', points: 0 };
+  if (mission.mode === 'rule') return gradeRule(text, mission, events, range, ctx);
   const student = runQuery(text, events, range, ctx);
   if (!student.ok) return { status: student.status, points: 0, code: student.code, detail: student.detail };
   const reference = runQuery(mission.reference, events, range, ctx);

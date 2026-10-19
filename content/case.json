@@ -224,11 +224,138 @@
         "C07",
         "C08",
         "C09",
-        "C10"
+        "C10",
+        "C11"
       ],
       "data": "events-week-after.json",
       "closedAt": "Monday, 09:40",
       "digest": "c7b7e9eff42e93a6be5d882a81ca6a0caf3d4e165cceb960a209feba4833470b"
+    },
+    {
+      "id": "saltmarsh",
+      "title": "A different pier",
+      "tagline": "A software update at a ferry co-operative, a disciplined deckhand, and a day to say which one took the manifests.",
+      "role": "You are the analyst Saltmarsh Ferries hired for one day, on the strength of the Pier Nine brief. Their events are in Google SecOps. You have read access to Search and the bundled directory, and nothing else. Nobody here will explain a query to you; the casebook is yours from Scope to Handoff.",
+      "summary": "A different organisation and a different shape: no phish, no stolen password. A vendor update that carried a passenger, a scheduled task, a beacon on a port nothing else uses, and a deckhand everyone suspects. Less guidance, the same discipline.",
+      "opening": [
+        "Gull Pier, the other end of the harbour. Saltmarsh Ferry Co-operative runs three passenger boats, two ticket kiosks and a dispatch desk, all on one small network and one piece of software: TideWatch, which schedules sailings, sells tickets and keeps the passenger manifests. At 14:10 the vendor's security advisory arrives: build 4.7.2, pushed that morning from the vendor's own update server, was signed on a compromised build server and carries a plugin the vendor never wrote.",
+        "Operations manager Marguerite Doyle has a different theory. Rafael Quinn, a deckhand on a final warning, worked the dispatch desk alone from six until the dispatcher arrived, and the manifests live on that desk. 'He has had a grievance for a month,' she says. 'Tell me it wasn't him.'",
+        "The co-operative has ten hours of logs from 06:00 to 16:00 UTC and a volunteer IT lead, Theo Lindqvist, who has already read the advisory and looked at the dispatch host once. You have until the last sailing to say what happened, in what order, what left, and what the engineer should build so it cannot happen the same way twice."
+      ],
+      "people": [
+        {
+          "name": "Marguerite Doyle",
+          "role": "Operations manager",
+          "note": "Asked the question. Has a suspect."
+        },
+        {
+          "name": "Rafael Quinn",
+          "role": "Deckhand",
+          "note": "On a final warning. Worked the dispatch desk 06:10 to 08:40."
+        },
+        {
+          "name": "Ines Varga",
+          "role": "Dispatcher",
+          "note": "Owns DISPATCH-01. Took over the desk at 08:45."
+        },
+        {
+          "name": "Theo Lindqvist",
+          "role": "IT volunteer",
+          "note": "Read the advisory at 14:10 and queried the task on the dispatch host at 14:26."
+        },
+        {
+          "name": "Bea Okonkwo",
+          "role": "Ticket office lead",
+          "note": "Owns KIOSK-01; the kiosks sell tickets through TideWatch."
+        },
+        {
+          "name": "TideWatch Marine",
+          "role": "Vendor",
+          "note": "Ships the dispatch and ticketing software; its updater fetches builds from updates.tidewatch-marine.example."
+        }
+      ],
+      "systems": [
+        {
+          "name": "DISPATCH-01",
+          "note": "The dispatch desk. Runs TideWatch and opens the manifests on FS-GULL."
+        },
+        {
+          "name": "KIOSK-01 / KIOSK-02",
+          "note": "Ticket kiosks running TideWatch under the shared kiosk account."
+        },
+        {
+          "name": "FS-GULL",
+          "note": "File server. Holds \\\\FS-GULL\\Manifests, the passenger manifests."
+        },
+        {
+          "name": "svc-tidewatch",
+          "note": "The service account TideWatch and its updater run as, on every TideWatch host."
+        },
+        {
+          "name": "The directory",
+          "note": "The co-operative's own directory: owners, roles, criticality. See the Entities panel on the desk."
+        }
+      ],
+      "window": {
+        "label": "One working day, 06:00 to 16:00 UTC",
+        "start": "2026-04-07T06:00:00Z",
+        "end": "2026-04-07T16:00:00Z"
+      },
+      "ranges": [
+        {
+          "id": "all",
+          "label": "Whole day (06:00 to 16:00)",
+          "start": 0,
+          "end": 36000
+        },
+        {
+          "id": "early",
+          "label": "Early shift (06:00 to 09:00)",
+          "start": 0,
+          "end": 10800
+        },
+        {
+          "id": "update",
+          "label": "Around the update (09:00 to 12:00)",
+          "start": 10800,
+          "end": 21600
+        },
+        {
+          "id": "afternoon",
+          "label": "Afternoon (12:00 to 16:00)",
+          "start": 21600,
+          "end": 36000
+        }
+      ],
+      "chapters": [
+        "C12"
+      ],
+      "data": "events-saltmarsh.json",
+      "entities": "entities-saltmarsh.json",
+      "closedAt": "16:40",
+      "digest": "748f83d46ce8642466d263d1f007e6247cda2f402b6be47cfe5051c5e56944b4",
+      "bridge": {
+        "title": "Cybersecurity Engineering bridge",
+        "intro": "Your Handoff ticket is where this course stops and an engineering course starts. An engineer picks it up and does four things with it, each of which is a change with an owner and a test, not a note.",
+        "items": [
+          {
+            "heading": "Controls from the Harden list",
+            "text": "The TideWatch hosts get an egress allowlist (the vendor's update server and the fare processor, nothing else); the plugins folder gets application control so a binary the vendor did not sign cannot run from it; svc-tidewatch loses its read on \\\\FS-GULL\\Manifests, which the dispatch client never needed; vendor updates install on one staging host and wait a day before the rest. Each control names the owner from the directory who will keep it true."
+          },
+          {
+            "heading": "Detections from chapter 11",
+            "text": "The rules this handoff describes in words are written in Rule mode with their test cases: a host connecting to a new destination on a port the pier does not use, keyed by host over an hour (must fire DISPATCH-01 at 09:32, must not fire OFFICE-02); a scheduled task created by a service account within minutes of an installer; a service account reading the manifests share; an outbound connection over one megabyte from a dispatch host. Each carries its severity, its must-fire record from today and its must-not-fire key, and is replayed before it is approved."
+          },
+          {
+            "heading": "Acceptance tests",
+            "text": "Every control and every rule gets a test the engineer runs and keeps: replay today's events and the beacon rule fires on the three hosts and not on the kiosks' fare traffic; copy tw-telemetry.exe into the plugins folder and it does not execute; run as svc-tidewatch and the manifests share returns access denied; the next vendor build reaches the staging host first and nowhere else for a day. A control without a test is a hope."
+          },
+          {
+            "heading": "What the next course does",
+            "text": "It writes those controls and tests as configuration and code, reviews them the way chapter 11 reviewed a rule (against evidence, with a must-fire and a must-not-fire), and measures what the Pier Nine and Saltmarsh handoffs would have cost to prevent. The analyst's job ends at a ticket an engineer can act on; the engineer's job starts there."
+          }
+        ]
+      }
     }
   ],
   "boundary": "Everything here is fiction: the station, the people, the logs, the addresses. Nothing runs against a real SIEM. Do not type real workplace values into this site; practise the shape of the query here and use real values only inside tools your employer authorizes."

@@ -1,0 +1,620 @@
+{
+  "id": "C12",
+  "title": "A different pier",
+  "subtitle": "Capstone: a third case at a different organisation, with the question and the Log it and nothing else",
+  "intro": "This is the exam, without a mark. Saltmarsh Ferries has ten hours of logs, a vendor advisory, a suspect and a desk. Each mission gives you the investigative question and the Casebook entry it should produce. There are no explained query parts and no walkthroughs; the hints are there if you want them and the third one is still a full answer, but the chapter is written for you to try first. The attack shape is new to the course and the organisation is new: do not look for a phish or a stolen password until the records give you one. Take the casebook from Scope to Handoff on your own; the last two missions compare your Determination and Handoff with the model, and the case-closed page shows what an engineer would build from your ticket.",
+  "concepts": [
+    "Scope first, suspect last: the manager’s theory is a hypothesis to test, written down as one, not the question",
+    "A supply-chain compromise arrives through the door you trust: the vendor’s own update server, the vendor’s own service account, the vendor’s own folder",
+    "Persistence, beacon, staging, exfiltration: the same four moves as Pier Nine, under a different account and without a login to point at",
+    "Clearing a person is evidence work too: the absence of a session after a time is a fact the records show, cited like any other",
+    "The handoff names what the engineer builds, and the detections it proposes carry their must-fire and must-not-fire records from today"
+  ],
+  "recap": [
+    "Open a case at an unfamiliar organisation and write its Scope, with the manager’s suspect recorded as a hypothesis",
+    "Trace a trojanised update from the installer to the plugin it dropped, the task it registered, the destination it beacons to and the archive it sent",
+    "Clear a named person with the records that show the absence, not with an opinion",
+    "Write the detection for the behaviour you found, with a must-fire record from today and a must-not-fire key",
+    "Hand an engineer a ticket with controls, detections and acceptance tests, and read what they would build from it"
+  ],
+  "missions": [
+    {
+      "id": "C12-M01",
+      "kind": "solo",
+      "title": "Which hosts installed the update",
+      "beat": "14:30. Theo forwards the advisory and Marguerite forwards her theory. Before either, the question that scopes the day: TideWatch 4.7.2 arrived this morning. Which hosts installed it, and when? Then open the Casebook, switch it to this case, name the investigation and write the Scope.",
+      "question": "Which hosts ran the installer for TideWatch 4.7.2 today, and at what times?",
+      "concept": {
+        "title": "Scope before suspect",
+        "text": "Your call. The question is above; the Log it below says what the casebook needs. Write the query, run it, read it. A process launch carries the installer’s command line; the build number is in it."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.command_line = /TideWatch-4\\.7\\.2\\.msi/",
+      "hints": [
+        "Installers run as processes. Filter PROCESS_LAUNCH events whose command line mentions the build.",
+        "A regex on target.process.command_line: /TideWatch-4\\.7\\.2\\.msi/ (escape the dots).",
+        "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.command_line = /TideWatch-4\\.7\\.2\\.msi/"
+      ],
+      "answer": {
+        "prompt": "How many installer launches are there?",
+        "value": "3",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "Marguerite wants the Scope to read: \"Did Rafael Quinn take the manifests?\" What should the question asked be?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Her words, exactly: the person who asked the question owns its wording, and the analyst’s job is to answer it as it was put rather than to rewrite it for her"
+          },
+          {
+            "id": "B",
+            "label": "The vendor’s words: \"Did the compromised build run here?\", since the advisory is the only external fact and a Scope should rest on facts"
+          },
+          {
+            "id": "C",
+            "label": "What happened to the manifests today and who or what did it, in her name; \"Rafael took them\" goes on the Hypotheses tab as an open hypothesis"
+          }
+        ],
+        "correct": "C",
+        "why": "The Scope holds the question the records can answer; a suspect is a hypothesis, and the Hypotheses tab is where it goes with its status. Writing the suspect into the question proves nothing nobody asked and misses whatever else happened."
+      },
+      "clue": "Three installer launches, all as svc-tidewatch, within a minute of 09:30: DISPATCH-01, KIOSK-01, KIOSK-02. Every TideWatch host on the pier.",
+      "logIt": {
+        "kind": "scope",
+        "prompt": "Open the Casebook, switch the case to A different pier, name the investigation, and write the Scope. Question asked: what happened to the passenger manifests today and who or what did it, requested by Marguerite Doyle. Time window: 06:00 to 16:00 UTC. In scope: the three TideWatch hosts, FS-GULL, the service account and the deckhand’s session. Out of scope: discipline; the vendor’s build server.",
+        "mustInclude": [
+          "Marguerite|Doyle",
+          "06:00",
+          "16:00"
+        ]
+      },
+      "caveat": "A real advisory names indicators; this one gives you a build number and a folder. Start from what the records can show, and keep the vendor’s claims and the manager’s theory on the Hypotheses tab until a record moves them."
+    },
+    {
+      "id": "C12-M02",
+      "kind": "solo",
+      "title": "What the installer left behind",
+      "beat": "The advisory names a plugin the vendor never wrote: plugins\\tw-telemetry.exe. If it ran, it ran as a process.",
+      "question": "On which hosts did tw-telemetry.exe run, and when did it first run?",
+      "concept": {
+        "title": "The passenger in the update",
+        "text": "Your call. The question is above; the Log it below says what the casebook needs. Write the query, run it, read it."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.file.full_path = /\\\\tw-telemetry\\.exe$/",
+      "hints": [
+        "Process launches again; this time the launched file is the plugin. target.process.file.full_path holds the path.",
+        "Anchor a regex on the file name: /\\\\tw-telemetry\\.exe$/ (the backslash before the name is escaped twice: once for the regex, once because it is a backslash).",
+        "metadata.event_type = \"PROCESS_LAUNCH\"\ntarget.process.file.full_path = /\\\\tw-telemetry\\.exe$/"
+      ],
+      "answer": {
+        "prompt": "What clock time is the first launch (HH:MM, UTC)?",
+        "value": "09:31",
+        "also": [
+          "09:31:34"
+        ],
+        "check": {
+          "type": "time",
+          "index": 0
+        }
+      },
+      "call": {
+        "prompt": "The plugin was launched by TideWatch.exe itself, the vendor’s signed client, under the vendor’s service account. Theo says that makes it legitimate. What does the parent process prove?",
+        "options": [
+          {
+            "id": "A",
+            "label": "That the vendor shipped it, which is exactly what the advisory says happened, so the parent proves the advisory and not the plugin’s innocence"
+          },
+          {
+            "id": "B",
+            "label": "That the plugin is part of the product, since a signed client loads only what its own installer put there, and the question becomes why the vendor added telemetry"
+          },
+          {
+            "id": "C",
+            "label": "Nothing either way, because parent processes are easily spoofed and the field should not be used in an investigation until the host is imaged"
+          }
+        ],
+        "correct": "A",
+        "why": "A trusted parent is what a supply-chain compromise looks like from inside: the legitimate client loaded a file the legitimate installer wrote. The parent tells you how it got there, not whether it belongs."
+      },
+      "clue": "Three launches, each by TideWatch.exe as svc-tidewatch: DISPATCH-01 at 09:31:34, KIOSK-01 at 09:31:45, KIOSK-02 at 09:31:56. The command line names an endpoint: metrics.tw-telemetry.example on port 8443.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry: 09:31 UTC, TideWatch.exe launches C:\\Program Files\\TideWatch\\plugins\\tw-telemetry.exe as svc-tidewatch on DISPATCH-01, record evt-30165, and within half a minute on the two kiosks; the command line names metrics.tw-telemetry.example:8443. Source: this query, whole day. Observation only. Confidence high.",
+        "mustInclude": [
+          "evt-30165",
+          "tw-telemetry"
+        ]
+      },
+      "caveat": "Flat data: the dataset holds one parent per launch. Real process telemetry carries the whole ancestry and the signer; read both before you call a binary a passenger."
+    },
+    {
+      "id": "C12-M03",
+      "kind": "solo",
+      "title": "Persistence",
+      "beat": "A plugin the client loads dies with the client. Something that wants to outlive a restart registers itself.",
+      "question": "What scheduled tasks were created today, on which hosts, by which account?",
+      "concept": {
+        "title": "The move that outlives a restart",
+        "text": "Your call. The question is above; the Log it below says what the casebook needs. Write the query, run it, read it."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"SCHEDULED_TASK_CREATION\"",
+      "hints": [
+        "Task creation is its own event type.",
+        "metadata.event_type = \"SCHEDULED_TASK_CREATION\"; the summary names the task and the principal names the account.",
+        "metadata.event_type = \"SCHEDULED_TASK_CREATION\""
+      ],
+      "answer": {
+        "prompt": "What is in security_result.summary of the first row?",
+        "value": "Task TideWatchTelemetry created",
+        "check": {
+          "type": "field",
+          "field": "security_result.summary",
+          "index": 0
+        }
+      },
+      "call": {
+        "prompt": "Three identical tasks, created eleven seconds apart on three hosts by the same service account. What does the timing say?",
+        "options": [
+          {
+            "id": "A",
+            "label": "That an administrator rolled the task out with a script, which is how Theo deploys most things on the pier and fits his access to all three TideWatch hosts"
+          },
+          {
+            "id": "B",
+            "label": "That the task is part of the update: each host registered it about a hundred seconds after its own installer ran, and the three installers ran within a minute"
+          },
+          {
+            "id": "C",
+            "label": "That the three hosts share a clock fault, since real tasks are created by people and people do not act on three machines in eleven seconds"
+          }
+        ],
+        "correct": "B",
+        "why": "Line the task up against each host’s own installer time and the offsets match. The timing is the update’s, not a person’s; Theo’s one session on a TideWatch host is at 14:25, after the advisory."
+      },
+      "clue": "Three tasks named TideWatchTelemetry, created by svc-tidewatch: DISPATCH-01 at 09:31:46, KIOSK-01 at 09:31:57, KIOSK-02 at 09:32:08. Each about a hundred seconds after its host’s installer.",
+      "logIt": {
+        "kind": "timeline",
+        "prompt": "Add a Timeline entry: 09:31 UTC, the scheduled task TideWatchTelemetry is created on DISPATCH-01 by svc-tidewatch to run the plugin at start-up, record evt-30168, with the same task on both kiosks within half a minute. Reference the Evidence entry that holds the plugin launch, or add one for this record first.",
+        "mustInclude": [
+          "09:31",
+          "TideWatchTelemetry"
+        ]
+      },
+      "caveat": "In a tenant, task creation events carry the task’s command and trigger; here the summary and the file path stand in for them."
+    },
+    {
+      "id": "C12-M04",
+      "kind": "solo",
+      "title": "Where it talks, and how often",
+      "beat": "The plugin’s command line named an endpoint. The advisory says the vendor does not own it.",
+      "question": "Which hosts connect to 198.51.100.210, how many times each, from when to when, and how much did each send?",
+      "concept": {
+        "title": "A cadence is a signature",
+        "text": "Your call. The question is above; the Log it below says what the casebook needs. Write the query, run it, read it. Group by host; the first and last times and a sum tell the story in one row each."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip = \"198.51.100.210\"\nmatch:\n  principal.hostname\noutcome:\n  $n = count(metadata.id)\n  $first = earliest(metadata.event_timestamp)\n  $last = latest(metadata.event_timestamp)\n  $sent = sum(network.sent_bytes)",
+      "hints": [
+        "Connections to one address, grouped by the host that made them.",
+        "match: principal.hostname, with count, earliest, latest and sum(network.sent_bytes) in outcome.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\ntarget.ip = \"198.51.100.210\"\nmatch:\n  principal.hostname\noutcome:\n  $n = count(metadata.id)\n  $first = earliest(metadata.event_timestamp)\n  $last = latest(metadata.event_timestamp)\n  $sent = sum(network.sent_bytes)"
+      ],
+      "answer": {
+        "prompt": "How many connections does the $n column count for KIOSK-01?",
+        "value": "20",
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.hostname": "KIOSK-01"
+          },
+          "column": "$n"
+        }
+      },
+      "call": {
+        "prompt": "The three hosts connect on a fixed cadence from 09:32 to the end of the day, to a server on a port nothing else on the pier uses. Marguerite asks whether this is \"the telemetry the vendor mentioned\". What is it?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Vendor telemetry, by its own name: the advisory confirms a telemetry plugin shipped in the build, and twenty-minute reports are the cadence most products use"
+          },
+          {
+            "id": "B",
+            "label": "A beacon: a fixed cadence from every infected host to a destination the vendor disowns, on a port the pier never used, which is what command-and-control looks like whatever the binary is called"
+          },
+          {
+            "id": "C",
+            "label": "Undecidable from the records: cadence alone cannot separate telemetry from a beacon, so the hosts must be imaged before the word is used"
+          }
+        ],
+        "correct": "B",
+        "why": "The word on the binary is the attacker’s. The behaviour is the evidence: fixed cadence, every infected host, a disowned destination, an unused port. The advisory names the plugin as the vendor’s own problem, not its product."
+      },
+      "clue": "Three rows. DISPATCH-01: 21 connections from 09:32 to 15:52, 2.8 MB sent in all. KIOSK-01 and KIOSK-02: 20 each, a few hundred bytes a time. One host sent something the others did not.",
+      "logIt": {
+        "kind": "hypothesis",
+        "prompt": "Write a Hypothesis, status open: the TideWatch 4.7.2 update installed a plugin that beacons from all three TideWatch hosts to 198.51.100.210 every twenty minutes as svc-tidewatch, and the dispatch host’s extra bytes are the manifests leaving. Supporting refs: your plugin and task evidence. Test next: what svc-tidewatch wrote and sent on DISPATCH-01, and whether rafael.quinn’s session touches any of it.",
+        "mustInclude": [
+          "198.51.100.210",
+          "svc-tidewatch|tw-telemetry"
+        ]
+      },
+      "caveat": "A real beacon jitters and changes destination; a fixed twenty-minute cadence is a teaching dataset being kind. Hunt by destination, port and account as well as by cadence."
+    },
+    {
+      "id": "C12-M05",
+      "kind": "build",
+      "title": "The deckhand’s morning",
+      "beat": "Marguerite’s theory has a name and a time: Rafael Quinn, alone at the dispatch desk until the dispatcher arrived. The starter summarises everything his account did; one aggregate is missing.",
+      "question": "When does rafael.quinn’s account first and last appear today, on which hosts, and how many events is that?",
+      "concept": {
+        "title": "Clearing a person is evidence work",
+        "text": "Your call. The question is above; the Log it below says what the casebook needs. Write the query, run it, read it. The absence of a session after a time is a fact the records show; cite it like any other."
+      },
+      "explain": [],
+      "starter": "principal.user.userid = \"rafael.quinn\"\noutcome:\n  $first = earliest(metadata.event_timestamp)\n  $last = ___(metadata.event_timestamp)\n  $n = count(metadata.id)\n  $hosts = array_distinct(principal.hostname)",
+      "reference": "principal.user.userid = \"rafael.quinn\"\noutcome:\n  $first = earliest(metadata.event_timestamp)\n  $last = latest(metadata.event_timestamp)\n  $n = count(metadata.id)\n  $hosts = array_distinct(principal.hostname)",
+      "hints": [
+        "The gap is the aggregate that gives the last time an account was seen.",
+        "latest(metadata.event_timestamp), the partner of earliest.",
+        "principal.user.userid = \"rafael.quinn\"\noutcome:\n  $first = earliest(metadata.event_timestamp)\n  $last = latest(metadata.event_timestamp)\n  $n = count(metadata.id)\n  $hosts = array_distinct(principal.hostname)"
+      ],
+      "answer": {
+        "prompt": "What clock time is in the $last column (HH:MM, UTC)?",
+        "value": "08:40",
+        "also": [
+          "08:40:11"
+        ],
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$last",
+          "format": "hhmm"
+        }
+      },
+      "call": {
+        "prompt": "Rafael’s account signs off before nine and never reappears; the staging and the upload happen at 13:05 and 13:20 as svc-tidewatch. Marguerite says he could have set it up before he left. What does the evidence allow you to say?",
+        "options": [
+          {
+            "id": "A",
+            "label": "That he is cleared: no event of his account exists after 08:40, and the activity that moved the manifests is a service account’s under a plugin that an update installed at 09:31, after he left"
+          },
+          {
+            "id": "B",
+            "label": "That he is the most likely actor, because the manifests were open in his session at 06:14 and the staging later read the same share, which no one else touched that morning"
+          },
+          {
+            "id": "C",
+            "label": "Nothing about him either way, because a service account can be made to run anything by anyone who sat at the desk earlier, so the timing proves only that he was careful"
+          }
+        ],
+        "correct": "A",
+        "why": "The records show his session end and show the mechanism (an update at 09:31, a plugin, a task) that moved the manifests under a different account after he left. Write that as the Hypothesis refuted with the records, and the gap (whether he was on the pier at 13:05) as a gap. Opening a manifest at the dispatch desk is the dispatch desk’s job."
+      },
+      "clue": "rafael.quinn: first 06:10:22, last 08:40:11 (Logoff), 29 events, all on DISPATCH-01: a login, the morning’s processes and lookups, the manifest opened in Excel at 06:14. Nothing after 08:40.",
+      "logIt": {
+        "kind": "pivot",
+        "prompt": "Write a Pivot: confirm with the gate log and the crew rota where rafael.quinn was between 13:00 and 13:30, and whether any session or process on any host runs as his account after 08:40 (this query says none); then move the manager’s hypothesis to refuted with the records. Say why: the person named in the room is cleared by evidence or not at all.",
+        "mustInclude": [
+          "rafael.quinn",
+          "08:40"
+        ]
+      },
+      "caveat": "Clearing a person in a real case also means asking what the logs cannot see: a USB stick, a phone camera, a printout. Write those as gaps, not as suspicion."
+    },
+    {
+      "id": "C12-M06",
+      "kind": "solo",
+      "title": "What the service account wrote",
+      "beat": "The dispatch host sent 2.8 MB the kiosks did not. Something was written before it left.",
+      "question": "What files did svc-tidewatch create on DISPATCH-01 today, and when?",
+      "concept": {
+        "title": "Staging before sending",
+        "text": "Your call. The question is above; the Log it below says what the casebook needs. Write the query, run it, read it."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "metadata.event_type = \"FILE_CREATION\"\nprincipal.user.userid = \"svc-tidewatch\"\nprincipal.hostname = \"DISPATCH-01\"",
+      "hints": [
+        "File creation events, one account, one host.",
+        "metadata.event_type = \"FILE_CREATION\" with principal.user.userid and principal.hostname.",
+        "metadata.event_type = \"FILE_CREATION\"\nprincipal.user.userid = \"svc-tidewatch\"\nprincipal.hostname = \"DISPATCH-01\""
+      ],
+      "answer": {
+        "prompt": "What clock time is the last file written (HH:MM, UTC)?",
+        "value": "13:06",
+        "also": [
+          "13:06:40"
+        ],
+        "check": {
+          "type": "time",
+          "index": 2
+        }
+      },
+      "call": {
+        "prompt": "Three files: the installer, the plugin, and m.zip in a cache folder in the early afternoon, a minute after a hidden PowerShell archived \\\\FS-GULL\\Manifests\\*.csv. Which record is the one the determination turns on?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The installer: it is the first thing the compromised build wrote, and everything after it follows from it, so the determination rests on the download at 09:30"
+          },
+          {
+            "id": "B",
+            "label": "The archive, m.zip: the point where the manifests, the thing the question is about, were gathered by the plugin’s process into a file that then left"
+          },
+          {
+            "id": "C",
+            "label": "None of them alone: a determination rests on the whole chain equally, and picking one record would overstate the certainty of the others"
+          }
+        ],
+        "correct": "B",
+        "why": "The question was the manifests. The archive is where the manifests become an object that can leave, written by the plugin’s PowerShell from the share. The chain explains it; this record decides it. Cite the chain, lead with this."
+      },
+      "clue": "Three files as svc-tidewatch on DISPATCH-01: TideWatch-4.7.2.msi at 09:30:24, tw-telemetry.exe at 09:31:02, and C:\\ProgramData\\TideWatch\\cache\\m.zip at 13:06:40, ninety-eight seconds after powershell.exe -w hidden Compress-Archive read the manifests share.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry: 13:05 to 13:06 UTC, tw-telemetry.exe on DISPATCH-01 launches a hidden PowerShell that archives \\\\FS-GULL\\Manifests\\*.csv, and m.zip is written in C:\\ProgramData\\TideWatch\\cache, records evt-30456 and evt-30458, both as svc-tidewatch. Source: this query and a PROCESS_LAUNCH query for the same account, whole day. Observation only. Confidence high.",
+        "mustInclude": [
+          "evt-30458",
+          "m.zip|Manifests"
+        ]
+      },
+      "caveat": "The share’s own audit log would say which manifests the archive held; this dataset shows the read as one connection to FS-GULL on port 445. That is a gap for the ticket."
+    },
+    {
+      "id": "C12-M07",
+      "kind": "build",
+      "title": "What left the pier",
+      "beat": "An archive in a cache folder at 13:06. A connection with more bytes sent than any other today. Find it.",
+      "question": "Which connection today sent more than a megabyte, from where, to where, and when?",
+      "concept": {
+        "title": "The number that makes it an incident",
+        "text": "Your call. The question is above; the Log it below says what the casebook needs. Write the query, run it, read it."
+      },
+      "explain": [],
+      "starter": "metadata.event_type = \"NETWORK_CONNECTION\"\nnetwork.sent_bytes > ___",
+      "reference": "metadata.event_type = \"NETWORK_CONNECTION\"\nnetwork.sent_bytes > 1000000",
+      "hints": [
+        "The gap is a byte count. A megabyte is a million bytes.",
+        "network.sent_bytes > 1000000.",
+        "metadata.event_type = \"NETWORK_CONNECTION\"\nnetwork.sent_bytes > 1000000"
+      ],
+      "answer": {
+        "prompt": "How many bytes were sent (the number, no separators)?",
+        "value": "2814400",
+        "also": [
+          "2,814,400"
+        ],
+        "check": {
+          "type": "field",
+          "field": "network.sent_bytes",
+          "index": 0
+        }
+      },
+      "call": {
+        "prompt": "One connection, 2.8 MB from DISPATCH-01 to 198.51.100.210 on port 8443 at 13:20, fourteen minutes after m.zip was written. Marguerite asks if that proves the manifests left. What can you write?",
+        "options": [
+          {
+            "id": "A",
+            "label": "That the manifests left: the archive was written from the manifests share, the upload followed it by fourteen minutes, and the size is consistent with a day’s manifests compressed"
+          },
+          {
+            "id": "B",
+            "label": "That 2.8 MB left the dispatch host for the beacon’s destination fourteen minutes after the archive was written, which supports the hypothesis; what the bytes were is a gap until the share audit or the archive itself is read"
+          },
+          {
+            "id": "C",
+            "label": "That nothing can be said, because an outbound byte count is not a file and the connection could as easily be the plugin updating itself from its own server"
+          }
+        ],
+        "correct": "B",
+        "why": "The records support the story strongly and do not read the bytes. A determination can be confirmed on this evidence while the gap says what the station tells its passengers depends on the archive’s contents. Say both."
+      },
+      "clue": "One connection: DISPATCH-01 (10.77.3.20) to 198.51.100.210 on 8443 at 13:20:15, 2,814,400 bytes sent, as svc-tidewatch. The kiosks never send more than a few hundred.",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: the 2.8 MB sent from DISPATCH-01 to 198.51.100.210 at 13:20 (record evt-30475) followed m.zip by fourteen minutes, but neither the archive’s contents nor the share’s audit log is in the records, so which passengers’ manifests left is unknown. Why it matters: it decides what the co-operative tells its passengers and the regulator.",
+        "mustInclude": [
+          "198.51.100.210",
+          "m.zip|manifest|evt-30475"
+        ]
+      },
+      "caveat": "A real exfiltration is often many small connections rather than one large one; the beacon rows carry bytes too. Sum them per destination before you say how much left."
+    },
+    {
+      "id": "C12-M08",
+      "kind": "solo",
+      "mode": "rule",
+      "title": "The detection",
+      "beat": "Theo has one question for the ticket: what should have fired this morning? Write it in Rule mode, with the two cases beside the question. Nothing on the pier used port 8443 before today.",
+      "question": "Write a rule that fires when a host connects more than once in an hour to any destination on port 8443, keyed by host, and test it: DISPATCH-01 must fire in the window after 09:32; OFFICE-02 must not.",
+      "concept": {
+        "title": "A detection with its cases",
+        "text": "Your call. The question is above; the Log it below says what the casebook needs. Write the query, run it, read it. Rule mode: the envelope, every field with $e, match $host over 1h, a mandatory condition."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "rule new_destination_on_unused_port {\n  meta:\n    author = \"contract analyst\"\n    description = \"A host connects more than once in an hour to a destination on port 8443, which nothing on the pier used before today\"\n    severity = \"HIGH\"\n  events:\n    $e.metadata.event_type = \"NETWORK_CONNECTION\"\n    $e.target.port = 8443\n    $e.principal.hostname = $host\n  match:\n    $host over 1h\n  outcome:\n    $connections = count($e.metadata.id)\n    $destinations = array_distinct($e.target.ip)\n    $accounts = array_distinct($e.principal.user.userid)\n  condition:\n    $e and $connections >= 2\n}",
+      "hints": [
+        "rule name { meta: author, description, severity  events: $e.metadata.event_type = \"NETWORK_CONNECTION\", $e.target.port = 8443, $e.principal.hostname = $host  match: $host over 1h  outcome: ...  condition: ... }.",
+        "outcome: $connections = count($e.metadata.id) and array_distinct of the destinations; condition: $e and $connections >= 2. Severity HIGH: a new destination on an unused port from a dispatch host.",
+        "rule new_destination_on_unused_port {\n  meta:\n    author = \"contract analyst\"\n    description = \"A host connects more than once in an hour to a destination on port 8443, which nothing on the pier used before today\"\n    severity = \"HIGH\"\n  events:\n    $e.metadata.event_type = \"NETWORK_CONNECTION\"\n    $e.target.port = 8443\n    $e.principal.hostname = $host\n  match:\n    $host over 1h\n  outcome:\n    $connections = count($e.metadata.id)\n    $destinations = array_distinct($e.target.ip)\n    $accounts = array_distinct($e.principal.user.userid)\n  condition:\n    $e and $connections >= 2\n}"
+      ],
+      "answer": {
+        "prompt": "How many detections does the rule produce for the whole day?",
+        "value": "18",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "The rule produces six detections per host, roughly one per hour of beaconing. Theo wants one detection per host per day instead. What is the right change, and what does it cost?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Lengthen the window to 10h so one window holds the day; the cost is that a second, different host would wait up to ten hours for its first detection, and the SOC would see the first beacon ten hours late"
+          },
+          {
+            "id": "B",
+            "label": "Keep the hour and accept six: each detection is one hour of beaconing, the SOC groups them by host, and the first one arrives within an hour of the first beacon, which is the number that matters"
+          },
+          {
+            "id": "C",
+            "label": "Raise the threshold to twenty connections so the rule fires once, at the end of the day, when the pattern is beyond doubt and the SOC is not disturbed by a cadence that might stop on its own"
+          }
+        ],
+        "correct": "B",
+        "why": "Time to first detection is what a rule is for. Six detections per host per day of beaconing is a volume the SOC can read by host; a ten-hour window or a threshold of twenty buys silence with hours of delay. Write the trade-off into the description."
+      },
+      "clue": "Eighteen detections: six windows per host, the first for DISPATCH-01 at 09:32:30 with three connections to 198.51.100.210. OFFICE-02 and the file server never appear: nothing else on the pier speaks 8443. Theo copies the rule and its two cases into the ticket.",
+      "logIt": {
+        "kind": "remediation",
+        "list": "contain",
+        "prompt": "Write a Contain item: isolate DISPATCH-01, KIOSK-01 and KIOSK-02 from the network, block 198.51.100.210 and metrics.tw-telemetry.example at the gateway, disable the TideWatchTelemetry task and quarantine plugins\\tw-telemetry.exe on all three hosts, and revoke svc-tidewatch’s read on \\\\FS-GULL\\Manifests. Answers: your beacon, task and upload evidence. Owner role: IT lead. Urgency: now.",
+        "mustInclude": [
+          "198.51.100.210",
+          "TideWatchTelemetry|tw-telemetry"
+        ]
+      },
+      "caveat": "A port is a weak key on its own; a real version of this rule keys on a destination not seen in thirty days, which needs a baseline the rule engine keeps in a data table. The chapter 11 habit is the point: a rule, two cases, a replay, an approval.",
+      "rule": {
+        "mustFire": {
+          "key": [
+            "DISPATCH-01"
+          ],
+          "at": "09:32"
+        },
+        "mustNotFire": {
+          "key": [
+            "OFFICE-02"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C12-M09",
+      "kind": "read",
+      "title": "Determination",
+      "beat": "16:10. The last sailing is boarding. Marguerite wants one paragraph she can read to the board and to the vendor. Write the Determination in your Casebook, then read the model after the call.",
+      "question": "What happened to the manifests, how sure are you, and which records decide it?",
+      "concept": {
+        "title": "One call, two sentences, the records that decide it",
+        "text": "Confirmed, benign or inconclusive; a confidence; the deciding refs; two sentences a board member can read. The model is in the case update once your call is in."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Which determination does the evidence support?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Confirmed incident, high confidence: a trojanised vendor update installed a plugin as svc-tidewatch on three hosts; on the dispatch host it archived the manifests share and sent 2.8 MB to a disowned server; the deckhand’s account ended at 08:40"
+          },
+          {
+            "id": "B",
+            "label": "Inconclusive, medium confidence: the vendor confirms the update was compromised, but without the archive’s contents or the share audit the manifests cannot be said to have left, and the deckhand cannot be excluded from the room"
+          },
+          {
+            "id": "C",
+            "label": "Confirmed insider incident, medium confidence: the deckhand opened the manifests at 06:14 during the only session on the dispatch host before the update, and the later activity ran under a service account he could have scripted"
+          }
+        ],
+        "correct": "A",
+        "why": "The chain is in the records: installer, plugin, task, beacon, archive from the share, upload to the beacon’s destination, all as svc-tidewatch, all after 09:30. The deckhand’s account ends at 08:40 and does not return. What the bytes contained is a gap inside a confirmed incident, not a reason to call it inconclusive."
+      },
+      "clue": "Model determination: Confirmed incident, confidence high. Deciding refs: the plugin launch (evt-30165), the task (evt-30168), the beacon cadence, the archive (evt-30458) and the upload (evt-30475). Summary: a TideWatch update signed on the vendor’s compromised build server installed a plugin that beaconed from all three TideWatch hosts and, on the dispatch host, archived the passenger manifests and sent 2.8 MB to a server the vendor does not own. Rafael Quinn’s account was off the system from 08:40 and took no part; which manifests left is unknown until the archive or the share audit is read.",
+      "logIt": {
+        "kind": "determination",
+        "prompt": "Write the Determination: confirmed incident, confidence high. Deciding refs: the plugin launch, the task, the beacon, the archive and the upload. Summary, two sentences: a trojanised TideWatch 4.7.2 update installed a plugin as svc-tidewatch that beaconed from three hosts and, on DISPATCH-01, archived the manifests share and sent 2.8 MB to 198.51.100.210; rafael.quinn’s account ended at 08:40 and took no part.",
+        "mustInclude": [
+          "svc-tidewatch|TideWatch",
+          "198.51.100.210|2.8"
+        ]
+      },
+      "caveat": "Fiction, with one habit: a determination names the mechanism and clears the person in the same breath, each on records. The board hears both sentences."
+    },
+    {
+      "id": "C12-M10",
+      "kind": "read",
+      "brief": "casebook",
+      "title": "Handoff, for an engineer",
+      "beat": "16:40. Theo will rebuild the three hosts tonight. Before he does, he wants the ticket: what to contain, what to build, what to detect, and how to prove each one works. Write the Handoff, then compare your casebook with the model. The case-closed page says what an engineer does with it next.",
+      "question": "What does the engineer need from you to make this not happen the same way twice?",
+      "concept": {
+        "title": "The ticket an engineer can close",
+        "text": "Problem statement, assets with owners from the directory, evidence refs, controls from the Harden list, detections in words with their must-fire and must-not-fire records, acceptance criteria, open questions. The model is beside your casebook below."
+      },
+      "explain": [
+        {
+          "part": "Facts",
+          "meaning": "09:30 the vendor’s updater on DISPATCH-01, KIOSK-01 and KIOSK-02 fetches TideWatch-4.7.2.msi from updates.tidewatch-marine.example (48 MB each) and msiexec installs it as svc-tidewatch. 09:31 each installer writes plugins\\tw-telemetry.exe and TideWatch.exe launches it (evt-30165 on DISPATCH-01). 09:31 to 09:32 the task TideWatchTelemetry is created on all three hosts (evt-30168). 09:32 to 15:52 every host resolves metrics.tw-telemetry.example and connects to 198.51.100.210 on 8443 every twenty minutes: 20, 20 and 21 connections. 06:10 to 08:40 rafael.quinn’s only session, on DISPATCH-01, 29 events, the manifest opened in Excel at 06:14, Logoff at 08:40; nothing after. 13:05 a hidden PowerShell under the plugin archives \\\\FS-GULL\\Manifests\\*.csv (evt-30456); 13:06 m.zip written (evt-30458); 13:20 2,814,400 bytes sent to 198.51.100.210 (evt-30475). 14:10 the vendor’s advisory arrives; 14:25 Theo queries the task on DISPATCH-01."
+        },
+        {
+          "part": "Hypotheses",
+          "meaning": "Supported: a supply-chain compromise of the vendor’s build delivered a plugin that beacons and, on the host with access to the manifests, exfiltrates. Refuted: Rafael Quinn moved the manifests; his account ended at 08:40, the mechanism arrived at 09:30 under the service account. Open: whether the archive held every manifest or the day’s; whether the kiosks, which hold no manifests, sent anything beyond beacons (their byte counts say no)."
+        },
+        {
+          "part": "Gaps",
+          "meaning": "The archive’s contents and the share’s audit log. Whether 198.51.100.210 received anything before 09:32 from any host (none in these records). Where Rafael was at 13:05 (gate log, rota). The vendor’s own timeline: when the build server was compromised and who else received 4.7.2. Whether the plugin had other capabilities the ten hours did not show. No tenant has run any of these queries or the proposed rule."
+        },
+        {
+          "part": "Determination",
+          "meaning": "Confirmed incident, high confidence: a trojanised vendor update installed a plugin as svc-tidewatch on three hosts; on the dispatch host it archived the passenger manifests and sent 2.8 MB to a server the vendor disowns. The deckhand’s account took no part."
+        },
+        {
+          "part": "Remediation",
+          "meaning": "Contain: isolate the three hosts; block 198.51.100.210 and metrics.tw-telemetry.example; disable TideWatchTelemetry and quarantine the plugin; revoke svc-tidewatch’s read on the manifests share (owner IT lead, now). Eradicate: rebuild the three hosts from a build the vendor has re-signed; rotate svc-tidewatch’s credential (IT lead, today). Recover: restore dispatch and ticketing; tell passengers and the regulator once the archive’s contents are known; tell Rafael he is cleared, in writing (operations manager, today). Harden: egress allowlist on TideWatch hosts; application control on the plugins folder; least privilege for the service account; staged vendor updates with a one-day hold; the four detections below replayed and approved; a thirty-day destination baseline in a data table (IT lead, this week)."
+        },
+        {
+          "part": "Handoff",
+          "meaning": "Problem: a vendor update carried a plugin that beaconed from three TideWatch hosts and exfiltrated the passenger manifests from the dispatch host; the vendor’s update channel is the door. Assets and accounts: DISPATCH-01 (ines.varga, HIGH), KIOSK-01 (bea.okonkwo), KIOSK-02 (sam.achterberg), FS-GULL (theo.lindqvist, HIGH), svc-tidewatch, the TideWatch update channel. Controls: the Harden list, each with its owner. Detections, as rules with their cases: a host connecting more than once in an hour to a destination on port 8443, keyed by host (must fire DISPATCH-01 09:32, must not fire OFFICE-02); a scheduled task created by a service account within five minutes of msiexec on the same host (must fire DISPATCH-01 09:31, must not fire IT-BENCH); a service account reading \\\\FS-GULL\\Manifests (must fire svc-tidewatch 13:05, must not fire ines.varga); an outbound connection over one megabyte from a dispatch host (must fire 198.51.100.210 13:20, must not fire 192.0.2.150, the vendor). Acceptance: each rule replayed against today fires on its must-fire record and stays quiet on its must-not-fire key; the plugin does not execute from the plugins folder after application control; svc-tidewatch is denied on the manifests share; the next vendor build reaches the staging host first. Open: the archive’s contents; the share audit; the vendor’s timeline; the tenant replay."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Theo asks which single control would have stopped today’s loss, so he can do that one first. What is the honest engineering answer?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The egress allowlist: with 198.51.100.210 unreachable, the beacon fails and the upload never leaves, so one control at the gateway covers the whole chain and the rest can wait for a quieter month and a budget"
+          },
+          {
+            "id": "B",
+            "label": "Application control on the plugins folder: if tw-telemetry.exe cannot run, nothing downstream happens, so the folder is the one place to spend the week and the rest is documentation"
+          },
+          {
+            "id": "C",
+            "label": "No single one: the egress allowlist stops this upload and not a plugin that uses the vendor’s own server; least privilege on svc-tidewatch stops the manifests and not the beacon; the controls are a set, ordered by what each one costs to keep true"
+          }
+        ],
+        "correct": "C",
+        "why": "Each control breaks one link, and the next version of the attack chooses a different link. The engineer’s job is the set, with an owner and a test for each; the analyst’s job was to describe the chain well enough that the set is obvious."
+      },
+      "clue": "Marguerite signs the ticket and reads the second sentence of the determination to Rafael herself. Theo starts with the egress allowlist, because it is the one he can finish before the hosts are rebuilt, and writes the other three into Monday. The case-closed page says what he builds next.",
+      "logIt": {
+        "kind": "handoff",
+        "prompt": "Write the Handoff ticket. Press Assemble from casebook, then edit: the problem statement names the update channel as the door; affected assets list DISPATCH-01, KIOSK-01, KIOSK-02 and FS-GULL with their owners from the directory, and svc-tidewatch; detection ideas list the port-8443 rule with its must-fire record and must-not-fire key, the task-after-installer rule, the service account reading the manifests share and the large outbound connection; acceptance criteria say each rule is replayed against today’s records and each control has a test; open questions include the archive’s contents and the vendor’s timeline.",
+        "mustInclude": [
+          "DISPATCH-01",
+          "TideWatch|4.7.2|svc-tidewatch",
+          "FS-GULL|Manifests"
+        ]
+      },
+      "caveat": "This is where the course ends and the next one begins: the engineer takes this ticket and turns each line into a change with a test. The case-closed page sketches that bridge."
+    }
+  ]
+}

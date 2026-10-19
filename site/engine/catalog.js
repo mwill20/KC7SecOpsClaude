@@ -121,7 +121,8 @@ export const DOCS = Object.freeze([
   ['https://docs.cloud.google.com/chronicle/docs/reference/reference-lists', 'Reference lists (replaced by data tables; legacy lists retire in July 2027)'],
   ['https://docs.cloud.google.com/chronicle/docs/yara-l/reference-list-syntax', 'Use reference lists and data tables in YARA-L 2.0'],
   ['https://docs.cloud.google.com/chronicle/docs/investigation/yara-l-2-0-conditions', 'Use conditions in search and dashboards'],
-  ['https://docs.cloud.google.com/chronicle/docs/investigation/udm-search-vs-rules-results', 'UDM search compared with rule results'],
+  ['https://docs.cloud.google.com/chronicle/docs/investigation/udm-search-vs-rules-results', 'UDM search compared with rule results (Search and rules run on different engines; counts differ)'],
+  ['https://docs.cloud.google.com/chronicle/docs/detection/yara-l-2-0-syntax', 'YARA-L 2.0 language syntax (rule shape, match over N, mandatory condition, allow_zero_values; facts recorded by the owner\'s reviewer on 2026-10-18)'],
   ['https://docs.cloud.google.com/chronicle/docs/reference/udm-field-list', 'UDM field list'],
 ]);
 
@@ -140,4 +141,19 @@ export const LIMITS = Object.freeze({
   cidrListRefs: 2,    // and at most 2 may be `in cidr` (rules: 5)
   dedupKeys: 4, concatArgs: 6,
   eventVars: 2,       // event variables in one Search query: two, joined by shared placeholders; more is reported as not run here
+  ruleListRefs: 10, ruleRegexListRefs: 5, ruleCidrListRefs: 5, // the rule-engine limits for the same in tests (Google, verified 2026-10-18)
+  ruleWindowMax: 48 * 3600, // the longest match window a rule may slide here (Google rules allow up to 48 hours)
+  ruleMetaValue: 400,  // one meta value
 });
+
+// Rule mode (chapter 11). The facts the trainer follows were verified by the owner's reviewer on 2026-10-18 against the
+// live pages and are authoritative for this trainer: a YARA-L 2.0 rule has the shape
+//   rule name { meta: ... events: ... match: $key over 1h outcome: ... condition: ... }
+// in rules every field is written with an event variable ($e.metadata.event_type); match uses `over N`, a sliding
+// window; condition is mandatory; Search and rules run on different engines, evaluate different time windows and
+// handle repeated fields and dedup differently, so counts differ ("UDM search compared with rule results"); match
+// variables skip zero values unless allow_zero_values is set in options; the rule-engine data-table join is
+// $e.field = %table.column; reference lists and tables are usable in events and outcome.
+export const RULE_META_REQUIRED = Object.freeze(['author', 'description', 'severity']);
+export const RULE_SEVERITIES = Object.freeze(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+export const RULE_OPTIONS = Object.freeze({ allow_zero_values: 'boolean' });

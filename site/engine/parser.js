@@ -10,6 +10,13 @@ import { guardRegex, parseCidr } from './safety.js';
 // A reference-list or data-table test is { type: 'inlist', field: expr, list, column, listType, items, nocase }; the
 // items are copied into the node at parse time, so the executor needs no access to content.
 //
+// Rule mode (Google: YARA-L 2.0 rule syntax; the facts the trainer follows were verified by the owner's reviewer on
+// 2026-10-18 against the live pages): parseTokens(..., { rule: true }) parses the body of a detection rule, where every
+// field is written with an event variable ($e.metadata.event_type), match: takes `$key over N` (a sliding window),
+// condition: is mandatory and may read $e / #e on a single-variable rule, and an event joins a data-table row with
+// `$e.field = %table.column`, whose other columns an outcome may then read (%table.other). site/engine/rules.js parses
+// the envelope (rule name { meta: ... options: ... }) and hands the sections here.
+//
 // Event variables (Google: "Use conditions in search and dashboards", verified 2026-10-18): a query may name one event
 // variable ($e.field, or none) and runs as a single-event query, or two ($e1, $e2) joined by placeholders both set,
 // grouped by those placeholders in match: with an optional `over N` window (events for the same key within N of each
@@ -22,6 +29,8 @@ const invalid = (code, detail) => { throw new QueryError(code, 'invalid', detail
 const unsupported = (code, detail) => { throw new QueryError(code, 'unsupported', detail); };
 
 const KEYWORDS = new Set(['and', 'or', 'not', 'nocase', 'events', 'match', 'outcome', 'condition', 'order', 'limit', 'dedup', 'by', 'over', 'every', 'asc', 'desc', 'any', 'all', 'in', 'cidr', 'regex']);
+// Sections a rule has that a Search query does not.
+export const RULE_SECTIONS = Object.freeze(['meta', 'events', 'match', 'outcome', 'condition', 'options']);
 const SECTIONS = ['match', 'outcome', 'condition', 'dedup', 'order', 'limit'];
 // Google's grouped fields, limited to the members this dataset carries.
 export const GROUPED = Object.freeze({
@@ -62,12 +71,14 @@ export function indexLists(raw) {
 // The display name of an expression: the field, or the function applied to its arguments. Deterministic, so two
 // learners who write the same function get the same column and the grader can compare their tables. A join key is
 // named by the fields it joins (one name when both events set the same field), never by the learner's placeholder.
-export const exprName = x => x.kind === 'field' ? x.name : x.kind === 'lit' ? (x.type === 'string' ? JSON.stringify(x.value) : String(x.value)) : x.kind === 'join' ? x.name : `${x.name}(${x.args.map(exprName).join(', ')})`;
-export const exprType = x => x.kind === 'field' ? FIELDS[x.name] : x.kind === 'lit' ? x.type : x.kind === 'join' ? exprType(x.parts[0].expr) : FUNCTIONS[x.name].returns;
+// A joined data-table column (rule mode) is named %table.column and is read through the event field it was joined on.
+export const exprName = x => x.kind === 'field' ? x.name : x.kind === 'lit' ? (x.type === 'string' ? JSON.stringify(x.value) : String(x.value)) : x.kind === 'join' ? x.name : x.kind === 'tablecol' ? `%${x.table}.${x.column}` : `${x.name}(${x.args.map(exprName).join(', ')})`;
+export const exprType = x => x.kind === 'field' ? FIELDS[x.name] : x.kind === 'lit' ? x.type : x.kind === 'join' ? exprType(x.parts[0].expr) : x.kind === 'tablecol' ? 'string' : FUNCTIONS[x.name].returns;
 // The event variables an expression reads (none for a literal; a join reads every part's).
-const evarsOf = x => x.kind === 'field' ? (x.evar ? [x.evar] : []) : x.kind === 'lit' ? [] : x.kind === 'join' ? x.parts.map(p => p.evar) : [...new Set(x.args.flatMap(evarsOf))];
+const evarsOf = x => x.kind === 'field' ? (x.evar ? [x.evar] : []) : x.kind === 'lit' ? [] : x.kind === 'join' ? x.parts.map(p => p.evar) : x.kind === 'tablecol' ? evarsOf(x.joinField) : [...new Set(x.args.flatMap(evarsOf))];
 
-export function lex(text) {
+// opts.rule: braces are tokens (the rule envelope) instead of the sign of a rule pasted into the Search desk.
+export function lex(text, opts = {}) {
   if (typeof text !== 'string') invalid('EMPTY_QUERY');
   if (new TextEncoder().encode(text).length > LIMITS.bytes) invalid('QUERY_TOO_LONG');
   // A Build starter marks its gap with ___. Name that before any other diagnostic, so the learner is told to fill
@@ -123,7 +134,7 @@ export function lex(text) {
       push({ kind: 'count', value: '$' + v, pos: start }); continue;
     }
     if (c === '|') unsupported('LOOKS_LIKE_KQL', start);
-    if (c === '{' || c === '}') unsupported('LOOKS_LIKE_RULE', start);
+    if (c === '{' || c === '}') { if (!opts.rule) unsupported('LOOKS_LIKE_RULE', start); push({ kind: c, value: c, pos: start }); i++; continue; }
     if (c === '*' || c === ';') unsupported('LOOKS_LIKE_SQL', start);
     if (/\d/.test(c)) {
       let v = ''; while (i < text.length && /\d/.test(text[i])) v += text[i++];
@@ -146,17 +157,25 @@ export function lex(text) {
   return out;
 }
 
-export function parseSearch(text, ctx = {}) {
+export function parseSearch(text, ctx = {}) { return parseTokens(lex(text), text, ctx); }
+
+// Parses a token list (from lex) as a Search query, or as the body of a rule with opts.rule. text is the source the
+// positions refer to.
+export function parseTokens(ts, text, ctx = {}, opts = {}) {
   const lists = indexLists(ctx.lists), tables = indexTables(ctx.tables);
-  const ts = lex(text); let p = 0, atoms = 0; const listRefs = { all: 0, regex: 0, cidr: 0 };
+  const rule = Boolean(opts.rule);
+  let p = 0, atoms = 0; const listRefs = { all: 0, regex: 0, cidr: 0 };
+  // Search caps in tests at 7/4/2 per query; rules at 10/5/5 (Google, verified 2026-10-18).
+  const listMax = rule ? { all: LIMITS.ruleListRefs, regex: LIMITS.ruleRegexListRefs, cidr: LIMITS.ruleCidrListRefs } : { all: LIMITS.listRefs, regex: LIMITS.regexListRefs, cidr: LIMITS.cidrListRefs };
   // bindings: placeholder name -> [{ evar, value }], one entry per event variable that sets it. vars: the event
   // variables named, in order of first appearance; filters: per-variable filter on a multi-event query.
-  const q = { filter: null, bindings: {}, vars: [], varKinds: {}, filters: null, entityQuery: false, match: null, outcomes: [], condition: null, dedup: null, order: [], limit: null, lists: [], tables: [] };
+  // tableJoins (rule mode): table name -> { field, column }, the event field a data table was joined on and the column.
+  const q = { rule, filter: null, bindings: {}, vars: [], varKinds: {}, filters: null, entityQuery: false, match: null, outcomes: [], condition: null, dedup: null, order: [], limit: null, lists: [], tables: [], tableJoins: {} };
   const peek = (k = 0) => ts[p + k];
   const kw = (t, w) => t && t.kind === 'word' && t.value.toLowerCase() === w;
   const take = w => { if (kw(peek(), w)) { p++; return true; } return false; };
   const need = (kind, code) => { const t = ts[p]; if (!t || t.kind !== kind) invalid(code, t?.pos ?? text.length); p++; return t; };
-  const isSection = (k = 0) => peek(k)?.kind === 'word' && peek(k + 1)?.kind === ':' && [...SECTIONS, 'events', 'option', 'meta', 'rule', 'unselect'].includes(peek(k).value.toLowerCase());
+  const isSection = (k = 0) => peek(k)?.kind === 'word' && peek(k + 1)?.kind === ':' && [...SECTIONS, 'events', 'option', 'options', 'meta', 'rule', 'unselect'].includes(peek(k).value.toLowerCase());
   const isFn = t => t?.kind === 'word' && Object.hasOwn(FUNCTIONS, t.value.toLowerCase());
   const noteVar = (v, pos) => { if (!q.vars.includes(v)) { if (q.vars.length >= LIMITS.eventVars) unsupported('TOO_MANY_EVENT_VARS', { pos, name: v, max: LIMITS.eventVars }); q.vars.push(v); } };
 
@@ -170,13 +189,17 @@ export function parseSearch(text, ctx = {}) {
     }
     if (Object.hasOwn(ALIASES, v)) v = ALIASES[v];
     if (!Object.hasOwn(FIELDS, v)) invalid('UNKNOWN_FIELD', { pos: t.pos, field: v });
-    if (evar) { noteVar(evar, t.pos); const kind = isEntityField(v) ? 'entity' : 'event'; if (q.varKinds[evar] && q.varKinds[evar] !== kind) invalid('ENTITY_MIX', { pos: t.pos, name: evar }); q.varKinds[evar] = kind; }
+    // In a rule every field is written with its event variable (Google: rule syntax, verified 2026-10-18).
+    if (rule && !evar) invalid('FIELD_NEEDS_VARIABLE', { pos: t.pos, field: v });
+    if (evar) { noteVar(evar, t.pos); const kind = isEntityField(v) ? 'entity' : 'event'; if (q.varKinds[evar] && q.varKinds[evar] !== kind) invalid('ENTITY_MIX', { pos: t.pos, name: evar }); if (rule && kind === 'entity') unsupported('ENTITY_IN_RULE', { pos: t.pos, name: evar }); q.varKinds[evar] = kind; }
     return { name: v, evar };
   };
   // An operand before resolution: a placeholder, a grouped field, a field, or a function applied to operands.
   const operand = () => {
     const t = ts[p++];
     if (t?.kind === 'count') unsupported('COUNT_CHARACTER', t.pos);
+    // Rule mode: %table.column as an operand reads the joined row's column (resolve checks the table was joined).
+    if (t?.kind === 'list' && rule) { if (!t.column) invalid('TABLE_JOIN_NEEDS_COLUMN', { pos: t.pos, name: t.value }); return { kind: 'tablecol', table: t.value, column: t.column, pos: t.pos }; }
     if (!t || !['var', 'word'].includes(t.kind)) invalid('EXPECTED_FIELD', t?.pos ?? text.length);
     if (t.kind === 'word' && KEYWORDS.has(t.value.toLowerCase())) invalid('EXPECTED_FIELD', t.pos);
     if (t.kind === 'var' && !t.value.includes('.')) return { kind: 'var', name: t.value, pos: t.pos };
@@ -195,15 +218,15 @@ export function parseSearch(text, ctx = {}) {
     const t = ts[p++];
     if (!t) invalid('EXPECTED_VALUE', text.length);
     if (t.kind === 'word' && /^[A-Z_]+$/.test(t.value)) invalid('UNQUOTED_ENUM', { pos: t.pos, word: t.value });
-    // field = %table.column is the rule-engine data-table join; Search tests membership with in.
-    if (t.kind === 'list') unsupported('LIST_AS_VALUE', { pos: t.pos, name: t.column ? `${t.value}.${t.column}` : t.value });
+    // field = %table.column is the rule-engine data-table join; Search tests membership with in. Rule mode runs the join.
+    if (t.kind === 'list') { if (rule) return t; unsupported('LIST_AS_VALUE', { pos: t.pos, name: t.column ? `${t.value}.${t.column}` : t.value }); }
     if (!['string', 'number', 'regex'].includes(t.kind)) invalid('EXPECTED_VALUE', t.pos);
     return t;
   };
   const atom = () => { if (++atoms > LIMITS.atoms) invalid('QUERY_TOO_LONG'); };
   const startsOperand = t => t && (t.kind === 'var' || (t.kind === 'word' && (Object.hasOwn(FIELDS, t.value) || Object.hasOwn(ALIASES, t.value) || Object.hasOwn(GROUPED, t.value) || isFn(t) || FN_SHAPE.test(t.value))));
   // The one event variable an operand reads before resolution (a placeholder reads none yet).
-  const operandVars = o => o.kind === 'field' ? (o.evar ? [o.evar] : []) : o.kind === 'fn' ? [...new Set(o.args.flatMap(operandVars))] : [];
+  const operandVars = o => o.kind === 'field' ? (o.evar ? [o.evar] : []) : o.kind === 'fn' ? [...new Set(o.args.flatMap(operandVars))] : o.kind === 'tablecol' ? operandVars(q.tableJoins[o.table]?.field ?? { kind: 'lit' }) : [];
   let joins = 0;
 
   const expression = (ctxName, depth = 0) => {
@@ -218,7 +241,7 @@ export function parseSearch(text, ctx = {}) {
         if (t?.kind === 'count' || (t?.kind === 'var' && !t.value.includes('.') && q.vars.includes(t.value))) {
           p++; const name = t.value;
           if (!q.vars.includes(name)) invalid('UNKNOWN_EVENT_VAR', { pos: t.pos, name, known: q.vars });
-          if (q.vars.length < 2) unsupported('COUNT_CHARACTER', t.pos);
+          if (q.vars.length < 2 && !rule) unsupported('COUNT_CHARACTER', t.pos);
           if (t.kind === 'var' && peek()?.kind !== 'op') { atom(); return { type: 'cmp', count: name, op: '>', value: { kind: 'number', value: 0 }, pos: t.pos }; }
           const opTok = ts[p++]; if (!opTok || opTok.kind !== 'op') invalid('EXPECTED_OPERATOR', opTok?.pos ?? text.length);
           const v = ts[p++]; if (!v || v.kind !== 'number') invalid('CONDITION_NEEDS_NUMBER', v?.pos ?? text.length);
@@ -245,9 +268,9 @@ export function parseSearch(text, ctx = {}) {
         const lt = ts[p++]; if (!lt || lt.kind !== 'list') invalid('EXPECTED_LIST', lt?.pos ?? text.length);
         const nocase = take('nocase');
         // Search limits per query (Google, verified 2026-10-18): at most 7 in statements, 4 of them regex, 2 cidr.
-        if (++listRefs.all > LIMITS.listRefs) invalid('TOO_MANY_LISTS', inPos);
-        if (keyword === 'regex' && ++listRefs.regex > LIMITS.regexListRefs) invalid('TOO_MANY_REGEX_LISTS', inPos);
-        if (keyword === 'cidr' && ++listRefs.cidr > LIMITS.cidrListRefs) invalid('TOO_MANY_CIDR_LISTS', inPos);
+        if (++listRefs.all > listMax.all) invalid('TOO_MANY_LISTS', inPos);
+        if (keyword === 'regex' && ++listRefs.regex > listMax.regex) invalid('TOO_MANY_REGEX_LISTS', inPos);
+        if (keyword === 'cidr' && ++listRefs.cidr > listMax.cidr) invalid('TOO_MANY_CIDR_LISTS', inPos);
         atom();
         const node = { type: 'inlist', field: left, list: lt.value, column: lt.column, keyword, nocase, pos: lt.pos };
         return negate ? { type: 'not', child: node } : node;
@@ -271,6 +294,14 @@ export function parseSearch(text, ctx = {}) {
         return { type: 'binding', name: v.name, value: f, pos: opTok.pos };
       }
       const v = literal();
+      if (v.kind === 'list') {
+        // Rule mode: $e.field = %table.column joins the event to the table rows whose column equals the field.
+        if (opTok.value !== '=') invalid('TABLE_JOIN_OPERATOR', opTok.pos);
+        if (!v.column) invalid('TABLE_JOIN_NEEDS_COLUMN', { pos: v.pos, name: v.value });
+        if (ctxName !== 'filter') invalid('EXPECTED_VALUE', v.pos);
+        if (++listRefs.all > listMax.all) invalid('TOO_MANY_LISTS', opTok.pos);
+        atom(); return { type: 'tablejoin', field: left, table: v.value, column: v.column, pos: v.pos };
+      }
       const nocase = ctxName === 'filter' && take('nocase');
       if (v.kind === 'regex') {
         if (opTok.value !== '=' && opTok.value !== '!=') invalid('REGEX_OPERATOR', opTok.pos);
@@ -334,6 +365,13 @@ export function parseSearch(text, ctx = {}) {
     if (o.kind === 'field') return { kind: 'field', name: o.name, evar: o.evar ?? null };
     if (o.kind === 'lit') return { kind: 'lit', value: o.value, type: o.type };
     if (o.kind === 'group') invalid('GROUPED_FIELD_HERE', { pos: o.pos, name: o.name, where });
+    if (o.kind === 'tablecol') {
+      // A joined table's column, read through the row the event joined (first matching row). The table must have been
+      // joined in the filter with $e.field = %table.join_column.
+      const j = q.tableJoins[o.table]; if (!j) invalid('TABLE_NOT_JOINED', { pos: o.pos, name: `${o.table}.${o.column}` });
+      const table = tables.get(o.table); const col = table?.columns.get(o.column); if (!col) invalid('UNKNOWN_TABLE_COLUMN', { pos: o.pos, name: `${o.table}.${o.column}`, known: [...(table?.columns.keys() ?? [])] });
+      return { kind: 'tablecol', table: o.table, column: o.column, joinField: j.field, joinItems: j.items, items: col.items.slice() };
+    }
     if (o.kind === 'var') {
       const list = q.bindings[o.name]; if (!list) invalid('UNBOUND_VARIABLE', { pos: o.pos, name: o.name, where });
       if (list.length === 1) return resolve(list[0].value, where, depth + 1);
@@ -398,6 +436,19 @@ export function parseSearch(text, ctx = {}) {
       n.listType = list.type; n.items = list.items.slice(); n.ftype = ft;
       return;
     }
+    if (n.type === 'tablejoin') {
+      n.field = resolve(n.field, 'filter'); const ft = exprType(n.field);
+      const label = `${n.table}.${n.column}`;
+      const table = tables.get(n.table); if (!table) invalid('UNKNOWN_TABLE', { pos: n.pos, name: n.table, known: [...tables.keys()] });
+      const col = table.columns.get(n.column); if (!col) invalid('UNKNOWN_TABLE_COLUMN', { pos: n.pos, name: label, known: [...table.columns.keys()] });
+      if (col.type !== 'string') invalid('TABLE_JOIN_TYPE', { pos: n.pos, name: label, listType: col.type });
+      if (ft === 'number') invalid('LIST_ON_NUMBER', { pos: n.pos, name: label });
+      if (q.tableJoins[n.table]) invalid('TABLE_JOINED_TWICE', { pos: n.pos, name: n.table });
+      q.tableJoins[n.table] = { field: n.field, column: n.column, items: col.items.slice() };
+      if (!q.tables.includes(n.table)) q.tables.push(n.table);
+      n.items = col.items.slice(); n.ftype = ft;
+      return;
+    }
     if (n.type !== 'cmp') return;
     n.field = resolve(n.field, 'filter'); const ft = exprType(n.field); n.ftype = ft;
     const label = exprName(n.field);
@@ -412,7 +463,7 @@ export function parseSearch(text, ctx = {}) {
   // Entity queries (Google: statistics page, graph.entity.* fields): a single-variable query whose fields are all entity
   // fields runs against the entity records; mixing entity and event fields in one filter needs two variables.
   const fieldsIn = n => n.children ? n.children.flatMap(fieldsIn) : n.child ? fieldsIn(n.child) : n.field ? [n.field] : [];
-  const leaves = x => x.kind === 'field' ? [x] : x.kind === 'fn' ? x.args.flatMap(leaves) : x.kind === 'join' ? x.parts.flatMap(pp => leaves(pp.expr)) : [];
+  const leaves = x => x.kind === 'field' ? [x] : x.kind === 'fn' ? x.args.flatMap(leaves) : x.kind === 'join' ? x.parts.flatMap(pp => leaves(pp.expr)) : x.kind === 'tablecol' ? leaves(x.joinField) : [];
   const allFields = [...fieldsIn(q.filter).flatMap(leaves), ...Object.values(q.bindings).flat().flatMap(b => leaves(resolve(b.value, 'filter')))];
   if (!multi) {
     const ent = allFields.filter(f => isEntityField(f.name)), ev = allFields.filter(f => !isEntityField(f.name));
@@ -437,6 +488,7 @@ export function parseSearch(text, ctx = {}) {
   while (peek()) {
     const t = ts[p++]; const name = String(t.value).toLowerCase(); const rank = SECTIONS.indexOf(name);
     if (t.kind !== 'word' || rank < 0) { if (['option', 'unselect'].includes(name)) unsupported('UNSUPPORTED_SECTION', { pos: t.pos, section: name }); invalid('UNEXPECTED_TOKEN', t.pos); }
+    if (rule && ['dedup', 'order', 'limit'].includes(name)) invalid('RULE_NO_SECTION', { pos: t.pos, section: name });
     if (rank <= last) invalid('SECTION_ORDER', { pos: t.pos, section: name }); last = rank;
     need(':', 'EXPECTED_COLON');
     if (name === 'match') {
@@ -447,11 +499,13 @@ export function parseSearch(text, ctx = {}) {
       if (take('over')) {
         if (!take('every')) {
           // `over N` without `every`: the join window (events for the same key within N of each other). On a single-event
-          // query it is the rule-engine window, which the statistics page says Search does not support.
-          if (!multi) unsupported('OVER_WINDOW', t.pos);
+          // query it is the rule-engine window, which the statistics page says Search does not support; a rule's match
+          // section is written exactly this way (a sliding window), so rule mode accepts it.
+          if (!multi && !rule) unsupported('OVER_WINDOW', t.pos);
           windowKind = 'over';
-        }
-      } else take('by');
+        } else if (rule) invalid('RULE_WINDOW_FORM', ts[p - 1].pos);
+      } else if (take('by')) { if (rule) invalid('RULE_WINDOW_FORM', ts[p - 1].pos); }
+      else if (rule) invalid('RULE_NEEDS_WINDOW', t.pos);
       if (peek()?.kind === 'duration') window = ts[p++].value;
       else if (peek()?.kind === 'word' && UNITS[peek().value.toLowerCase()]) window = UNITS[ts[p++].value.toLowerCase()];
       else if (windowKind === 'over') invalid('BAD_WINDOW', peek()?.pos ?? text.length);
@@ -537,7 +591,7 @@ export function parseSearch(text, ctx = {}) {
     const sectionFields = [...(q.match?.keys ?? []), ...q.outcomes.map(o => o.field), ...(q.dedup?.keys ?? []).map(k => k.expr).filter(Boolean)].flatMap(leaves);
     if (sectionFields.some(f => f.name !== 'metadata.id' && isEntityField(f.name) !== q.entityQuery)) invalid('ENTITY_MIX', { pos: 0, name: q.vars[0] ?? '$e' });
   }
-  if (q.condition && !q.outcomes.length && !multi) invalid('CONDITION_NEEDS_MATCH');
+  if (q.condition && !q.outcomes.length && !multi && !rule) invalid('CONDITION_NEEDS_MATCH');
   if (q.order.length && !q.outcomes.length) invalid('ORDER_UNKNOWN_OUTCOME', {});
   return q;
 }

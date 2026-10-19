@@ -19,15 +19,15 @@ npm run verify                           # data → content validation → unit 
 npm start                                # serves dist/ at http://127.0.0.1:4180
 ```
 
-`npm run verify` must finish with `22 passed` from Playwright after `# fail 0` from `node --test` and `artifact check passed` from the build. If it does not, do not use the build.
+`npm run verify` must finish with `54 passed` from Playwright (27 tests, each at the root and under `/KC7SecOpsClaude/`) after `# fail 0` from `node --test` (82 tests) and `artifact check passed` from the build. If it does not, do not use the build.
 
 ## Scripts
 
 | Script | What it does |
 |---|---|
-| `npm run data` | Regenerates `data/events.json` (1,010 fictional UDM events, fixed seed). |
+| `npm run data` | Regenerates the three datasets (`data/events.json`, 1,010 events; `data/events-week-after.json`, 973; `data/events-saltmarsh.json`, 675), fixed seeds. |
 | `npm run validate:content` | Runs every reference query, proves every authored answer against the data, proves every Build starter fails until completed. |
-| `npm test` | Unit tests: parser, executor, grader, content, progress store, CSS contrast tokens. |
+| `npm test` | Unit tests: parser, executor, rule mode, grader, content, progress store, casebook, CSS contrast tokens, artifact check. |
 | `npm run build` | Copies the allowlisted runtime files into `dist/`, writes `dist/bundle.js` (content + data), then runs `tools/check-artifact.mjs`. |
 | `npm run check:artifact` | Re-runs the artifact check on the current `dist/` without rebuilding. |
 | `npm run test:browser` | Playwright tests against `dist/` served by `tools/serve.mjs`: once at the root on port 4187, once under `/KC7SecOpsClaude/` on port 4188. Build first. |

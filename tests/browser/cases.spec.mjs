@@ -7,27 +7,28 @@ const drawer = page => page.locator('#casebook');
 test('Two cases: the home page switches between case files, chapter 7 runs against the week-after data, the drawer keeps one casebook per case, and each case has its own closed page', async ({ page }) => {
   await page.goto('./');
   const tabs = page.getByRole('navigation', { name: 'Cases' }).getByRole('link');
-  await expect(tabs).toHaveCount(2);
+  await expect(tabs).toHaveCount(3);
+  await expect(tabs.nth(2)).toHaveAttribute('aria-label', 'Case 3, A different pier: 0 of 10 missions complete');
   await expect(tabs.nth(0)).toHaveAttribute('aria-label', 'Case 1, Static on Pier Nine: 0 of 49 missions complete');
-  await expect(tabs.nth(1)).toHaveAttribute('aria-label', 'Case 2, The week after: 0 of 33 missions complete');
+  await expect(tabs.nth(1)).toHaveAttribute('aria-label', 'Case 2, The week after: 0 of 42 missions complete');
   await expect(page.locator('h1')).toHaveText('Static on Pier Nine');
   await expect(page.locator('a.chapter-card')).toHaveCount(6);
   await tabs.nth(1).click();
   await expect(page).toHaveURL(/#case\/week-after$/);
   await expect(page.locator('h1')).toHaveText('The week after');
-  await expect(page.locator('a.chapter-card')).toHaveCount(4);
+  await expect(page.locator('a.chapter-card')).toHaveCount(5);
   await expect(page.locator('a.chapter-card .num').first()).toHaveText('07');
   await expect(page.getByRole('link', { name: 'Open the case →' })).toHaveAttribute('href', '#C07-M01');
   await expect(page.locator('.people')).toContainText('Lena Ostrowski');
   // The top bar carries ten chapters; chapters 7 to 10 belong to case 2.
-  await expect(page.locator('#chapterprog .chap')).toHaveCount(10);
+  await expect(page.locator('#chapterprog .chap')).toHaveCount(12);
   await page.goto('#C07');
   await expect(page.locator('.crumbs')).toContainText('Case file 2: The week after');
   await expect(page.locator('h1')).toHaveText('Baselines and first sightings');
   await expect(page.getByRole('region', { name: 'Mission map' })).toContainText('0 of 8 complete');
   // A Watch mission in chapter 7 runs against the second dataset: the dedup query returns three accounts.
   await page.goto('#C07-M02');
-  await expect(page.locator('.deskbar select')).toContainText('Small hours (03:00 to 06:00)');
+  await expect(page.getByLabel('Time range')).toContainText('Small hours (03:00 to 06:00)');
   await page.getByRole('button', { name: 'Run query' }).click();
   await expect(page.locator('.results .summary')).toContainText('3 events');
   await expect(page.locator('.results .summary')).toContainText('deduplicated');
@@ -74,8 +75,8 @@ test('Two cases: the home page switches between case files, chapter 7 runs again
   // The second case's closed page lists its own thirty-three missions and names its own casebook; the first case's page still lists forty-nine.
   await page.goto('#closed/week-after');
   await expect(page.locator('h1')).toHaveText('The handoff is not written yet');
-  await expect(page.locator('.list li')).toHaveCount(32);
-  await expect(page.locator('.skills .skill')).toHaveCount(4);
+  await expect(page.locator('.list li')).toHaveCount(41);
+  await expect(page.locator('.skills .skill')).toHaveCount(5);
   await expect(page.locator('.closedbook .cbname-title')).toHaveText('Did the fix hold');
   await expect(page.getByRole('link', { name: 'Next open mission →' })).toHaveAttribute('href', '#C07-M01');
   await page.goto('#closed');
@@ -87,5 +88,5 @@ test('Two cases: the home page switches between case files, chapter 7 runs again
   await page.getByRole('button', { name: 'Check query' }).click();
   await expect(page.locator('.desk .feedback')).toContainText('Query correct');
   await expect(page.locator('.results .summary')).toContainText('3 events');
-  await expect(page.locator('#topscore')).toHaveText('110 / 6,970 pts');
+  await expect(page.locator('#topscore')).toHaveText('110 / 8,600 pts');
 });

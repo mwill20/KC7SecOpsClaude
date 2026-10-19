@@ -1,0 +1,735 @@
+{
+  "id": "C11",
+  "title": "From search to detection",
+  "subtitle": "Rule mode: the same questions written as YARA-L 2.0 rules, each with a case that must fire and a case that must not",
+  "intro": "Tuesday. Dez has read the Monday ticket and comes back with the question every handoff earns: 'Which of these can I turn on?' A Search query answers once, for the analyst who ran it. A detection rule runs every time new events arrive and answers for everyone, including the person on the queue at 3 a.m. who has never heard of Pier Nine. This chapter switches the desk to Rule mode and rewrites the course's best questions as YARA-L 2.0 rules: the rule envelope, every field with its event variable, match over a sliding window, a mandatory condition, meta the SOC reads before the logic. It also teaches the discipline that separates a rule from a query: every rule here is graded against a case that must fire and a case that must not, and the detections it produces beyond those are false positives you read before you call it done. The facts the trainer follows about rules were verified by the owner's reviewer on 2026-10-18 against Google's live pages; nothing here has been compiled in a tenant.",
+  "concepts": [
+    "A rule is an envelope around the question: rule name { meta: ... events: ... match: $key over 5m outcome: ... condition: ... }; in rules every field carries its event variable, over N is a sliding window, and condition is mandatory",
+    "Search and rules run on different engines over different windows: a clock-aligned by 5m bucket and a sliding over 5m window count the same events differently, so a rule is tested on its own detections, never trusted from the Search count",
+    "meta is how the rule talks to the SOC: author answers for it, description says what a detection means, severity says how fast someone should look",
+    "Match variables skip zero values unless options: allow_zero_values = true; the gateway writes a blank hostname, so a rule keyed on the host sleeps through the gateway until the option is set",
+    "Every rule ships with a must-fire case and a must-not-fire case; a rule that fires on the engineer’s maintenance is not wrong, it is untuned, and the tuning is written into the events section where the next reader can see it"
+  ],
+  "recap": [
+    "Write a YARA-L 2.0 rule in the trainer’s subset: name, meta with author, description and severity, events with $e, match over a window, outcome, condition, options",
+    "Rewrite a Search bucket query and a two-event join as rules and read their detections instead of rows",
+    "Explain why a clock-aligned bucket and a sliding window count the same failures differently, and measure it on the same data",
+    "Use allow_zero_values on purpose and say what a blank match key costs without it",
+    "Join a data table inside a rule and read its other columns beside the event",
+    "Tune a noisy rule against a must-not-fire case and hand the rules over with their evidence, their test cases and the person who approves them"
+  ],
+  "missions": [
+    {
+      "id": "C11-M01",
+      "kind": "read",
+      "title": "A query answers once; a rule keeps answering",
+      "beat": "Tuesday, 10:05. Dez has the Monday ticket open on one screen and the rule editor on the other. 'Your detection ideas are good English,' he says. 'The engine does not read English.' He turns the desk's mode switch from Search to Rule and the editor goes blank.",
+      "question": "What changes when a Search query becomes a detection rule, and what does the trainer run of it?",
+      "concept": {
+        "title": "The envelope, the variable, the window, the condition",
+        "text": "A YARA-L 2.0 rule has the shape rule name { meta: ... events: ... match: $key over 1h outcome: ... condition: ... }. Four things change from the Search queries of chapters 1 to 10. Every field is written with an event variable ($e.metadata.event_type), because a rule may name several events and each field must say which one it belongs to. match uses over N, a sliding window the engine moves across the events, where Search's by 5m was a clock-aligned bucket. condition is mandatory: it says when a window becomes a detection. And meta comes first: author, description and severity are what the SOC reads before the logic. Google's own page on Search compared with rule results says the two run on different engines, evaluate different time windows and handle repeated fields and deduplication differently, so their counts differ. This trainer runs a documented subset of rules over the case window, producing detections instead of rows: one per match key per window hit. Everything outside the subset is reported as not run here, with the reason."
+      },
+      "explain": [
+        {
+          "part": "rule gateway_failures {\n  meta:\n    author = \"signal desk\"\n    description = \"…\"\n    severity = \"MEDIUM\"",
+          "meaning": "The envelope and the meta section. Name, braces, and three lines the SOC reads first: who answers for the rule, what a detection means in one sentence, how fast someone should look. The trainer requires all three."
+        },
+        {
+          "part": "  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.principal.user.userid = $account",
+          "meaning": "The filter, now called events, with every field on its variable. A bare field is refused in a rule: the variable says which event the field belongs to."
+        },
+        {
+          "part": "  match:\n    $account over 5m",
+          "meaning": "The key and a sliding window. The engine does not cut the night into clock buckets; it slides a five-minute window across each account’s events. Search’s by 5m and over every 5m do not exist in a rule."
+        },
+        {
+          "part": "  condition:\n    $e and $failures >= 2\n}",
+          "meaning": "Mandatory. $e means at least one event of $e in the window; the rest are outcome comparisons. When it holds, the window is a detection."
+        },
+        {
+          "part": "Must fire · Must not fire",
+          "meaning": "Every rule mission names a case the rule has to catch (a key and a minute) and a case it has to leave alone. The grader runs your rule and checks both; every other detection is a false positive you read. That is how detection engineers test: not against a reference rule, against cases."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez wants to turn on a rule because its Search version returned exactly the rows in the Monday ticket. What should happen first?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Turn it on at severity HIGH: the Search rows are the proof, and a rule is the same logic with an envelope around it, so the count carries over to the engine"
+          },
+          {
+            "id": "B",
+            "label": "Leave it as a saved Search until Google reconciles the two engines and publishes one count, since a rule cannot be trusted while the two counts disagree"
+          },
+          {
+            "id": "C",
+            "label": "Replay the rule itself on the same data and read its detections and false positives, because the rule engine evaluates different windows and counts differently"
+          }
+        ],
+        "correct": "C",
+        "why": "Google says the two engines differ and the counts differ. A rule is tested on its own detections against cases that must fire and cases that must not; the Search rows are where the idea came from, not the test."
+      },
+      "clue": "Dez: 'So every one of your detection ideas gets two tests before it gets a severity. Fine. Start with the one that found Pledge Night.' The desk is in Rule mode; the mode switch above the editor turns it back to Search whenever you want to compare.",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: this trainer runs a documented subset of YARA-L 2.0 rules over the case window with a sliding window per key; Google's page on Search compared with rule results says the two engines evaluate different windows and count differently, and no rule here has been compiled or run in a tenant. Why it matters: every rule proposed in this chapter must be tested against replayed events in the tenant before it is turned on.",
+        "mustInclude": [
+          "engine|tenant"
+        ]
+      },
+      "caveat": "In a tenant, rules are written in the Rules Editor, tested against historical events (retrohunt), and go live with a severity and an owner. The envelope here follows Google's documented shape as verified by the owner's reviewer on 2026-10-18; the sliding-window execution is the trainer's and produces one detection per key per window hit."
+    },
+    {
+      "id": "C11-M02",
+      "kind": "watch",
+      "mode": "rule",
+      "title": "The burst, as a rule",
+      "beat": "Chapter 6 found Pledge Night with one bucket query: failures by account in five-minute buckets, more than three. Dez has rewritten it as a rule and lowered the bar to two, because last week's attacker tried the old door twice, quietly, and a rule tuned to last week's burst would have slept through it.",
+      "question": "Run the rule. Which accounts does it fire on tonight, and in which windows?",
+      "concept": {
+        "title": "A threshold is a memory of the last attack",
+        "text": "The chapter 6 query asked for more than three failures in a clock-aligned five-minute bucket; it found a burst of seven. Tonight there was no burst: the pledge-desk account was tried twice at 19:58, forty-two seconds apart, and marco.vela's disabled account twice at 23:50. A rule that still says > 3 fires on nothing tonight and is still 'correct'. Dez's version says >= 2 over 5m, where over is a sliding window: the engine starts a window at the first failure of each account and asks whether the condition holds on the events inside it. Read the detections as you read rows, then read the two test cases beside the question: pledge-desk at 19:58 must fire; lena.ostrowski must not. Her two failures tonight are eleven hours apart."
+      },
+      "explain": [
+        {
+          "part": "    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.security_result.action = \"FAIL\"\n    $e.principal.user.userid = $account",
+          "meaning": "The chapter 6 filter with $e on every field. $account is the placeholder the match section groups by."
+        },
+        {
+          "part": "  match:\n    $account over 5m",
+          "meaning": "A five-minute sliding window per account, not a clock bucket."
+        },
+        {
+          "part": "  outcome:\n    $failures = count($e.metadata.id)\n    $from = array_distinct($e.principal.ip)\n    $first = earliest($e.metadata.event_timestamp)",
+          "meaning": "What the detection carries: how many, from where, and when the window opened. The SOC reads these columns, not the events."
+        },
+        {
+          "part": "  condition:\n    $e and $failures >= 2",
+          "meaning": "Two failures in the window. The chapter 6 query said > 3; the tuning mission at the end of the chapter asks what each threshold costs."
+        }
+      ],
+      "starter": "rule failures_in_five_minutes {\n  meta:\n    author = \"signal desk\"\n    description = \"Two or more failed logins by one account within five minutes\"\n    severity = \"MEDIUM\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.security_result.action = \"FAIL\"\n    $e.principal.user.userid = $account\n  match:\n    $account over 5m\n  outcome:\n    $failures = count($e.metadata.id)\n    $from = array_distinct($e.principal.ip)\n    $first = earliest($e.metadata.event_timestamp)\n  condition:\n    $e and $failures >= 2\n}",
+      "reference": "rule failures_in_five_minutes {\n  meta:\n    author = \"signal desk\"\n    description = \"Two or more failed logins by one account within five minutes\"\n    severity = \"MEDIUM\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.security_result.action = \"FAIL\"\n    $e.principal.user.userid = $account\n  match:\n    $account over 5m\n  outcome:\n    $failures = count($e.metadata.id)\n    $from = array_distinct($e.principal.ip)\n    $first = earliest($e.metadata.event_timestamp)\n  condition:\n    $e and $failures >= 2\n}",
+      "hints": [
+        "Read the detections table: one row per account per window that fired, with the window start and end as clock times.",
+        "The count in the results bar is the number of detections, not the number of failures.",
+        "Two accounts fire: the one the test case names and the terminated host’s account from Studio B."
+      ],
+      "answer": {
+        "prompt": "How many detections does the rule produce for the whole night?",
+        "value": "2",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "The rule fires on marco.vela, whose attempts came from Studio B against a disabled account. Is that a false positive?",
+        "options": [
+          {
+            "id": "A",
+            "label": "No: failures by a terminated account inside five minutes are what the rule is for, and the detection tells the SOC that someone in Studio B is trying an old password"
+          },
+          {
+            "id": "B",
+            "label": "Yes: the account is disabled, so nothing could have happened, and the rule should exclude TERMINATED accounts so the queue only carries credentials that still work"
+          },
+          {
+            "id": "C",
+            "label": "Not yet: a rule cannot be judged until it has run for a month, and until then every detection is kept as training data for the threshold rather than read by anyone"
+          }
+        ],
+        "correct": "A",
+        "why": "A detection is right when the event it describes is worth a look. Tries of a disabled account from a studio host are worth a look; chapter 10 made it a Harden item. The rule is doing its job; the SOC’s job is the look."
+      },
+      "clue": "Two detections: pledge-desk from 198.51.100.77 at 19:58:10, and marco.vela from 10.9.4.12 at 23:50:05. Neither would have fired at more than three. Dez writes >= 2 into the description and moves on.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the first detection: 19:58 UTC, two failed gateway logins as pledge-desk from 198.51.100.77 within forty-two seconds, records evt-20189 and evt-20190. Source: this rule, whole night (the desk fills the editor text). Observation: the reset password was tried twice from the new server and held. Confidence high.",
+        "mustInclude": [
+          "evt-20189",
+          "evt-20190",
+          "19:58"
+        ]
+      },
+      "caveat": "In a tenant the rule engine evaluates windows as events arrive and may produce a detection at a different moment than this replay does; the trainer slides each key’s window from its first unconsumed event and reports one detection per key per window hit. Test the threshold against the tenant’s own month of failures before choosing it.",
+      "rule": {
+        "mustFire": {
+          "key": [
+            "pledge-desk"
+          ],
+          "at": "19:58"
+        },
+        "mustNotFire": {
+          "key": [
+            "lena.ostrowski"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C11-M03",
+      "kind": "build",
+      "mode": "rule",
+      "title": "Login, then a file, as a rule",
+      "beat": "Chapter 9's join made the gateway login and the file server one story. Dez wants it as a rule: a gateway success and a file written by the same account within an hour. The condition has a gap. Fill it so both events are required.",
+      "question": "Which accounts fire, and which of the two detections is a false positive?",
+      "concept": {
+        "title": "The join rule carries its own baseline",
+        "text": "The events section names two variables, $e1 for the gateway success and $e2 for the file, joined by $account; match groups by it over 1h. In a rule, condition must say that both are present: $e1 and $e2, which Google reads as #e1 > 0 and #e2 > 0. Run it and two accounts fire. One is lena.ostrowski at 02:14, the gateway success thirty-eight minutes before members-export.zip. The other is odalys.reyes at 23:23, a spreadsheet saved at her own desk seven minutes before she signed in from home. Chapter 9 called that pair the coincidence that teaches what the attacker's row means. In a rule it has a different name: a false positive, counted beside your detections. The test cases say lena must fire and dez.okafor must not; Odalys is yours to read and to tune out later, if the station decides the cost is worth it."
+      },
+      "explain": [
+        {
+          "part": "    $e1.metadata.event_type = \"USER_LOGIN\"\n    $e1.target.hostname = \"VPN-GW-01\"\n    $e1.security_result.action = \"ALLOW\"\n    $e1.principal.user.userid = $account\n    $e2.metadata.event_type = \"FILE_CREATION\"\n    $e2.principal.user.userid = $account",
+          "meaning": "The chapter 9 join, unchanged: two variables, one shared placeholder."
+        },
+        {
+          "part": "  match:\n    $account over 1h",
+          "meaning": "The window is the same word as in Search, and here it is what Google documents for rules: a sliding hour."
+        },
+        {
+          "part": "  condition:\n    $e1 and ___",
+          "meaning": "The gap. $e1 alone is true for every gateway success; the rule needs the second event too."
+        }
+      ],
+      "starter": "rule gateway_login_then_file {\n  meta:\n    author = \"signal desk\"\n    description = \"A gateway success and a file written by the same account within an hour\"\n    severity = \"HIGH\"\n  events:\n    $e1.metadata.event_type = \"USER_LOGIN\"\n    $e1.target.hostname = \"VPN-GW-01\"\n    $e1.security_result.action = \"ALLOW\"\n    $e1.principal.user.userid = $account\n    $e2.metadata.event_type = \"FILE_CREATION\"\n    $e2.principal.user.userid = $account\n  match:\n    $account over 1h\n  outcome:\n    $files = array($e2.target.file.full_path)\n    $login_at = earliest($e1.metadata.event_timestamp)\n    $file_at = earliest($e2.metadata.event_timestamp)\n  condition:\n    $e1 and ___\n}",
+      "reference": "rule gateway_login_then_file {\n  meta:\n    author = \"signal desk\"\n    description = \"A gateway success and a file written by the same account within an hour\"\n    severity = \"HIGH\"\n  events:\n    $e1.metadata.event_type = \"USER_LOGIN\"\n    $e1.target.hostname = \"VPN-GW-01\"\n    $e1.security_result.action = \"ALLOW\"\n    $e1.principal.user.userid = $account\n    $e2.metadata.event_type = \"FILE_CREATION\"\n    $e2.principal.user.userid = $account\n  match:\n    $account over 1h\n  outcome:\n    $files = array($e2.target.file.full_path)\n    $login_at = earliest($e1.metadata.event_timestamp)\n    $file_at = earliest($e2.metadata.event_timestamp)\n  condition:\n    $e1 and $e2\n}",
+      "hints": [
+        "The gap is the second event variable: a detection needs at least one of each.",
+        "Fill the gap with $e2, so the condition reads $e1 and $e2.",
+        "rule gateway_login_then_file {\n  meta:\n    author = \"signal desk\"\n    description = \"A gateway success and a file written by the same account within an hour\"\n    severity = \"HIGH\"\n  events:\n    $e1.metadata.event_type = \"USER_LOGIN\"\n    $e1.target.hostname = \"VPN-GW-01\"\n    $e1.security_result.action = \"ALLOW\"\n    $e1.principal.user.userid = $account\n    $e2.metadata.event_type = \"FILE_CREATION\"\n    $e2.principal.user.userid = $account\n  match:\n    $account over 1h\n  outcome:\n    $files = array($e2.target.file.full_path)\n    $login_at = earliest($e1.metadata.event_timestamp)\n    $file_at = earliest($e2.metadata.event_timestamp)\n  condition:\n    $e1 and $e2\n}"
+      ],
+      "answer": {
+        "prompt": "What clock time is in the $file_at column for odalys.reyes (HH:MM, UTC)?",
+        "value": "23:23",
+        "also": [
+          "23:23:23"
+        ],
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.user.userid": "odalys.reyes"
+          },
+          "column": "$file_at",
+          "format": "hhmm"
+        }
+      },
+      "call": {
+        "prompt": "Odalys fires because she saved a file at her desk and then signed in from home. Dez wants to add $e2.principal.hostname != \"OPS-LAPTOP-07\" to silence her. Is that the right tuning?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Yes: her laptop is a known host, excluding it removes the only false positive the rule produced tonight, and a second exclusion can be added the next time one appears"
+          },
+          {
+            "id": "B",
+            "label": "No: a rule should never exclude anything, because every exclusion is a place an attacker can stand, so keep the detection at HIGH and let the SOC close Odalys by hand"
+          },
+          {
+            "id": "C",
+            "label": "No: the attacker writes files on the server the session reached, so tune on the class (files written on workstations, or the order of the two times), not on one laptop"
+          }
+        ],
+        "correct": "C",
+        "why": "Tuning out one named laptop fixes one night. The pattern the false positive shows is a file at a workstation before a login from home; the pattern the attacker shows is a file on a server after a login from outside. Tune on the class, or keep the detection at a lower severity and let the order be read."
+      },
+      "clue": "Two detections. lena.ostrowski: gateway 02:14:33, members-export.zip on FS-01 at 02:52:18. odalys.reyes: membership-tally.xlsx at 23:23:23, gateway 23:30:45. One must-fire case met, one false positive to read. Dez writes \"fires on desk-then-home\" into the description so the next reader knows.",
+      "logIt": {
+        "kind": "pivot",
+        "prompt": "Write a Pivot: how often a legitimate desk-then-home pair (a file at a workstation followed by a gateway success by the same account within an hour) appears over thirty days, so the rule can be tuned on the class rather than on one laptop; and whether the file host (server or workstation) separates the two detections cleanly. Say why: the rule is only as good as its false-positive count on a normal month.",
+        "mustInclude": [
+          "thirty|30",
+          "odalys.reyes|OPS-LAPTOP-07|workstation"
+        ]
+      },
+      "caveat": "Google documents the two-variable join with match over N for rules and for Search on its conditions page, and the statistics page says Search does not support over; chapter 9 recorded that as a gap. In a rule the window is not in doubt: it is the sliding window the engine always uses.",
+      "rule": {
+        "mustFire": {
+          "key": [
+            "lena.ostrowski"
+          ],
+          "at": "02:14"
+        },
+        "mustNotFire": {
+          "key": [
+            "dez.okafor"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C11-M04",
+      "kind": "build",
+      "mode": "rule",
+      "title": "Say it to the SOC",
+      "beat": "The 6.4 MB that left for 198.51.100.77 at 03:40 is the kind of event a rule should carry straight to the queue. Dez has written the logic. The severity is blank, and the SOC's queue sorts by it.",
+      "question": "Fill in the severity, run the rule, and read the largest connection it found.",
+      "concept": {
+        "title": "meta is the part the engine ignores and the SOC reads",
+        "text": "author, description and severity do not change a single detection, and they are the first three lines anyone sees. author is who answers when the rule is wrong at 3 a.m. description is what a detection means, written for a reader who has never heard of Pier Nine: 'a single outbound connection over one megabyte from a gateway-assigned address', not 'the Lena thing'. severity is how fast someone should look: LOW, MEDIUM, HIGH or CRITICAL. Pick the level a detection deserves on its own, from what the rule can see, not the worst thing it could mean: one large upload from a remote session is HIGH; it would be CRITICAL only if the rule also knew the destination was hostile, and it does not. The trainer requires all three lines and refuses a severity outside the four words; a tenant is more lenient and a SOC is not."
+      },
+      "explain": [
+        {
+          "part": "  meta:\n    author = \"signal desk\"\n    description = \"A single outbound connection over one megabyte from a gateway-assigned address\"\n    severity = \"___\"",
+          "meaning": "The gap. The description already says what a detection means; the severity says how fast to read it."
+        },
+        {
+          "part": "    $e.network.sent_bytes > 1000000\n    $e.target.ip = $destination",
+          "meaning": "One connection over a megabyte, keyed by destination so one detection covers a burst of uploads to the same server."
+        },
+        {
+          "part": "  outcome:\n    $bytes = max($e.network.sent_bytes)\n    $account = array_distinct($e.principal.user.userid)",
+          "meaning": "The largest single connection in the window and whose session it was. The SOC reads these two numbers first."
+        }
+      ],
+      "starter": "rule large_upload_from_remote_session {\n  meta:\n    author = \"signal desk\"\n    description = \"A single outbound connection over one megabyte from a gateway-assigned address\"\n    severity = \"___\"\n  events:\n    $e.metadata.event_type = \"NETWORK_CONNECTION\"\n    $e.principal.ip = \"10.9.4.200\"\n    $e.network.sent_bytes > 1000000\n    $e.target.ip = $destination\n  match:\n    $destination over 1h\n  outcome:\n    $bytes = max($e.network.sent_bytes)\n    $account = array_distinct($e.principal.user.userid)\n  condition:\n    $e\n}",
+      "reference": "rule large_upload_from_remote_session {\n  meta:\n    author = \"signal desk\"\n    description = \"A single outbound connection over one megabyte from a gateway-assigned address\"\n    severity = \"HIGH\"\n  events:\n    $e.metadata.event_type = \"NETWORK_CONNECTION\"\n    $e.principal.ip = \"10.9.4.200\"\n    $e.network.sent_bytes > 1000000\n    $e.target.ip = $destination\n  match:\n    $destination over 1h\n  outcome:\n    $bytes = max($e.network.sent_bytes)\n    $account = array_distinct($e.principal.user.userid)\n  condition:\n    $e\n}",
+      "hints": [
+        "severity takes one of four words, in quotes: LOW, MEDIUM, HIGH or CRITICAL.",
+        "One large upload from a remote session, destination unknown to the rule: HIGH.",
+        "rule large_upload_from_remote_session {\n  meta:\n    author = \"signal desk\"\n    description = \"A single outbound connection over one megabyte from a gateway-assigned address\"\n    severity = \"HIGH\"\n  events:\n    $e.metadata.event_type = \"NETWORK_CONNECTION\"\n    $e.principal.ip = \"10.9.4.200\"\n    $e.network.sent_bytes > 1000000\n    $e.target.ip = $destination\n  match:\n    $destination over 1h\n  outcome:\n    $bytes = max($e.network.sent_bytes)\n    $account = array_distinct($e.principal.user.userid)\n  condition:\n    $e\n}"
+      ],
+      "answer": {
+        "prompt": "What is in the $bytes column (the number, no separators)?",
+        "value": "6480320",
+        "also": [
+          "6,480,320"
+        ],
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$bytes"
+        }
+      },
+      "call": {
+        "prompt": "Hal wants every rule in the station set to CRITICAL so nothing is missed. What is wrong with that?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Severity is a sort key for the queue; if everything is CRITICAL nothing is, and the one detection that needed reading first waits behind twenty that did not"
+          },
+          {
+            "id": "B",
+            "label": "Nothing, as long as the SOC has enough people to read them: a missed detection costs the station more than a tired analyst, and CRITICAL guarantees a read"
+          },
+          {
+            "id": "C",
+            "label": "Google rejects a rule whose severity does not match its detection volume, so a CRITICAL rule that fires often fails to compile and never reaches the queue at all"
+          }
+        ],
+        "correct": "A",
+        "why": "Severity is communication. It tells the queue what to read first. A single level carries no information, and the SOC starts ignoring the word."
+      },
+      "clue": "One detection: 198.51.100.77, $bytes 6,480,320, account lena.ostrowski, window from 03:40. Dez reads the description aloud to Hal, who has never heard of a gateway-assigned address, and rewrites it once more.",
+      "logIt": {
+        "kind": "remediation",
+        "list": "harden",
+        "prompt": "Write a Harden item: deploy large_upload_from_remote_session at severity HIGH after it has been replayed against the week-one and week-two events (must fire on the 03:40 upload, evt-20863; must stay quiet on the sponsor CDN traffic) and reviewed by the engineer. Answers: your upload evidence. Owner role: engineer. Urgency: this week.",
+        "mustInclude": [
+          "HIGH",
+          "evt-20863|03:40"
+        ]
+      },
+      "caveat": "Google’s rules accept a free-text severity in meta; the four words are the convention the SOC queue sorts by, and the trainer enforces them to teach the habit. Check your tenant’s own list before you publish.",
+      "rule": {
+        "mustFire": {
+          "key": [
+            "198.51.100.77"
+          ],
+          "at": "03:40"
+        },
+        "mustNotFire": {
+          "key": [
+            "10.9.4.50"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C11-M05",
+      "kind": "build",
+      "mode": "rule",
+      "title": "The blank hostname",
+      "beat": "Dez wants failures at the gateway keyed by the host that tried, not the account, because the attacker rotated accounts last week. He runs it. Nothing fires. The two pledge-desk failures at 19:58 are right there in Search.",
+      "question": "Why does the rule sleep through 19:58, and what one line wakes it?",
+      "concept": {
+        "title": "A match variable skips zero values until you say otherwise",
+        "text": "The gateway writes an empty principal.hostname on every remote login: the gateway does not know the name of the machine on the other end. Google's rule engine skips zero values (an empty string, a zero) as match variables unless options: allow_zero_values = true is set, so a rule keyed on $host = principal.hostname never groups the gateway events at all. The rule is silent, and silence looks like safety. Chapter 9's joins had the same property: the trainer never let a blank hostname pair with another blank hostname. In a rule you decide: set the option and the blank key becomes a detection whose key is the empty string, which tells the SOC exactly where the events came from (the gateway, which never fills the field). Leave it unset and key on something the gateway does fill, principal.ip or the account. Either choice is right if it is written down; the wrong choice is not knowing."
+      },
+      "explain": [
+        {
+          "part": "    $e.target.hostname = \"VPN-GW-01\"\n    $e.principal.hostname = $host",
+          "meaning": "Failures at the gateway, keyed by the host that tried. The gateway leaves that field blank."
+        },
+        {
+          "part": "  match:\n    $host over 10m",
+          "meaning": "A ten-minute window per host. With the key blank, no window ever opens."
+        },
+        {
+          "part": "  options:\n    allow_zero_values = ___",
+          "meaning": "The gap. true lets the empty string be a key; false (the default) keeps the rule silent on every gateway event."
+        }
+      ],
+      "starter": "rule gateway_failures_by_host {\n  meta:\n    author = \"signal desk\"\n    description = \"Two or more failed gateway logins from one host within ten minutes\"\n    severity = \"MEDIUM\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.security_result.action = \"FAIL\"\n    $e.target.hostname = \"VPN-GW-01\"\n    $e.principal.hostname = $host\n  match:\n    $host over 10m\n  outcome:\n    $failures = count($e.metadata.id)\n    $accounts = array_distinct($e.principal.user.userid)\n  condition:\n    $e and $failures >= 2\n  options:\n    allow_zero_values = ___\n}",
+      "reference": "rule gateway_failures_by_host {\n  meta:\n    author = \"signal desk\"\n    description = \"Two or more failed gateway logins from one host within ten minutes\"\n    severity = \"MEDIUM\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.security_result.action = \"FAIL\"\n    $e.target.hostname = \"VPN-GW-01\"\n    $e.principal.hostname = $host\n  match:\n    $host over 10m\n  outcome:\n    $failures = count($e.metadata.id)\n    $accounts = array_distinct($e.principal.user.userid)\n  condition:\n    $e and $failures >= 2\n  options:\n    allow_zero_values = true\n}",
+      "hints": [
+        "The option takes true or false, unquoted.",
+        "Set allow_zero_values = true and the blank hostname becomes a key.",
+        "rule gateway_failures_by_host {\n  meta:\n    author = \"signal desk\"\n    description = \"Two or more failed gateway logins from one host within ten minutes\"\n    severity = \"MEDIUM\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.security_result.action = \"FAIL\"\n    $e.target.hostname = \"VPN-GW-01\"\n    $e.principal.hostname = $host\n  match:\n    $host over 10m\n  outcome:\n    $failures = count($e.metadata.id)\n    $accounts = array_distinct($e.principal.user.userid)\n  condition:\n    $e and $failures >= 2\n  options:\n    allow_zero_values = true\n}"
+      ],
+      "answer": {
+        "prompt": "How many failures does the $failures column count for the blank-host detection?",
+        "value": "2",
+        "check": {
+          "type": "cell",
+          "row": 0,
+          "column": "$failures"
+        }
+      },
+      "call": {
+        "prompt": "The rule now fires with an empty key. Priya asks whether a detection whose host is blank is useful. What is the honest answer?",
+        "options": [
+          {
+            "id": "A",
+            "label": "No: a blank key is noise, and the rule should key on principal.ip, which the gateway fills, or on the account, so every detection names something a person can look up"
+          },
+          {
+            "id": "B",
+            "label": "Yes: blank means the gateway, so the detection says where the attempts came through; keying on the account or the address is a different rule answering a different question"
+          },
+          {
+            "id": "C",
+            "label": "Only with allow_zero_values off, because the engine then drops the gateway events and the rule covers the inside hosts cleanly, which is where a blank key would mislead"
+          }
+        ],
+        "correct": "B",
+        "why": "A blank hostname at the gateway is information: these failures came through the remote door. Keying on principal.ip or the account is also a good rule; write both if both questions matter. What is never right is a rule that is silent on the gateway and nobody knows why."
+      },
+      "clue": "With the option on, one detection: host (blank), two failures, accounts [pledge-desk], window from 19:58:10. With it off, none. Dez writes the reason into the description: \"keyed on hostname; allow_zero_values on because the gateway leaves it blank\".",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: the gateway writes an empty principal.hostname on every remote login, so any rule keyed on the hostname is silent on the gateway unless allow_zero_values is set; whether other log sources at the station also leave fields blank, and which existing rules are keyed on them, is not visible here. Why it matters: a silent rule looks like a safe night.",
+        "mustInclude": [
+          "allow_zero_values",
+          "hostname|blank"
+        ]
+      },
+      "caveat": "Google documents allow_zero_values in the rule options section; the trainer skips the empty string and zero as match keys exactly as the executor skipped them for joins in chapter 9. In a tenant, check which fields each parser leaves empty before keying a rule on them.",
+      "rule": {
+        "mustFire": {
+          "key": [
+            ""
+          ],
+          "at": "19:58"
+        },
+        "mustNotFire": {
+          "key": [
+            "PLEDGE-DESK-01"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C11-M06",
+      "kind": "solo",
+      "mode": "rule",
+      "title": "A table inside a rule",
+      "beat": "Chapter 8's privileged_accounts table says who may run as svc-playout and who granted it. Dez wants a quiet rule: whenever one of those privileged accounts signs in at the gateway, a LOW detection that carries what the account may run as and who granted it, so the reviewer does not have to open the table.",
+      "question": "Write the rule. Join the table on the account, read its other two columns in outcome, and say who granted Dez his right.",
+      "concept": {
+        "title": "A join in a rule is written with =",
+        "text": "In Search, a table column is only ever tested with in: field in %table.column. In a rule, Google documents a second form, the data-table join: $e.principal.user.userid = %privileged_accounts.account. The event joins the rows whose account column holds its value, and from then on the rule can read the joined row's other columns as outcomes: array_distinct(%privileged_accounts.may_run_as), array_distinct(%privileged_accounts.granted_by). That is enrichment inside the rule: the detection arrives with the context already on it. The trainer runs the join against the bundled table, picks the first matching row, and refuses an outcome that reads a table the events section never joined. The two test cases: dez.okafor at 21:00 must fire; lena.ostrowski must not, because she is not in the table."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "rule privileged_account_at_the_gateway {\n  meta:\n    author = \"signal desk\"\n    description = \"A privileged account signs in at the gateway; the table says what it may run as and who granted it\"\n    severity = \"LOW\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.target.hostname = \"VPN-GW-01\"\n    $e.security_result.action = \"ALLOW\"\n    $e.principal.user.userid = %privileged_accounts.account\n    $e.principal.user.userid = $account\n  match:\n    $account over 1h\n  outcome:\n    $may_run_as = array_distinct(%privileged_accounts.may_run_as)\n    $granted_by = array_distinct(%privileged_accounts.granted_by)\n    $from = array_distinct($e.principal.ip)\n  condition:\n    $e\n}",
+      "hints": [
+        "Filter gateway successes ($e.metadata.event_type, $e.target.hostname = \"VPN-GW-01\", $e.security_result.action = \"ALLOW\"), then join the account: $e.principal.user.userid = %privileged_accounts.account. Keep $e.principal.user.userid = $account as the match key over 1h.",
+        "In outcome, read the joined row: $may_run_as = array_distinct(%privileged_accounts.may_run_as) and $granted_by = array_distinct(%privileged_accounts.granted_by). condition: $e. Severity LOW.",
+        "rule privileged_account_at_the_gateway {\n  meta:\n    author = \"signal desk\"\n    description = \"A privileged account signs in at the gateway; the table says what it may run as and who granted it\"\n    severity = \"LOW\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.target.hostname = \"VPN-GW-01\"\n    $e.security_result.action = \"ALLOW\"\n    $e.principal.user.userid = %privileged_accounts.account\n    $e.principal.user.userid = $account\n  match:\n    $account over 1h\n  outcome:\n    $may_run_as = array_distinct(%privileged_accounts.may_run_as)\n    $granted_by = array_distinct(%privileged_accounts.granted_by)\n    $from = array_distinct($e.principal.ip)\n  condition:\n    $e\n}"
+      ],
+      "answer": {
+        "prompt": "What is in the $granted_by column for dez.okafor?",
+        "value": "odalys.reyes",
+        "check": {
+          "type": "cell",
+          "row": {
+            "principal.user.userid": "dez.okafor"
+          },
+          "column": "$granted_by",
+          "format": "list"
+        }
+      },
+      "call": {
+        "prompt": "Two detections, Dez at 21:00 and Odalys at 23:30, both privileged, both legitimate tonight. Why keep a rule that fires on legitimate logins?",
+        "options": [
+          {
+            "id": "A",
+            "label": "At LOW it is a review log, not an alarm: a privileged account from outside is worth a line in the morning, and the joined columns make the line readable without the table"
+          },
+          {
+            "id": "B",
+            "label": "It should not be kept: a rule that fires on legitimate events is by definition a false-positive generator and belongs in Search, where an analyst runs it on demand"
+          },
+          {
+            "id": "C",
+            "label": "Every detection raises the station’s detection count, which is how the SOC’s coverage is measured and reported to the board at the end of each quarter"
+          }
+        ],
+        "correct": "A",
+        "why": "Severity is what makes this rule right. A LOW detection with the privilege and the grantor on it is a morning review line; the same rule at HIGH would be noise. The rule is also where the station will notice a privileged account it did not expect from outside."
+      },
+      "clue": "Two detections: dez.okafor at 21:00:10 from 198.51.100.200, may run as svc-playout, granted by odalys.reyes; odalys.reyes at 23:30:45 from 198.51.100.140, granted by the board. Lena does not appear: her account is not in the table.",
+      "logIt": {
+        "kind": "evidence",
+        "prompt": "Write an Evidence entry for the baseline detection: 21:00 UTC, dez.okafor succeeds at VPN-GW-01 from 198.51.100.200, record evt-20294; the privileged_accounts table joins the row that says he may run as svc-playout, granted by odalys.reyes. Source: this rule, whole night. Observation: a privileged account from outside, with its grant beside it. Confidence high.",
+        "mustInclude": [
+          "evt-20294",
+          "dez.okafor",
+          "odalys.reyes"
+        ]
+      },
+      "caveat": "Google documents the data-table join for the rule engine; the trainer runs it against the bundled table and reads the first matching row. In a tenant the table has an owner and a change history, and a rule that reads it should name both in its description.",
+      "rule": {
+        "mustFire": {
+          "key": [
+            "dez.okafor"
+          ],
+          "at": "21:00"
+        },
+        "mustNotFire": {
+          "key": [
+            "lena.ostrowski"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C11-M07",
+      "kind": "solo",
+      "mode": "rule",
+      "title": "Tuning: the engineer’s maintenance",
+      "beat": "Dez's first draft of the run-as rule fires on anyone who runs as svc-playout. It caught the 02:31 denial on FS-01. It also caught Dez himself at 21:05, restarting the playout engine from home, which he does most weeks. The noisy rule is in the question. Tune it.",
+      "question": "Here is the noisy rule:\n\nrule runas_service_account {\n  meta:\n    author = \"signal desk\"\n    description = \"Any account runs as svc-playout\"\n    severity = \"HIGH\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.target.user.userid = \"svc-playout\"\n    $e.principal.user.userid = $account\n  match:\n    $account over 1h\n  outcome:\n    $result = array_distinct($e.security_result.action)\n    $host = array_distinct($e.target.hostname)\n  condition:\n    $e\n}\n\nRewrite it so it still fires on lena.ostrowski at 02:31 and stays quiet on dez.okafor, using the privileged_accounts table rather than his name.",
+      "concept": {
+        "title": "A false positive you can name is a tuning you can write",
+        "text": "The must-not-fire case is the discipline. Dez's maintenance is not an exception to hard-code by name (not $e.principal.user.userid = \"dez.okafor\" fixes one engineer and breaks the day he is replaced); it is a class: accounts the station has granted the right, which is exactly what the privileged_accounts table holds. not $e.principal.user.userid in %privileged_accounts.account turns the table into the rule's allowlist, and the allowlist has an owner, a source column and a change history, which a name in a rule never has. The tuning goes in the events section where the next reader sees it, and the description says what was tuned out and why. Then the two cases are run again: lena at 02:31 must still fire; Dez must not."
+      },
+      "explain": [],
+      "starter": "",
+      "reference": "rule runas_service_account_not_granted {\n  meta:\n    author = \"signal desk\"\n    description = \"An account the privileged_accounts table does not list runs as svc-playout\"\n    severity = \"HIGH\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.target.user.userid = \"svc-playout\"\n    not $e.principal.user.userid in %privileged_accounts.account\n    $e.principal.user.userid = $account\n  match:\n    $account over 1h\n  outcome:\n    $result = array_distinct($e.security_result.action)\n    $host = array_distinct($e.target.hostname)\n  condition:\n    $e\n}",
+      "hints": [
+        "Keep the events lines that find a run-as of svc-playout and the $account key over 1h. Add one line that excludes accounts the table lists: not $e.principal.user.userid in %privileged_accounts.account.",
+        "Name the rule for what it now finds (runas_service_account_not_granted), say in the description that granted accounts are tuned out through the table, and keep condition: $e.",
+        "rule runas_service_account_not_granted {\n  meta:\n    author = \"signal desk\"\n    description = \"An account the privileged_accounts table does not list runs as svc-playout\"\n    severity = \"HIGH\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.target.user.userid = \"svc-playout\"\n    not $e.principal.user.userid in %privileged_accounts.account\n    $e.principal.user.userid = $account\n  match:\n    $account over 1h\n  outcome:\n    $result = array_distinct($e.security_result.action)\n    $host = array_distinct($e.target.hostname)\n  condition:\n    $e\n}"
+      ],
+      "answer": {
+        "prompt": "How many detections does the tuned rule produce?",
+        "value": "1",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "Odalys asks why the tuning uses the table rather than simply excluding dez.okafor. What is the reason that survives Dez’s replacement?",
+        "options": [
+          {
+            "id": "A",
+            "label": "The table form compiles faster in the rule engine, and a long list of excluded names would reach the rule’s size limit before the station ran out of engineers"
+          },
+          {
+            "id": "B",
+            "label": "Google forbids literal account names in the events section of a rule, so the table is the only form that compiles, whatever the station would prefer to write there"
+          },
+          {
+            "id": "C",
+            "label": "A name in a rule is an exception nobody reviews; a table row has an owner, a source and a change history, and the day Dez leaves the row goes and the rule is right again"
+          }
+        ],
+        "correct": "C",
+        "why": "Tuning through a table makes the exception a managed object instead of a line someone forgets. The rule stays the same; the station changes the table when the people change."
+      },
+      "clue": "One detection: lena.ostrowski at 02:31:05, FAIL, on FS-01. Dez is gone from the output and still in the table. He reads the description back: \"granted accounts tuned out through privileged_accounts\", and adds the table’s owner.",
+      "logIt": {
+        "kind": "hypothesis",
+        "prompt": "Write or update a Hypothesis, status supported: the 02:31 run-as denial on FS-01 (record evt-20796) is the remote session reaching for a privilege the account was never granted, and the engineer’s 21:05 run-as on AUTOMATION-01 (record evt-20298) is granted maintenance; the privileged_accounts table separates the two. Supporting refs: your run-as evidence. Test next: the tuned rule replayed over thirty days of events.",
+        "mustInclude": [
+          "privileged_accounts",
+          "evt-20796"
+        ]
+      },
+      "caveat": "In a tenant, a rule that reads a data table depends on the table being maintained; put the table’s owner in the rule’s description and the table’s change log in the review. A stale allowlist is a silent rule.",
+      "rule": {
+        "mustFire": {
+          "key": [
+            "lena.ostrowski"
+          ],
+          "at": "02:31"
+        },
+        "mustNotFire": {
+          "key": [
+            "dez.okafor"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C11-M08",
+      "kind": "watch",
+      "mode": "rule",
+      "title": "Same data, two counts",
+      "beat": "Dez puts two screens side by side: the failures rule with a three-minute window, and the same question in Search with by 3m. Same data, same threshold, same three minutes. The numbers do not match.",
+      "question": "Run the rule. How many detections does it produce, and why is that not the Search count?",
+      "concept": {
+        "title": "Different engines, different windows",
+        "text": "Google's page on Search compared with rule results says it plainly: Search and rules run on different engines, evaluate different time windows, and handle repeated fields and deduplication differently, so counts differ. Here is the smallest version of it. marco.vela's two failures are at 23:50:05 and 23:52:30. Search's by 3m cuts the night at clock boundaries: one bucket ends at 23:51:00 and the next begins, so the two failures land in different buckets and neither reaches the threshold. The rule slides a three-minute window from the first failure, 23:50:05 to 23:53:05, holds both, and fires. pledge-desk's two failures are forty-two seconds apart and both engines catch them. So: Search, 1 row; the rule, 2 detections. Neither is wrong. They answer different questions, and the one that matters for a detection is the rule's, which is why a rule is tested on its own detections. Switch the desk to Search mode and run the by 3m query yourself; the mode switch above the editor is there for exactly this."
+      },
+      "explain": [
+        {
+          "part": "  match:\n    $account over 3m",
+          "meaning": "A sliding three-minute window per account. The engine opens it at the first failure and asks what falls inside."
+        },
+        {
+          "part": "match:\n  $account by 3m",
+          "meaning": "The Search form, for comparison: clock-aligned buckets, 23:48 to 23:51 and 23:51 to 23:54. Run it in Search mode and read one row."
+        },
+        {
+          "part": "  condition:\n    $e and $failures >= 2",
+          "meaning": "The same threshold in both. The window is the only difference, and it is enough."
+        }
+      ],
+      "starter": "rule two_failures_in_three_minutes {\n  meta:\n    author = \"signal desk\"\n    description = \"Two or more failed logins by one account within three minutes\"\n    severity = \"MEDIUM\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.security_result.action = \"FAIL\"\n    $e.principal.user.userid = $account\n  match:\n    $account over 3m\n  outcome:\n    $failures = count($e.metadata.id)\n    $first = earliest($e.metadata.event_timestamp)\n  condition:\n    $e and $failures >= 2\n}",
+      "reference": "rule two_failures_in_three_minutes {\n  meta:\n    author = \"signal desk\"\n    description = \"Two or more failed logins by one account within three minutes\"\n    severity = \"MEDIUM\"\n  events:\n    $e.metadata.event_type = \"USER_LOGIN\"\n    $e.security_result.action = \"FAIL\"\n    $e.principal.user.userid = $account\n  match:\n    $account over 3m\n  outcome:\n    $failures = count($e.metadata.id)\n    $first = earliest($e.metadata.event_timestamp)\n  condition:\n    $e and $failures >= 2\n}",
+      "hints": [
+        "The results bar counts detections; each row is one account in one window.",
+        "In Search mode, the by 3m query with the same threshold returns one row.",
+        "The rule returns one more detection than Search: the account whose two failures straddle a clock boundary."
+      ],
+      "answer": {
+        "prompt": "How many detections does the rule produce?",
+        "value": "2",
+        "check": {
+          "type": "count"
+        }
+      },
+      "call": {
+        "prompt": "An analyst proposes validating every new rule by writing it as a Search query and checking the row count matches. What is wrong with that method?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Nothing; it is the standard method, a mismatch means the rule has a syntax error the Search form reveals, and a match means the rule can go live without a replay"
+          },
+          {
+            "id": "B",
+            "label": "The engines evaluate different windows and count differently by design, so a matching count proves little and a mismatch proves nothing; replay the rule and read its detections"
+          },
+          {
+            "id": "C",
+            "label": "Search is the slower engine, so the comparison would take too long on a month of data, and the rule should instead be validated against last week’s ticket by hand"
+          }
+        ],
+        "correct": "B",
+        "why": "Google’s own page says the counts differ. The Search form is where an idea is explored; the rule’s detections, replayed against known cases, are where it is tested."
+      },
+      "clue": "Two detections, pledge-desk at 19:58:10 and marco.vela at 23:50:05. In Search mode, by 3m with the same threshold: one row, pledge-desk. Dez writes \"counts will not match Search; tested by replay\" into the description of every rule in the chapter.",
+      "logIt": {
+        "kind": "gap",
+        "prompt": "Write a Gap: on the same data, the rule over 3m produces two detections where Search by 3m produces one row, because the rule slides a window and Search cuts clock buckets; Google says the two engines differ in windows, repeated fields and deduplication, and which tenant behaviours differ beyond the window is not visible here. Why it matters: a rule cannot be validated by its Search count.",
+        "mustInclude": [
+          "by 3m|bucket|clock",
+          "over 3m|sliding|slides"
+        ]
+      },
+      "caveat": "This is the one documented difference the trainer can show: the window. Repeated fields and deduplication differ too, and the flat dataset here cannot show them. Replay in the tenant is the test.",
+      "rule": {
+        "mustFire": {
+          "key": [
+            "marco.vela"
+          ],
+          "at": "23:50"
+        },
+        "mustNotFire": {
+          "key": [
+            "lena.ostrowski"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C11-M09",
+      "kind": "read",
+      "brief": "casebook",
+      "title": "Deploy, replay, approve",
+      "beat": "Tuesday, 16:30. Six rules on Dez's screen, each with a must-fire record and a must-not-fire record beside it. Odalys asks the question that ends the chapter: 'Who says yes, and what do they look at?' Then compare your casebook with the model.",
+      "question": "What has to be true before a rule is turned on, and what does the handoff that proposes it carry?",
+      "concept": {
+        "title": "A rule is approved on evidence, like a finding",
+        "text": "Deploying a rule is three steps and a signature. Replay: run the rule against historical events (the tenant calls it a retrohunt) and read every detection; the must-fire records have to appear, the must-not-fire records have to be absent, and everything else is read and either accepted as a true positive worth a look or tuned out in the events section with the reason in the description. Severity and owner: meta carries both, and the owner is a role that will still exist next year. Approval: the engineer who owns detections reviews the rule text, the replay output and the two cases, and the station manager accepts the alert volume the SOC will carry. Then it goes live, and its first week of detections is read against the replay. The handoff that proposes rules therefore carries, per rule: the name, the severity, the question it answers in one sentence, the must-fire record and the must-not-fire record from this course's data, the false-positive count on the replay, and what was tuned out and why. A rule proposed without its two cases is an idea; with them, it is a change request."
+      },
+      "explain": [
+        {
+          "part": "Facts",
+          "meaning": "failures_in_five_minutes: fires on pledge-desk at 19:58 (evt-20189, evt-20190) and marco.vela at 23:50 (evt-20972, evt-20973); quiet on lena.ostrowski. gateway_login_then_file: fires on lena.ostrowski at 02:14 (evt-20765, evt-20820) and on odalys.reyes at 23:23 (evt-20398, evt-20420), a desk-then-home false positive; quiet on dez.okafor. large_upload_from_remote_session: fires on 198.51.100.77 at 03:40 (evt-20863, 6,480,320 bytes); quiet on 10.9.4.50. gateway_failures_by_host: silent until allow_zero_values is set, then fires on the blank host at 19:58; quiet on PLEDGE-DESK-01. privileged_account_at_the_gateway: fires on dez.okafor at 21:00 (evt-20294, granted by odalys.reyes) and odalys.reyes at 23:30, by design at LOW; quiet on lena.ostrowski. runas_service_account_not_granted: fires on lena.ostrowski at 02:31 (evt-20796); quiet on dez.okafor through the privileged_accounts table. two_failures_in_three_minutes: two detections where Search by 3m returns one row."
+        },
+        {
+          "part": "Hypotheses",
+          "meaning": "The rules proposed describe the week-two path end to end: a reused door tried quietly, a login followed by a file on the server, a large upload, a privilege reached for and refused. A rule tuned to Pledge Night’s burst would have slept through week two; thresholds are set from both weeks, not one. Replay on a normal month will show the desk-then-home pair and the engineer’s maintenance as the recurring false positives."
+        },
+        {
+          "part": "Gaps",
+          "meaning": "No rule has been compiled or replayed in a tenant; the trainer’s sliding window is a model of the engine, not the engine. Repeated fields and deduplication differ between Search and rules in ways this flat dataset cannot show. The desk-then-home false-positive rate over thirty days. Whether other parsers at the station leave fields blank that rules are keyed on. The entity-context detections from chapter 10 (a login by a terminated account, a gateway success by an account marked remote_access no) are proposed in words only; rule mode here does not run entity joins."
+        },
+        {
+          "part": "Determination",
+          "meaning": "Unchanged from Monday: confirmed incident, high confidence. What changes is what the station can do about the next one: six rules, each with a must-fire and a must-not-fire record from this data, ready for replay and review."
+        },
+        {
+          "part": "Remediation",
+          "meaning": "Harden: deploy large_upload_from_remote_session (HIGH), runas_service_account_not_granted (HIGH), failures_in_five_minutes (MEDIUM), gateway_login_then_file (MEDIUM, after the desk-then-home class is tuned or accepted) and privileged_account_at_the_gateway (LOW, review line) after replay against week one, week two and thirty normal days; owner engineer, approved by the station manager for alert volume. Keep gateway_failures_by_host as a second key on the gateway failures with allow_zero_values on and the reason in its description. Put the privileged_accounts table under change control with an owner, since two rules now read it. Write the two entity-context detections as rules in the tenant where entity joins run."
+        },
+        {
+          "part": "Handoff",
+          "meaning": "Problem: the week-two path was found by hand in Search and is not yet watched by any rule. Assets and accounts: VPN-GW-01, FS-01, AUTOMATION-01, the privileged_accounts table, the gateway-assigned range from 10.9.4.200. Controls: the Harden list. Detections, as rules with their cases: failures_in_five_minutes (must fire pledge-desk 19:58, must not lena.ostrowski); gateway_login_then_file (must fire lena.ostrowski 02:14, must not dez.okafor; one known false positive, odalys.reyes desk-then-home); large_upload_from_remote_session (must fire 198.51.100.77 03:40, must not 10.9.4.50); gateway_failures_by_host with allow_zero_values (must fire the blank host 19:58, must not PLEDGE-DESK-01); privileged_account_at_the_gateway at LOW (must fire dez.okafor 21:00, must not lena.ostrowski); runas_service_account_not_granted (must fire lena.ostrowski 02:31, must not dez.okafor). Acceptance: each rule replayed against the two weeks fires on its must-fire record, stays quiet on its must-not-fire record, and its remaining detections are listed and accepted; severity and owner set in meta; the engineer approves the text and the replay, the station manager the volume. Open: the tenant replay itself; the desk-then-home rate; the entity-context rules; the two engines’ differences beyond the window."
+        }
+      ],
+      "starter": "",
+      "reference": null,
+      "hints": [],
+      "answer": null,
+      "call": {
+        "prompt": "Dez has replayed a rule: the must-fire record appears, the must-not-fire record does not, and there are forty other detections he has not read. Can it go live?",
+        "options": [
+          {
+            "id": "A",
+            "label": "Not yet: the two cases are necessary, not sufficient; the forty are read first, each accepted as worth a look or tuned out with the reason written down, then the volume is approved"
+          },
+          {
+            "id": "B",
+            "label": "Yes: both test cases pass and the forty detections are the rule working; the SOC will say within a week whether they are noise, and the threshold can move at that point"
+          },
+          {
+            "id": "C",
+            "label": "No, and the rule should be discarded: forty detections on a replay means the logic is wrong, and a different approach is needed before any more time is spent on this one"
+          }
+        ],
+        "correct": "A",
+        "why": "The two cases prove the rule can see what it must and ignore what it must; they say nothing about the forty. Those are read, and the SOC agrees to carry what is left. Discarding a rule for being noisy before reading the noise throws away the tuning the noise would have taught."
+      },
+      "clue": "Odalys signs the Harden list with one change: \"approved by the station manager for alert volume\" under every rule, and her initials beside the engineer’s. Dez starts the replay against week one. The first detection is 19:05:10, Pledge Night, pledge-desk from 198.51.100.23, and the room is quiet for a moment.",
+      "logIt": {
+        "kind": "handoff",
+        "prompt": "Rewrite the Handoff ticket as a detection proposal. Press Assemble from casebook, then edit: the problem statement says the week-two path is found by hand and not yet watched; detection ideas list the rules by name with each one’s must-fire record and must-not-fire key (failures_in_five_minutes with evt-20189 and lena.ostrowski; gateway_login_then_file with evt-20820 and dez.okafor; large_upload_from_remote_session with evt-20863 and 10.9.4.50; runas_service_account_not_granted with evt-20796 and dez.okafor; privileged_account_at_the_gateway at LOW); acceptance criteria say each rule is replayed, fires on its must-fire record, stays quiet on its must-not-fire key, has its other detections read, and is approved by the engineer for the text and the station manager for the volume; open questions include the tenant replay and the entity-context rules.",
+        "mustInclude": [
+          "evt-20863",
+          "must not|must-not|stays quiet",
+          "replay"
+        ]
+      },
+      "caveat": "Fiction again, with one real habit: a detection is a change to what the SOC will carry, and it is approved on evidence, like a finding. The course that follows this one writes the acceptance tests and the controls these rules sit beside."
+    }
+  ]
+}
