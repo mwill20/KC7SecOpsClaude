@@ -4,7 +4,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseSearch } from '../site/engine/parser.js';
 import { execute } from '../site/engine/executor.js';
-import { runQuery, compareResults, normalizeAnswer } from '../site/engine/grader.js';
+import { runQuery, compareResults, normalizeAnswer, runFor, gradeQuery } from '../site/engine/grader.js';
+import { gradeRuleCases } from '../site/engine/rules.js';
 import { LIST_TYPES, ENTITY_TYPES, EMPLOYMENT_STATUSES, ACCOUNT_TYPES, ENTITY_ID_PREFIX } from '../site/engine/catalog.js';
 import { guardRegex, parseCidr } from '../site/engine/safety.js';
 
@@ -53,7 +54,8 @@ export const ctxFor = (content, caseId = null) => {
   return { lists: content?.lists?.lists ?? [], tables: content?.tables?.tables ?? [], entities: c ? entitiesFor(all, caseWindow(c)) : all };
 };
 export function deriveAnswer(mission, events, ctx = {}) {
-  const r = execute(parseSearch(mission.reference, ctx), events, null, ctx.entities ?? []);
+  // A rule mission's answer is read from its detections (count, cell, field); a Search mission's from its rows.
+  const r = mission.mode === 'rule' ? (() => { const x = runFor(mission, mission.reference, events, null, ctx); if (!x.ok) throw new Error('REFERENCE_BROKEN:' + x.code); return x.result; })() : execute(parseSearch(mission.reference, ctx), events, null, ctx.entities ?? []);
   const c = mission.answer.check;
   if (c.type === 'count') return String(r.count);
   if (c.type === 'distinct') return String(new Set(r.rows.map(x => x[c.field])).size);
@@ -99,6 +101,27 @@ export function validateLogIt(li, where, eventIds) {
 // desk (Watch, Build, Your turn). Read missions carry no desk and frame the chapter, so they sit outside the ceiling.
 // Every chapter after the first needs DENSITY.solo Your-turn missions; the first chapter may have one.
 export const DENSITY = Object.freeze({ min: 7, maxDesk: 8, solo: 2, soloFirst: 1 });
+
+// A rule mission (mode "rule") carries its two test cases: rule.mustFire = { key: [one value per match key], at: "HH:MM" }
+// and rule.mustNotFire = { key: [...] }. The reference rule must fire on the first and stay quiet on the second; the
+// learner's rule is graded the same way. ctx.window is the case window the clock time is read in.
+export function validateRuleMission(m, where, events, ctx) {
+  const problems = [];
+  const r = m.rule;
+  if (!r || typeof r !== 'object' || !r.mustFire || !Array.isArray(r.mustFire.key) || !r.mustFire.key.length || !/^\d{2}:\d{2}$/.test(String(r.mustFire.at ?? '')) || !r.mustNotFire || !Array.isArray(r.mustNotFire.key) || !r.mustNotFire.key.length) return [`${where}: a rule mission needs rule.mustFire { key, at HH:MM } and rule.mustNotFire { key }`];
+  if (r.mustFire.key.length !== r.mustNotFire.key.length) problems.push(`${where}: mustFire and mustNotFire keys differ in length`);
+  if (JSON.stringify(r.mustFire.key) === JSON.stringify(r.mustNotFire.key)) problems.push(`${where}: mustFire and mustNotFire name the same key`);
+  const ref = runFor(m, m.reference, events, null, ctx);
+  if (!ref.ok) return [...problems, `${where}: reference rule does not run (${ref.code})`];
+  if (ref.result.rule.keys.length !== r.mustFire.key.length) problems.push(`${where}: the reference groups by ${ref.result.rule.keys.length} keys but the test cases name ${r.mustFire.key.length}`);
+  const g = gradeRuleCases(ref.result, r, ctx.window);
+  if (!g.correct) problems.push(`${where}: the reference rule fails its own test cases (${g.reason})`);
+  // the must-not-fire key must be a key the reference's events could form, or the test is empty
+  const names = ref.result.rule.keys;
+  const present = ref.result.rows.some(row => names.every((n, i) => String(row[n]) === String(r.mustNotFire.key[i])));
+  if (present) problems.push(`${where}: the reference fires on the must-not-fire key`);
+  return problems;
+}
 
 // content/casebook.json: the FreeForm template (3 to 40 short lines, each ending in a colon so it reads as a prompt)
 // and the teaching line shown above the page.
@@ -237,10 +260,10 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
   if (entities !== undefined) problems.push(...validateEntities(entities));
   if (lists && tables && lists.lists?.some(l => tables.tables?.some(t => t.name === l.name))) problems.push('lists.json and tables.json share a name; a learner could not tell %name from %name.column');
   const content = { cases, lists, tables, entities: problems.some(p => p.startsWith('entities.json')) ? undefined : entities };
-  const ctxOf = {}; const ctxForCase = id => (ctxOf[id] ??= ctxFor(content, cases?.some(c => c.id === id && c.window) ? id : null));
-  const ids = new Set();
   // Accept a single dataset (earlier branches) as the first case's.
   const sets = datasets?.events ? { [cases[0].id]: datasets } : datasets ?? {};
+  const ctxOf = {}; const ctxForCase = id => (ctxOf[id] ??= { ...ctxFor(content, cases?.some(c => c.id === id && c.window) ? id : null), window: sets[id]?.window ?? null });
+  const ids = new Set();
   const chapterIds = new Set(chapters.map(ch => ch.id));
   if (!Array.isArray(cases) || !cases.length) problems.push('case.json: cases array');
   for (const c of cases ?? []) problems.push(...validateCase(c, chapterIds, sets[c.id]));
@@ -271,17 +294,22 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
       if (m.logIt?.kind === 'scope' && ch.missions.indexOf(m) > 1) problems.push(`${where}: a Scope Log it belongs to the first or second mission of a case's first chapter`);
       if (m.kind === 'read') { if (m.reference) problems.push(`${where}: read mission has a reference`); continue; }
       if (!m.reference) { problems.push(`${where}: missing reference`); continue; }
-      const ref = runQuery(m.reference, data.events, null, ctx);
+      if (m.mode !== undefined && m.mode !== 'rule') problems.push(`${where}: mode must be "rule" or absent`);
+      const isRule = m.mode === 'rule';
+      if (isRule) { const rp = validateRuleMission(m, where, data.events, ctx); if (rp.length) { problems.push(...rp); continue; } }
+      else if (m.rule !== undefined) problems.push(`${where}: rule test cases belong to a mission in rule mode`);
+      const ref = runFor(m, m.reference, data.events, null, ctx);
       if (!ref.ok) { problems.push(`${where}: reference does not run (${ref.code})`); continue; }
+      // A text passes when it grades correct in the mission's mode: the same evidence as the reference for a Search
+      // mission, the must-fire and must-not-fire cases for a rule mission.
+      const passes = text => gradeQuery(text, m, data.events, null, ctx).status === 'correct';
       if (m.hints.length !== 3) problems.push(`${where}: expected 3 hints`);
       if (m.kind !== 'watch') { // watch missions already show the full query; their hints are reading prompts
-        const full = runQuery(m.hints[2], data.events, null, ctx);
-        if (!full.ok || !compareResults(full.result, ref.result).correct) problems.push(`${where}: hint 3 is not a passing answer`);
+        if (!passes(m.hints[2])) problems.push(`${where}: hint 3 is not a passing answer`);
       }
       if (m.kind === 'build') {
         if (!m.starter.includes('___')) problems.push(`${where}: build starter has no gap`);
-        const st = runQuery(m.starter, data.events, null, ctx);
-        if (st.ok && compareResults(st.result, ref.result).correct) problems.push(`${where}: starter already passes`);
+        if (passes(m.starter)) problems.push(`${where}: starter already passes`);
       }
       if (m.kind === 'solo' && m.starter !== '') problems.push(`${where}: solo starter must be empty`);
       if (m.kind === 'watch' && m.starter !== m.reference) problems.push(`${where}: watch starter should equal reference`);
@@ -296,8 +324,7 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
   // missions ask for every casebook entry kind, so a fresh casebook fills from Scope to Handoff.
   for (const c of cases ?? []) {
     const ms = chapters.filter(ch => (c.chapters ?? []).includes(ch.id)).flatMap(ch => ch.missions);
-    const briefs = ms.filter(m => m.brief === 'casebook');
-    if (briefs.length !== 1 || ms.at(-1)?.brief !== 'casebook') problems.push(`case ${c.id}: the last mission must be the one brief mission`);
+    if (ms.at(-1)?.brief !== 'casebook') problems.push(`case ${c.id}: the last mission must be a brief mission`);
     const kinds = new Set(ms.map(m => m.logIt?.kind).filter(Boolean));
     for (const k of LOGIT_KINDS) if (!kinds.has(k)) problems.push(`case ${c.id}: no mission asks for a ${k} entry`);
     if (ms.findIndex(m => m.logIt?.kind === 'scope') > 1) problems.push(`case ${c.id}: the Scope must be asked for at the start`);

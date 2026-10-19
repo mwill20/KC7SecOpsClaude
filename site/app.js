@@ -1,6 +1,7 @@
 import { CONTENT, DATASETS, ENTITIES } from './bundle.js';
 import { EVENT_FIELDS, ENTITY_FIELDS, DOCS, FUNCTIONS, LISTS_RETIRE } from './engine/catalog.js';
 import { runQuery, gradeQuery, gradeAnswer, gradeCall, POINTS } from './engine/grader.js';
+import { runRule } from './engine/rules.js';
 import { describe } from './ui/messages.js';
 import { createStore, CASEBOOK_POINTS } from './ui/progress.js';
 import { el, clear, resultsTable, rawRecord, fmtNum, fmtBytes } from './ui/render.js';
@@ -57,7 +58,11 @@ const hhmm = seconds => new Date(seconds * 1000).toISOString().slice(11, 16);
 
 // Per-mission working state lives only in memory and only for this tab.
 const session = new Map();
-const sess = id => { if (!session.has(id)) session.set(id, { text: null, rangeId: 'all', run: null, query: null, answer: null, call: null, hint: 0, picked: null }); return session.get(id); };
+// mode: the desk's parser, 'search' or 'rule'; a mission in rule mode (m.mode === 'rule') starts the desk in Rule mode.
+const sess = id => { if (!session.has(id)) session.set(id, { text: null, rangeId: 'all', run: null, query: null, answer: null, call: null, hint: 0, picked: null, mode: null }); return session.get(id); };
+const MODE_LABEL = { search: 'Search (YARA-L 2.0 Search query)', rule: 'Rule (YARA-L 2.0 detection rule, trainer subset)' };
+// A rule test case as the lesson and the feedback name it: one value per match key, a blank key spelled out.
+const keyText = key => (key ?? []).map(v => (v === '' ? '(blank)' : String(v))).join(', ');
 const rangeFor = (caseId, id) => { const c = CASE_BY_ID.get(caseId); const w = windowOf(caseId); const r = c.ranges.find(x => x.id === id) ?? c.ranges[0]; return { start: w.start + r.start, end: w.start + r.end }; };
 
 const app = document.getElementById('main');
@@ -280,6 +285,8 @@ function skillsCard(c = CASE) {
 function missionPage(m) {
   const s = sess(m.id);
   if (s.text === null) s.text = m.starter ?? '';
+  if (s.mode === null) s.mode = m.mode === 'rule' ? 'rule' : 'search';
+  const isRule = m.mode === 'rule';
   const chapter = CHAPTERS.find(x => x.id === m.chapterId); const c = CASE_BY_ID.get(m.caseId);
   const EVENTS = eventsOf(m.caseId); const CTX = ctxFor(m.caseId);
   const order = MISSIONS.map(x => x.id); const at = order.indexOf(m.id);
@@ -313,8 +320,9 @@ function missionPage(m) {
       el('h1', { text: m.title }),
       el('p', { class: 'beat', text: m.beat }),
       el('div', { class: 'question', text: m.question })),
+    isRule ? testCasesCard(m) : null,
     el('section', { class: 'card concept' }, el('div', { class: 'eyebrow', text: 'Think like an analyst' }), el('h2', { class: 'sub', text: m.concept.title }), el('p', { text: m.concept.text })),
-    m.brief === 'casebook' ? briefCard(m) : m.explain?.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: m.kind === 'read' ? 'Side by side' : 'Read the query' }),
+    m.brief === 'casebook' ? briefCard(m) : m.explain?.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: m.kind === 'read' ? 'Side by side' : isRule ? 'Read the rule' : 'Read the query' }),
       el('ul', { class: 'explain' }, m.explain.map(x => el('li', {}, el('code', { text: x.part }), el('span', { text: x.meaning }))))) : null,
     m.hints.length ? el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Stuck?' }), hintsBox) : null,
     clueBox,
@@ -332,7 +340,7 @@ function missionPage(m) {
   let doneBefore = isDone(m);
   const paintScoreBox = () => {
     clear(scorebox); const r = store.get(m.id);
-    if (m.kind === 'build' || m.kind === 'solo') scorebox.append(el('span', { class: r.q ? 'on' : '', text: `Query ${r.q}/${POINTS.query}` }));
+    if (m.kind === 'build' || m.kind === 'solo') scorebox.append(el('span', { class: r.q ? 'on' : '', text: `${isRule ? 'Rule' : 'Query'} ${r.q}/${POINTS.query}` }));
     if (m.kind !== 'read') scorebox.append(el('span', { class: r.a ? 'on' : '', text: `Answer ${r.a}/${POINTS.answer}` }));
     scorebox.append(el('span', { class: r.c ? 'on' : '', text: `Analyst call ${r.c}/${POINTS.call}` }));
     if (m.logIt) scorebox.append(el('span', { class: r.cb ? 'on' : '', text: `Casebook ${r.cb}/${CASEBOOK_POINTS}` }));
@@ -353,21 +361,28 @@ function missionPage(m) {
     if (!run.ok) return;
     const r = run.result;
     const range = c.ranges.find(x => x.id === s.rangeId);
+    // Detections (rule mode) are summarised by the rule: how many fired, over how many events, with the window and severity.
     const head = el('div', { class: 'summary' },
-      el('span', { text: r.kind === 'events' ? `${fmtNum(r.count)} event${r.count === 1 ? '' : 's'}` : r.kind === 'entities' ? `${fmtNum(r.count)} entity record${r.count === 1 ? '' : 's'}` : `${fmtNum(r.count)} row${r.count === 1 ? '' : 's'} · ${fmtNum(r.scanned)} ${r.source === 'entities' ? 'records' : 'events'} summarised` }),
-      el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') + (r.deduped ? ' · deduplicated' : '') + (r.joined ? ` · joined ${r.joined.join(' and ')}` + (r.window ? r.window.kind === 'over' ? ` within ${fmtWindow(r.window.seconds)}` : ` by ${fmtWindow(r.window.seconds)} buckets` : '') : '') }));
+      el('span', { text: r.kind === 'events' ? `${fmtNum(r.count)} event${r.count === 1 ? '' : 's'}` : r.kind === 'entities' ? `${fmtNum(r.count)} entity record${r.count === 1 ? '' : 's'}` : r.kind === 'detections' ? `${fmtNum(r.count)} detection${r.count === 1 ? '' : 's'} · ${fmtNum(r.scanned)} events scanned` : `${fmtNum(r.count)} row${r.count === 1 ? '' : 's'} · ${fmtNum(r.scanned)} ${r.source === 'entities' ? 'records' : 'events'} summarised` }),
+      el('span', { text: range.label + (r.count > 200 ? ' · showing first 200' : '') + (r.deduped ? ' · deduplicated' : '') + (r.joined ? ` · joined ${r.joined.join(' and ')}` + (r.window ? r.window.kind === 'over' ? ` within ${fmtWindow(r.window.seconds)}` : ` by ${fmtWindow(r.window.seconds)} buckets` : '') : '') + (r.kind === 'detections' ? ` · rule ${r.rule.name} · ${String(r.rule.meta.severity).toUpperCase()} · ${r.rule.keys.join(', ')} over ${fmtWindow(r.rule.window)}` + (r.rule.options?.allow_zero_values ? ' · allow_zero_values' : '') : '') }));
     const raw = el('div', { hidden: true, role: 'region', 'aria-label': 'Full record', tabindex: -1 });
     // Opening a record moves focus into the region; closing it returns focus to the button that opened it.
     // Insert from results: the selected record's time and metadata.id go into the Evidence draft; the observation stays the learner's.
     // Outcomes computed on the timestamp (min/max of metadata.event_timestamp.seconds) read as clock times, with the raw seconds beside them.
     const timeCols = new Set(r.timeCols ?? []);
+    const emptyText = r.kind === 'detections' ? 'No detections in this time range. The rule ran and found no key whose window met the condition; read the test cases beside the question and check the filter, the key, the window and the threshold.' : 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.';
     const wrap = el('div', { class: 'tablewrap' }, r.count ? resultsTable(r, (rec, opener) => { clear(raw); raw.hidden = false; raw.append(el('div', { class: 'row', style: 'justify-content:space-between;margin-top:8px' }, el('strong', { class: 'small', text: 'Full record ' + rec['metadata.id'] }),
-      el('span', { class: 'row' }, el('button', { class: 'ghost', text: 'Add to Casebook', 'aria-label': 'Add record ' + rec['metadata.id'] + ' to the Casebook evidence draft', onclick: () => cbui.insertEvidence({ time: hhmm(rec['metadata.event_timestamp.seconds']), id: rec['metadata.id'] }) }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; opener?.focus(); } }))), rawRecord(rec)); raw.focus(); }, timeCols) : el('div', { class: 'empty', text: 'No events in this time range match. Widen the range or loosen the filter; an empty result is information, not an error.' }));
+      el('span', { class: 'row' }, el('button', { class: 'ghost', text: 'Add to Casebook', 'aria-label': 'Add record ' + rec['metadata.id'] + ' to the Casebook evidence draft', onclick: () => cbui.insertEvidence({ time: hhmm(rec['metadata.event_timestamp.seconds']), id: rec['metadata.id'] }) }), el('button', { class: 'ghost', text: 'Close', onclick: () => { raw.hidden = true; opener?.focus(); } }))), rawRecord(rec)); raw.focus(); }, timeCols) : el('div', { class: 'empty', text: emptyText }));
     results.append(head, wrap, raw);
   };
 
-  const editor = el('textarea', { class: 'editor', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', 'aria-label': 'Training query', 'aria-describedby': 'editor-help-' + m.id, disabled: m.kind === 'read' });
+  const editor = el('textarea', { class: 'editor', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', 'aria-label': s.mode === 'rule' ? 'Training rule' : 'Training query', 'aria-describedby': 'editor-help-' + m.id, disabled: m.kind === 'read' });
   editor.value = s.text;
+  // The desk mode: Search runs the editor as a Search query, Rule as a detection rule (chapter 11). A rule mission
+  // starts in Rule mode and is always graded as a rule; any mission may be switched to compare the two engines.
+  const modeSel = el('select', { 'aria-label': 'Desk mode', onchange: e => { setMode(e.target.value); } }, ['search', 'rule'].map(k => el('option', { value: k, selected: k === s.mode, text: MODE_LABEL[k] })));
+  const setMode = mode => { if (mode !== 'search' && mode !== 'rule') return; s.mode = mode; modeSel.value = mode; editor.setAttribute('aria-label', mode === 'rule' ? 'Training rule' : 'Training query'); s.run = null; s.query = null; paintResults(); feedback.hidden = true; };
+  const runDesk = () => (s.mode === 'rule' ? runRule : runQuery)(editor.value, EVENTS, rangeFor(m.caseId, s.rangeId), CTX);
   editor.addEventListener('input', () => { s.text = editor.value; s.query = null; });
   // Ctrl+Enter runs; Ctrl+Shift+Enter checks on missions that have a check. Tab is left alone so focus can leave the editor.
   editor.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (e.shiftKey && m.kind !== 'watch') doCheck(); else doRun(); } });
@@ -376,31 +391,39 @@ function missionPage(m) {
 
   const doRun = () => {
     if (m.kind === 'read') return;
-    s.run = runQuery(editor.value, EVENTS, rangeFor(m.caseId, s.rangeId), CTX); s.query = null;
+    s.run = runDesk(); s.query = null;
     if (!s.run.ok) { const d = describe(s.run.code, s.run.detail); say(s.run.status === 'unsupported' ? 'warn' : 'bad', (s.run.status === 'unsupported' ? 'Not run here: ' : 'Will not run: ') + d.title, d.fix); }
-    else say('info', `Ran against ${c.ranges.find(x => x.id === s.rangeId).label}.`, m.kind === 'watch' ? 'Read the table, then answer below.' : 'Check the query when the evidence looks right.');
+    else say('info', `Ran against ${c.ranges.find(x => x.id === s.rangeId).label}${s.mode === 'rule' ? ' in Rule mode' : ''}.`, m.kind === 'watch' ? (s.mode === 'rule' ? 'Read the detections, then answer below.' : 'Read the table, then answer below.') : s.mode === 'rule' ? 'Check the rule when it fires where the test cases say and nowhere it must not.' : 'Check the query when the evidence looks right.');
     paintResults();
   };
+  // Rule-mode feedback: the two test cases by name, the detection count and the false positives to read.
+  const ruleCounts = cmp => `${fmtNum(cmp.detections)} detection${cmp.detections === 1 ? '' : 's'} in all; ${fmtNum(cmp.falsePositives)} from keys other than the must-fire case.`;
   const doCheck = () => {
+    if (isRule && s.mode !== 'rule') setMode('rule'); // a rule mission is graded as a rule; the desk follows
     const g = gradeQuery(editor.value, m, EVENTS, rangeFor(m.caseId, s.rangeId), CTX); s.query = g;
-    if (g.status === 'correct') { store.record(m.id, 'q', POINTS.query); say('ok', 'Query correct: it returns the same evidence as the reference.', 'Now read your results and answer the question below.'); }
-    else if (g.status === 'incorrect') { const d = describe(g.comparison.reason, g.comparison); const extra = g.comparison.missing !== undefined ? ` You have ${fmtNum(g.comparison.studentCount)} ${g.result.kind === 'events' ? 'events' : 'rows'}; the reference has ${fmtNum(g.comparison.referenceCount)}.` : ''; say('bad', d.title + extra, d.fix, d.examples); }
+    if (g.status === 'correct') {
+      store.record(m.id, 'q', POINTS.query);
+      if (isRule) say('ok', `Rule correct: it fires on ${keyText(m.rule.mustFire.key)} around ${m.rule.mustFire.at} UTC and stays quiet on ${keyText(m.rule.mustNotFire.key)}.`, `${ruleCounts(g.comparison)} Read those before you call the rule done, then answer the question below.`);
+      else say('ok', 'Query correct: it returns the same evidence as the reference.', 'Now read your results and answer the question below.');
+    }
+    else if (g.status === 'incorrect') { const d = describe(g.comparison.reason, g.comparison); const extra = g.comparison.missing !== undefined ? ` You have ${fmtNum(g.comparison.studentCount)} ${g.result.kind === 'events' ? 'events' : 'rows'}; the reference has ${fmtNum(g.comparison.referenceCount)}.` : isRule && g.comparison.detections !== undefined ? ` Must fire: ${keyText(m.rule.mustFire.key)} around ${m.rule.mustFire.at}. Must not fire: ${keyText(m.rule.mustNotFire.key)}. ${ruleCounts(g.comparison)}` : ''; say('bad', d.title + extra, d.fix, d.examples); }
     else { const d = describe(g.code, g.detail); say(g.status === 'unsupported' ? 'warn' : 'bad', (g.status === 'unsupported' ? 'Not run here: ' : 'Will not run: ') + d.title, d.fix); }
-    if (!s.run || s.run.text !== editor.value) { s.run = runQuery(editor.value, EVENTS, rangeFor(m.caseId, s.rangeId), CTX); paintResults(); }
+    if (!s.run || s.run.text !== editor.value) { s.run = runDesk(); paintResults(); }
     paintScoreBox();
   };
 
   const deskButtons = el('div', { class: 'row', style: 'margin-top:8px' });
   if (m.kind !== 'read') {
     deskButtons.append(el('button', { class: 'primary', text: 'Run query', onclick: doRun }));
-    if (m.kind !== 'watch') deskButtons.append(el('button', { text: 'Check query', onclick: doCheck }));
+    if (m.kind !== 'watch') deskButtons.append(el('button', { text: isRule ? 'Check rule' : 'Check query', onclick: doCheck }));
     deskButtons.append(el('button', { class: 'ghost', text: 'Reset', onclick: () => { editor.value = s.text = m.starter ?? ''; s.run = null; s.query = null; paintResults(); feedback.hidden = true; } }));
     const keys = (...ks) => ks.flatMap((k, i) => (i ? [' + ', el('kbd', { text: k })] : [el('kbd', { text: k })]));
     deskButtons.append(el('span', { class: 'small muted keys', id: 'editor-help-' + m.id }, ...keys('Ctrl', 'Enter'), ' runs', m.kind !== 'watch' ? [' · ', ...keys('Ctrl', 'Shift', 'Enter'), ' checks'] : [], ' · ', el('kbd', { text: 'Tab' }), ' leaves the editor', ' · ', ...keys('Alt', 'Shift', 'C'), ' casebook'));
   } else deskButtons.append(el('span', { class: 'small muted keys' }, ...(() => { const k = (...ks) => ks.flatMap((x, i) => (i ? [' + ', el('kbd', { text: x })] : [el('kbd', { text: x })])); return k('Alt', 'Shift', 'C'); })(), ' opens the casebook'));
 
   const fieldList = el('details', { class: 'fields' }, el('summary', { text: 'Field list for this dataset' }), el('ul', {}, Object.entries(EVENT_FIELDS).map(([f, t]) => el('li', {}, f, ' ', el('span', { text: t })))),
-    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'Functions that run here: ' + Object.keys(FUNCTIONS).join(', ') + '. Time functions take "UTC" as their zone. Two event variables ($e1, $e2) joined by a shared placeholder run as a join: match: $key over 1h, outcomes per variable, condition with #e1 and #e2.' }));
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'Functions that run here: ' + Object.keys(FUNCTIONS).join(', ') + '. Time functions take "UTC" as their zone. Two event variables ($e1, $e2) joined by a shared placeholder run as a join: match: $key over 1h, outcomes per variable, condition with #e1 and #e2.' }),
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'Rule mode (the Mode switch above the editor) runs a YARA-L 2.0 detection rule in the trainer\'s subset: rule name { meta: author, description, severity  events: every field with its $e  match: $key over 5m  outcome: ...  condition: ...  options: allow_zero_values }. Detections replace rows: one per key per sliding window that meets the condition. Data tables join with $e.field = %table.column and their other columns read as %table.column in outcome. Entity variables, non-existence conditions and rules without match are reported as not run here.' }));
   // The Entities panel: the entity fields, how many directory records are valid in this case's window, and the two
   // ways to read them: an entity-only query, and the event-to-entity join written as rules document it.
   const ents = CTX.entities; const nUsers = ents.filter(e => e['graph.metadata.entity_type'] === 'USER').length, nAssets = ents.length - nUsers;
@@ -453,12 +476,24 @@ function missionPage(m) {
     } }), callFeedback);
 
   desk.append(
-    el('div', { class: 'deskbar' }, el('div', { class: 'eyebrow', style: 'margin:0', text: 'Query desk' }), el('label', {}, 'Time range', rangeSel)),
+    el('div', { class: 'deskbar' }, el('div', { class: 'eyebrow', style: 'margin:0', text: 'Query desk' }), el('label', {}, 'Mode', modeSel), el('label', {}, 'Time range', rangeSel)),
     editor, deskButtons, feedback, results, fieldList, listsPanel, entitiesPanel, answerPart, callPart, scorebox, announcer,
   );
   logItBox?.addEventListener('logged', paintScoreBox);
   paintResults(); paintScoreBox();
   return el('div', { class: 'mission' }, lesson, desk);
+}
+
+// Test cases (rule missions): the case the learner's rule must fire on (a key and a minute) and the case it must stay
+// quiet on. The grader checks exactly these two; every other detection is a false positive the learner reads.
+function testCasesCard(m) {
+  const r = m.rule;
+  return el('section', { class: 'card tests', 'aria-label': 'Test cases' },
+    el('div', { class: 'eyebrow', text: 'Test cases · the rule is graded against these' }),
+    el('dl', { class: 'testcases' },
+      el('dt', { text: 'Must fire' }), el('dd', {}, el('code', { text: keyText(r.mustFire.key) }), ` in a window covering ${r.mustFire.at} UTC`),
+      el('dt', { text: 'Must not fire' }), el('dd', {}, el('code', { text: keyText(r.mustNotFire.key) }), ' in any window')),
+    el('p', { class: 'small muted', style: 'margin:8px 0 0', text: 'Keys are read in the order of your match section. Detections on other keys are counted as false positives in the feedback and never scored: read them.' }));
 }
 
 // Log it: the casebook entry this mission earns and what a good one contains. The check is structural (required
@@ -552,6 +587,7 @@ function aboutPage() {
       el('ul', {}, ['Not connected to any SIEM, and never will be. Nothing you type leaves this tab.', 'Not Google\'s compiler. The supported subset is documented; valid Google syntax outside it is reported as "not run here", separately from mistakes.', 'Not real data. Every event is generated by a script in this repository; IP addresses come from documentation ranges; people and places are invented.', 'Not a place for workplace values. Practise the shape here; use real identifiers only inside tools your employer authorizes.'].map(t => el('li', { text: t })))),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Supported subset' }),
       el('p', { text: 'Filters with =, !=, <, <=, >, >=, nocase, regex literals, re.regex, net.ip_in_range_cidr, AND/OR/NOT, parentheses, implicit AND, $e. event-variable prefix, placeholders ($x = field or $x = function(field)), grouped fields (ip, hostname, user, domain, file_path, email), the functions timestamp.get_hour, timestamp.get_minute and timestamp.get_date (zone "UTC" only; other zones are reported as not run here), strings.to_lower, strings.to_upper and strings.concat, data table columns (in %table.column, in cidr %table.column, in regex %table.column, not in, nocase) and legacy reference lists (in %name and the same forms) against the objects bundled in content, with Search\'s limits of seven in tests per query, four regex and two cidr. Sections: match (with by / over every windows), outcome (count, count_distinct, sum, max, min, array, array_distinct, earliest, latest; arrays cut at 1,000 as in Search), condition, dedup, order, limit. Not run here: joins across event variables, entity graph, additional.fields, the rule-engine data-table join (field = %table.column), multi-stage queries, other functions and zones.' }),
+      el('p', { text: 'Rule mode (chapter 11): the Mode switch on the desk runs the editor as a YARA-L 2.0 detection rule in a documented subset: rule name { meta: author, description, severity  events: every field with its event variable  match: $key over N (a sliding window)  outcome: the Search aggregates  condition: $e, #e and outcome comparisons (mandatory)  options: allow_zero_values }, two event variables joined by a shared placeholder, and the data-table join $e.field = %table.column whose other columns an outcome reads. It produces detections, one per key per window hit, and a rule mission is graded against a must-fire case and a must-not-fire case, with the false-positive count reported. Not run in rule mode: entity variables, non-existence conditions, rules without match, windows over 48 hours, other options. The facts followed were verified by the owner\'s reviewer on 2026-10-18; no rule has been compiled in a tenant, and Google says Search and rule counts differ by design.' }),
       el('p', { class: 'small muted', text: 'Data tables and reference lists: in a tenant they are objects created under Detection > Data tables and Detection > Lists; Google is replacing lists with tables, migrates existing lists automatically and retires legacy reference lists in ' + LISTS_RETIRE + '. This trainer bundles a few of each in content/tables.json and content/lists.json and shows them in the Lists and tables panel on the desk. dedup is accepted between condition and order, keeps the first row per distinct key, and on a summary table can name only the grouping keys or outcomes.' })),
     el('section', { class: 'card' }, el('div', { class: 'eyebrow', text: 'Google documentation used' }),
       el('ul', {}, DOCS.map(([h, t]) => el('li', {}, link(h, t)))),

@@ -53,8 +53,12 @@ export function resultsTable(result, onRow, timeCols = new Set()) {
         cols.map(c => el('td', { text: c === 'time' ? fmtTime(r['metadata.event_timestamp.seconds']) : cell(r[c]) }))); });
     return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
   }
-  const head = el('tr', {}, result.columns.map(c => el('th', { text: c === 'window_start' ? 'window start (UTC)' : c.startsWith('graph.') ? shortEntity(c) : short(c) })));
-  const body = result.rows.slice(0, 200).map(r => el('tr', {}, result.columns.map(c => el('td', { class: Array.isArray(r[c]) ? 'arr' : null, text: c === 'window_start' ? fmtTime(r[c]) : timeCols.has(c) && typeof r[c] === 'number' && r[c] > 0 ? `${fmtTime(r[c])} (${r[c]})` : cell(r[c]) }))));
+  // Statistics rows and rule detections share one shape: key columns, window columns as UTC times, outcome columns.
+  // A detection's blank key (allow_zero_values) reads as "(blank)" so the learner sees the key was the empty string.
+  const keyCols = new Set(result.kind === 'detections' ? result.rule?.keys ?? [] : []);
+  const WINDOW_COLS = { window_start: 'window start (UTC)', window_end: 'window end (UTC)' };
+  const head = el('tr', {}, result.columns.map(c => el('th', { text: WINDOW_COLS[c] ?? (c.startsWith('graph.') ? shortEntity(c) : short(c)) })));
+  const body = result.rows.slice(0, 200).map(r => el('tr', {}, result.columns.map(c => el('td', { class: Array.isArray(r[c]) ? 'arr' : null, text: WINDOW_COLS[c] ? fmtTime(r[c]) : timeCols.has(c) && typeof r[c] === 'number' && r[c] > 0 ? `${fmtTime(r[c])} (${r[c]})` : keyCols.has(c) && r[c] === '' ? '(blank)' : cell(r[c]) }))));
   return el('table', {}, el('thead', {}, head), el('tbody', {}, body));
 }
 // An array outcome renders as a comma-joined list; the display is capped so a 1,000-element array stays readable.

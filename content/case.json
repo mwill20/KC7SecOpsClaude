@@ -224,7 +224,8 @@
         "C07",
         "C08",
         "C09",
-        "C10"
+        "C10",
+        "C11"
       ],
       "data": "events-week-after.json",
       "closedAt": "Monday, 09:40",

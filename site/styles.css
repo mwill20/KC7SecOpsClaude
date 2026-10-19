@@ -95,6 +95,9 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 .closed.facts { border-top: 3px solid var(--ok); } .closed.hypotheses { border-top: 3px solid var(--accent); } .closed.gaps { border-top: 3px solid var(--bad); }
 .skills .skill { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; } .skills .skill.complete { border-color: var(--ok); } .skills ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; } .skills li { margin: 3px 0; }
 .keys { line-height: 2; }
+/* Rule missions: the two test cases beside the question. */
+.tests { border-left: 3px solid var(--accent); } .tests .eyebrow { color: var(--accent); }
+.testcases { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 14px; } .testcases dt { color: var(--muted); } .testcases dd { margin: 0; overflow-wrap: anywhere; }
 .caveat { font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); margin-top: 14px; padding-top: 10px; }
 .navrow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 14px; } .navrow .btn { max-width: 100%; }
 
