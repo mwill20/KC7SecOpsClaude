@@ -7,7 +7,8 @@ const drawer = page => page.locator('#casebook');
 test('Two cases: the home page switches between case files, chapter 7 runs against the week-after data, the drawer keeps one casebook per case, and each case has its own closed page', async ({ page }) => {
   await page.goto('./');
   const tabs = page.getByRole('navigation', { name: 'Cases' }).getByRole('link');
-  await expect(tabs).toHaveCount(2);
+  await expect(tabs).toHaveCount(3);
+  await expect(tabs.nth(2)).toHaveAttribute('aria-label', 'Case 3, A different pier: 0 of 10 missions complete');
   await expect(tabs.nth(0)).toHaveAttribute('aria-label', 'Case 1, Static on Pier Nine: 0 of 49 missions complete');
   await expect(tabs.nth(1)).toHaveAttribute('aria-label', 'Case 2, The week after: 0 of 42 missions complete');
   await expect(page.locator('h1')).toHaveText('Static on Pier Nine');
@@ -20,7 +21,7 @@ test('Two cases: the home page switches between case files, chapter 7 runs again
   await expect(page.getByRole('link', { name: 'Open the case →' })).toHaveAttribute('href', '#C07-M01');
   await expect(page.locator('.people')).toContainText('Lena Ostrowski');
   // The top bar carries ten chapters; chapters 7 to 10 belong to case 2.
-  await expect(page.locator('#chapterprog .chap')).toHaveCount(11);
+  await expect(page.locator('#chapterprog .chap')).toHaveCount(12);
   await page.goto('#C07');
   await expect(page.locator('.crumbs')).toContainText('Case file 2: The week after');
   await expect(page.locator('h1')).toHaveText('Baselines and first sightings');
@@ -87,5 +88,5 @@ test('Two cases: the home page switches between case files, chapter 7 runs again
   await page.getByRole('button', { name: 'Check query' }).click();
   await expect(page.locator('.desk .feedback')).toContainText('Query correct');
   await expect(page.locator('.results .summary')).toContainText('3 events');
-  await expect(page.locator('#topscore')).toHaveText('110 / 7,670 pts');
+  await expect(page.locator('#topscore')).toHaveText('110 / 8,600 pts');
 });

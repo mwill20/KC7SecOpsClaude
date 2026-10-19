@@ -22,15 +22,21 @@ export function loadContent() {
   const casebook = JSON.parse(fs.readFileSync(path.join(root, 'content', 'casebook.json'), 'utf8'));
   const lists = JSON.parse(fs.readFileSync(path.join(root, 'content', 'lists.json'), 'utf8'));
   const tables = JSON.parse(fs.readFileSync(path.join(root, 'content', 'tables.json'), 'utf8'));
-  const entities = JSON.parse(fs.readFileSync(path.join(root, 'content', 'entities.json'), 'utf8'));
-  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, tables, entities, boundary: caseFile.boundary };
+  // Each case names its directory file (default content/entities.json, the station's); entitiesByCase maps case id to
+  // the raw directory, entityFiles maps file name to it (so a shared file is validated once), and entities stays the
+  // first case's directory for the earlier shape.
+  const entityFiles = {}; const entitiesByCase = {};
+  for (const c of cases) { const f = c.entities ?? 'entities.json'; entityFiles[f] ??= JSON.parse(fs.readFileSync(path.join(root, 'content', f), 'utf8')); entitiesByCase[c.id] = entityFiles[f]; }
+  const entities = entitiesByCase[cases[0].id];
+  return { cases, case: cases[0], chapters, chapterCase, casebook, lists, tables, entities, entitiesByCase, entityFiles, boundary: caseFile.boundary };
 }
 export function loadData(file = 'events.json') { return JSON.parse(fs.readFileSync(path.join(root, 'data', file), 'utf8')); }
 // Every case's dataset, keyed by case id.
 export function loadDatasets(content = loadContent()) { return Object.fromEntries(content.cases.map(c => [c.id, loadData(c.data)])); }
 export const digestOf = events => crypto.createHash('sha256').update(JSON.stringify(events)).digest('hex');
 
-const hhmm = s => new Date(s * 1000).toISOString().slice(11, 16);
+// A missing or non-numeric value reads as itself, so a reference that returns no row yields an answer mismatch rather than a throw.
+const hhmm = s => (Number.isFinite(s) ? new Date(s * 1000).toISOString().slice(11, 16) : String(s));
 
 // Entity records as the engine reads them: content/entities.json (users and assets with ISO validity intervals) becomes
 // flat graph.* records with the interval in seconds and a stable ent-NNNNN id, in file order. Mirrors site/app.js.
@@ -49,7 +55,7 @@ const caseWindow = c => ({ start: Date.parse(c.window.start) / 1000, end: Date.p
 // Derives a mission's expected answer from its reference query, so authored answers cannot drift from the data.
 // ctxFor(content, caseId) scopes the entity records to that case's window; without a case every record is in.
 export const ctxFor = (content, caseId = null) => {
-  const all = entityRecords(content?.entities);
+  const all = entityRecords((caseId && content?.entitiesByCase?.[caseId]) ?? content?.entities);
   const c = caseId ? content.cases.find(x => x.id === caseId) : null;
   return { lists: content?.lists?.lists ?? [], tables: content?.tables?.tables ?? [], entities: c ? entitiesFor(all, caseWindow(c)) : all };
 };
@@ -190,10 +196,15 @@ export function validateTables(raw) {
 // validity interval. Values stay fictional (station LAN addresses, lower-case dotted userids, upper-case hostnames) and
 // the versions of one entity may not overlap.
 const ISO = iso => typeof iso === 'string' && !Number.isNaN(Date.parse(iso));
+// The fictional LANs an organisation's assets may sit on: the station's and the co-operative's. Same rule as the
+// dataset tests and the artifact check, which also allow the RFC 5737 documentation ranges.
+export const FICTIONAL_LANS = Object.freeze(['10.9.4.', '10.77.3.']);
 export function validateEntities(raw) {
   const problems = [];
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.users) || !Array.isArray(raw.assets)) return ['entities.json: shape'];
   if (typeof raw.product !== 'string' || !raw.product) problems.push('entities.json: product');
+  const lan = raw.lan ?? FICTIONAL_LANS[0];
+  if (!FICTIONAL_LANS.includes(lan)) problems.push(`entities.json: lan must be one of ${FICTIONAL_LANS.join(' ')}`);
   const interval = (r, where) => {
     if (!ISO(r.valid_from) || !ISO(r.valid_to) || Date.parse(r.valid_to) <= Date.parse(r.valid_from)) problems.push(`${where}: valid_from and valid_to must be ISO times with the end after the start`);
   };
@@ -219,7 +230,7 @@ export function validateEntities(raw) {
     const where = `entities.json asset ${a?.hostname ?? '?'}`;
     if (!a || typeof a !== 'object') { problems.push(`${where}: shape`); continue; }
     if (!/^[A-Z][A-Z0-9-]{1,30}$/.test(a.hostname ?? '')) problems.push(`${where}: hostname must be an upper-case station name`);
-    if (!/^10\.9\.4\.\d{1,3}$/.test(a.ip ?? '')) problems.push(`${where}: ip must be on the fictional station LAN`);
+    if (!String(a.ip ?? '').startsWith(lan) || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a.ip ?? '')) problems.push(`${where}: ip must be on the fictional station LAN ${lan}0/24`);
     if (!userids.has(a.owner)) problems.push(`${where}: owner ${a.owner} is not a user in the directory`);
     if (typeof a.role !== 'string' || !a.role) problems.push(`${where}: role`);
     if (!['LOW', 'MEDIUM', 'HIGH'].includes(a.criticality)) problems.push(`${where}: criticality must be LOW, MEDIUM or HIGH`);
@@ -227,7 +238,7 @@ export function validateEntities(raw) {
     if (Object.keys(a).some(k => !assetKeys.includes(k))) problems.push(`${where}: unknown keys`);
   }
   overlap(raw.users, 'userid', 'user'); overlap(raw.assets, 'hostname', 'asset');
-  if (Object.keys(raw).some(k => !['note', 'product', 'users', 'assets'].includes(k))) problems.push('entities.json: unknown keys');
+  if (Object.keys(raw).some(k => !['note', 'product', 'lan', 'users', 'assets'].includes(k))) problems.push('entities.json: unknown keys');
   return problems;
 }
 
@@ -247,19 +258,30 @@ export function validateCase(c, chapterIds, data) {
     if (data && data.events.some(e => e['metadata.event_timestamp.seconds'] < data.window.start || e['metadata.event_timestamp.seconds'] > data.window.end)) problems.push(`${where}: an event lies outside the window`);
   }
   if (!Array.isArray(c.chapters) || !c.chapters.length || c.chapters.some(id => !chapterIds.has(id))) problems.push(`${where}: chapters must name existing chapter files`);
+  if (c.entities !== undefined && !/^[a-z0-9-]+\.json$/.test(c.entities)) problems.push(`${where}: entities must name a content/*.json directory file`);
+  // The engineering bridge (optional): the case-closed page's exit to the engineering course, a title, an intro and
+  // three to six headed paragraphs.
+  if (c.bridge !== undefined) {
+    const b = c.bridge;
+    if (!b || typeof b !== 'object' || typeof b.title !== 'string' || !b.title || typeof b.intro !== 'string' || b.intro.length < 40 || !Array.isArray(b.items) || b.items.length < 3 || b.items.length > 6 || b.items.some(x => !x || typeof x.heading !== 'string' || !x.heading || typeof x.text !== 'string' || x.text.length < 60)) problems.push(`${where}: bridge needs a title, an intro and 3 to 6 items of { heading, text }`);
+    if (b && Object.keys(b).some(k => !['title', 'intro', 'items'].includes(k))) problems.push(`${where}: bridge has unknown keys`);
+  }
   if (!data) problems.push(`${where}: no dataset`);
   else if (digestOf(data.events) !== c.digest) problems.push(`${where}: events changed (digest ${digestOf(data.events).slice(0, 12)}… does not match case.json). Regenerate deliberately and update the digest, or restore the data.`);
   return problems;
 }
 
-export function validate({ cases, chapters, chapterCase, casebook, lists, tables, entities }, datasets) {
+export function validate({ cases, chapters, chapterCase, casebook, lists, tables, entities, entitiesByCase, entityFiles }, datasets) {
   const problems = [];
   if (casebook !== undefined) problems.push(...validateCasebookContent(casebook));
   if (lists !== undefined) problems.push(...validateLists(lists));
   if (tables !== undefined) problems.push(...validateTables(tables));
-  if (entities !== undefined) problems.push(...validateEntities(entities));
+  // Every directory file a case names is validated once; the earlier shape (one entities object) still works.
+  const dirs = entityFiles ?? (entities !== undefined ? { 'entities.json': entities } : {});
+  for (const [f, raw] of Object.entries(dirs)) problems.push(...validateEntities(raw).map(p => p.replace(/^entities\.json/, f)));
   if (lists && tables && lists.lists?.some(l => tables.tables?.some(t => t.name === l.name))) problems.push('lists.json and tables.json share a name; a learner could not tell %name from %name.column');
-  const content = { cases, lists, tables, entities: problems.some(p => p.startsWith('entities.json')) ? undefined : entities };
+  const dirsOk = !problems.some(p => Object.keys(dirs).some(f => p.startsWith(f)));
+  const content = { cases, lists, tables, entities: dirsOk ? entities : undefined, entitiesByCase: dirsOk ? entitiesByCase : undefined };
   // Accept a single dataset (earlier branches) as the first case's.
   const sets = datasets?.events ? { [cases[0].id]: datasets } : datasets ?? {};
   const ctxOf = {}; const ctxForCase = id => (ctxOf[id] ??= { ...ctxFor(content, cases?.some(c => c.id === id && c.window) ? id : null), window: sets[id]?.window ?? null });

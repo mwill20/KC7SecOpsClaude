@@ -10,8 +10,9 @@ import { runtimeFiles } from './files.mjs';
 
 // Hosts the site may name: fictional .example domains and Google's own documentation, which the UI links to on click.
 const DOC_HOSTS = ['docs.cloud.google.com'];
-// RFC 5737 documentation ranges plus the fictional station LAN. Same rule as tests/unit/content.test.mjs C5.
-const IP_OK = /^(?:10\.9\.4|192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}$/;
+// RFC 5737 documentation ranges plus the two fictional LANs (the station's 10.9.4.0/24 and the co-operative's
+// 10.77.3.0/24). Same rule as tests/unit/content.test.mjs C5 and tools/lib.mjs FICTIONAL_LANS.
+const IP_OK = /^(?:10\.9\.4|10\.77\.3|192\.0\.2|198\.51\.100|203\.0\.113)\.\d{1,3}$/;
 const TLD = /(?<![.\w$-])(?:[a-z0-9-]+\.)+(?:com|org|net|io|edu|gov|example)\b/g;
 
 const walk = (dir, prefix = '') => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => {

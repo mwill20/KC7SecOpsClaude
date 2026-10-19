@@ -1,0 +1,26 @@
+{
+  "note": "The Saltmarsh Ferry Co-operative's directory as entity context for the third case: who owns an account, who owns a host, what each is for. Same shape as the station directory, a different organisation on its own LAN (10.77.3.0/24). Values are fiction.",
+  "product": "Co-operative Directory",
+  "lan": "10.77.3.",
+  "users": [
+    { "userid": "marguerite.doyle", "title": "Operations Manager", "department": "Operations", "manager": "board", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "OPS_ADMIN", "remote_access": "yes", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "ines.varga", "title": "Dispatcher", "department": "Operations", "manager": "marguerite.doyle", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "DISPATCH", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "theo.lindqvist", "title": "IT Volunteer", "department": "Engineering", "manager": "marguerite.doyle", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "IT_ADMIN", "remote_access": "yes", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "bea.okonkwo", "title": "Ticket Office Lead", "department": "Ticketing", "manager": "marguerite.doyle", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "TICKET_OFFICE", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "sam.achterberg", "title": "Ticket Agent", "department": "Ticketing", "manager": "bea.okonkwo", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "TICKET_OFFICE", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "nadia.ferreira", "title": "Skipper", "department": "Crew", "manager": "marguerite.doyle", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "CREW", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "rafael.quinn", "title": "Deckhand", "department": "Crew", "manager": "nadia.ferreira", "employment_status": "ACTIVE", "account_type": "NAMED", "role": "CREW", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "svc-tidewatch", "title": "TideWatch service", "department": "Operations", "manager": "theo.lindqvist", "employment_status": "ACTIVE", "account_type": "SERVICE", "role": "TIDEWATCH_SERVICE", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "userid": "kiosk", "title": "Ticket kiosk", "department": "Ticketing", "manager": "bea.okonkwo", "employment_status": "ACTIVE", "account_type": "SHARED", "role": "TICKET_KIOSK", "remote_access": "no", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" }
+  ],
+  "assets": [
+    { "hostname": "DISPATCH-01", "ip": "10.77.3.20", "owner": "ines.varga", "role": "DISPATCH", "criticality": "HIGH", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "KIOSK-01", "ip": "10.77.3.31", "owner": "bea.okonkwo", "role": "TICKET_KIOSK", "criticality": "MEDIUM", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "KIOSK-02", "ip": "10.77.3.32", "owner": "sam.achterberg", "role": "TICKET_KIOSK", "criticality": "MEDIUM", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "FS-GULL", "ip": "10.77.3.50", "owner": "theo.lindqvist", "role": "FILE_SERVER", "criticality": "HIGH", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "DC-GULL", "ip": "10.77.3.2", "owner": "theo.lindqvist", "role": "DIRECTORY", "criticality": "HIGH", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "OFFICE-02", "ip": "10.77.3.15", "owner": "marguerite.doyle", "role": "WORKSTATION", "criticality": "LOW", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "IT-BENCH", "ip": "10.77.3.40", "owner": "theo.lindqvist", "role": "WORKSTATION", "criticality": "MEDIUM", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" },
+    { "hostname": "CREW-ROOM-PC", "ip": "10.77.3.25", "owner": "nadia.ferreira", "role": "WORKSTATION", "criticality": "LOW", "valid_from": "2026-01-01T00:00:00Z", "valid_to": "2026-12-31T23:59:59Z" }
+  ]
+}

@@ -93,6 +93,7 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text
 .columns { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 14px; } .columns .card + .card { margin-top: 0; }
 .closed ul { margin: 0; padding-left: 20px; } .closed li { margin: 6px 0; }
 .closed.facts { border-top: 3px solid var(--ok); } .closed.hypotheses { border-top: 3px solid var(--accent); } .closed.gaps { border-top: 3px solid var(--bad); }
+.bridge { border-left: 3px solid var(--teal); } .bridge .skill p { margin: 0; }
 .skills .skill { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; } .skills .skill.complete { border-color: var(--ok); } .skills ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; } .skills li { margin: 3px 0; }
 .keys { line-height: 2; }
 /* Rule missions: the two test cases beside the question. */

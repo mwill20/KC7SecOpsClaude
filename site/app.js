@@ -1,4 +1,4 @@
-import { CONTENT, DATASETS, ENTITIES } from './bundle.js';
+import { CONTENT, DATASETS, ENTITIES_BY_CASE } from './bundle.js';
 import { EVENT_FIELDS, ENTITY_FIELDS, DOCS, FUNCTIONS, LISTS_RETIRE } from './engine/catalog.js';
 import { runQuery, gradeQuery, gradeAnswer, gradeCall, POINTS } from './engine/grader.js';
 import { runRule } from './engine/rules.js';
@@ -29,10 +29,10 @@ const homeHref = c => (caseIndex(c) === 0 ? '#' : '#case/' + c.id);
 // Detection > Data tables; a query names a list with %name and a table column with %table.column.
 const REF_LISTS = CONTENT.lists?.lists ?? [];
 const DATA_TABLES = CONTENT.tables?.tables ?? [];
-// Entity context: the station directory as flat graph.* records, each valid over an interval. A case sees the records
-// valid at some point inside its window, so the week-after desk shows the directory as it stood that night.
-const ENTITY_RECORDS = Array.isArray(ENTITIES) ? ENTITIES : [];
-const entitiesFor = caseId => { const w = windowOf(caseId); return ENTITY_RECORDS.filter(e => e['graph.metadata.interval.start_time.seconds'] <= w.end && e['graph.metadata.interval.end_time.seconds'] >= w.start); };
+// Entity context: each case's directory as flat graph.* records, each valid over an interval (the station's directory
+// for the first two cases, the co-operative's for the third). A case sees the records valid at some point inside its
+// window, so the week-after desk shows the directory as it stood that night.
+const entitiesFor = caseId => { const w = windowOf(caseId); const recs = Array.isArray(ENTITIES_BY_CASE?.[caseId]) ? ENTITIES_BY_CASE[caseId] : []; return recs.filter(e => e['graph.metadata.interval.start_time.seconds'] <= w.end && e['graph.metadata.interval.end_time.seconds'] >= w.start); };
 const CTX_BY_CASE = Object.fromEntries(CASE_LIST.map(c => [c.id, { lists: REF_LISTS, tables: DATA_TABLES, entities: entitiesFor(c.id) }]));
 const ctxFor = caseId => CTX_BY_CASE[caseId] ?? CTX_BY_CASE[CASE.id];
 const KIND_LABEL = { watch: 'Watch one', build: 'Build it', solo: 'Your turn', read: 'Read' };
@@ -239,6 +239,10 @@ function closedPage(c = CASE) {
       el('div', { class: 'navrow' }, linkBtn(homeHref(c), '← Back to the case file'), linkBtn('#' + remaining[0].id, 'Next open mission →', true)));
   }
   const next = CASE_LIST[caseIndex(c) + 1];
+  // The engineering bridge (a case may carry one): what an engineer does with this handoff, as the exit to the next course.
+  const bridge = c.bridge ? el('section', { class: 'card bridge', 'aria-label': c.bridge.title },
+    el('div', { class: 'eyebrow', text: c.bridge.title }), el('p', { text: c.bridge.intro }),
+    el('div', { class: 'grid' }, c.bridge.items.map(x => el('div', { class: 'skill' }, el('h2', { class: 'sub', text: x.heading }), el('p', { class: 'small', text: x.text }))))) : null;
   return el('div', {}, head,
     closedCasebook(c),
     el('div', { class: 'columns' },
@@ -247,6 +251,7 @@ function closedPage(c = CASE) {
         el('p', { class: 'small muted', text: part === 'Facts' ? 'A second analyst could reproduce each of these from the same queries.' : part === 'Hypotheses' ? 'The story that explains the facts, labelled as a story.' : 'What the logs could not show. Each one is a task for daylight.' }),
         el('ul', {}, column(part).map(t => el('li', { text: t })))))),
     skillsCard(c),
+    bridge,
     el('section', { class: 'card notice' }, el('strong', { text: 'What this proves. ' }), 'You can read and write the taught subset of YARA-L 2.0 Search against this fictional data. It does not prove tenant execution; run each shape once in your own tenant before relying on it.'),
     el('div', { class: 'navrow' }, linkBtn(homeHref(c), '← Back to the case file'), next ? linkBtn(homeHref(next), `Next case: ${next.title} →`, true) : linkBtn('#' + handoff.id, 'Reread the handoff mission')));
 }

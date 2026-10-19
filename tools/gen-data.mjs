@@ -48,8 +48,10 @@ const login = (ts, u, { host, ip, action = 'ALLOW', targetUser = '', targetHost 
   add(ts, 'USER_LOGIN', { 'metadata.product_name': 'Windows Security', 'principal.user.userid': u.id ?? u, 'principal.user.title': title ?? u.title ?? '', 'principal.hostname': host, 'principal.ip': ip, 'target.hostname': targetHost, 'target.user.userid': targetUser, 'security_result.action': action, 'security_result.summary': summary });
 const proc = (ts, u, host, ip, parent, file, cmd) =>
   add(ts, 'PROCESS_LAUNCH', { 'metadata.product_name': 'Sysmon', 'principal.user.userid': u.id ?? u, 'principal.user.title': u.title ?? '', 'principal.hostname': host, 'principal.ip': ip, 'principal.process.file.full_path': parent, 'target.process.file.full_path': file, 'target.process.command_line': cmd, 'security_result.action': 'ALLOW' });
+// The resolver each organisation's hosts ask: the station's DC on Pier Nine, the co-operative's on Gull Pier (case 3).
+let DNS_SERVER = '10.9.4.2';
 const dns = (ts, u, host, ip, name) =>
-  add(ts, 'NETWORK_DNS', { 'metadata.product_name': 'Zeek', 'principal.user.userid': u.id ?? u, 'principal.hostname': host, 'principal.ip': ip, 'target.ip': '10.9.4.2', 'target.port': 53, 'network.dns.questions.name': name, 'security_result.action': 'ALLOW' });
+  add(ts, 'NETWORK_DNS', { 'metadata.product_name': 'Zeek', 'principal.user.userid': u.id ?? u, 'principal.hostname': host, 'principal.ip': ip, 'target.ip': DNS_SERVER, 'target.port': 53, 'network.dns.questions.name': name, 'security_result.action': 'ALLOW' });
 const conn = (ts, u, host, ip, tip, port, sent, recv, action = 'ALLOW') =>
   add(ts, 'NETWORK_CONNECTION', { 'metadata.product_name': 'Zeek', 'principal.user.userid': u.id ?? u, 'principal.hostname': host, 'principal.ip': ip, 'target.ip': tip, 'target.port': port, 'network.sent_bytes': sent, 'network.received_bytes': recv, 'security_result.action': action });
 const mail = (ts, from, to, subject, url = '', action = 'ALLOW') =>
@@ -237,3 +239,108 @@ events2.push(...appended);
 const out2 = { case: 'The week after', window: { start: T2, end: T3 }, generatedBy: 'tools/gen-data.mjs', events: events2 };
 fs.writeFileSync(path.join(root, 'data', 'events-week-after.json'), JSON.stringify(out2));
 console.log('events (week after):', events2.length, 'bytes:', fs.statSync(path.join(root, 'data', 'events-week-after.json')).size);
+
+// =================================================================================================
+// Case 3: A different pier. Saltmarsh Ferry Co-operative, Gull Pier, 2026-04-07 06:00 to 16:00 UTC: one working day.
+// A different organisation, a different shape: no phish and no stolen password. The vessel-dispatch and ticketing
+// software, TideWatch, updates itself from the vendor's own server at 09:30, and the update carries a plugin the vendor
+// never wrote. Three hosts install it; the plugin creates a scheduled task, beacons every twenty minutes, and on the
+// one host that holds the passenger manifests it stages an archive and sends it out. A recently disciplined deckhand
+// who worked the dispatch desk that morning is the operations manager's first suspect. Own seed, own id range, own LAN.
+// =================================================================================================
+const T4 = Date.parse('2026-04-07T06:00:00Z') / 1000, T5 = T4 + 10 * 3600;
+const at3 = (hh, mm, ss = 0) => T4 + (hh - 6) * 3600 + mm * 60 + ss;
+const events3 = []; bucket = events3; rnd = prng(20260407); DNS_SERVER = '10.77.3.2';
+const crew = [
+  { id: 'marguerite.doyle', title: 'Operations Manager', host: 'OFFICE-02', ip: '10.77.3.15' },
+  { id: 'ines.varga', title: 'Dispatcher', host: 'DISPATCH-01', ip: '10.77.3.20' },
+  { id: 'theo.lindqvist', title: 'IT Volunteer', host: 'IT-BENCH', ip: '10.77.3.40' },
+  { id: 'bea.okonkwo', title: 'Ticket Office Lead', host: 'KIOSK-01', ip: '10.77.3.31' },
+  { id: 'sam.achterberg', title: 'Ticket Agent', host: 'KIOSK-02', ip: '10.77.3.32' },
+  { id: 'nadia.ferreira', title: 'Skipper', host: 'CREW-ROOM-PC', ip: '10.77.3.25' },
+  { id: 'rafael.quinn', title: 'Deckhand', host: 'DISPATCH-01', ip: '10.77.3.20' },
+];
+const TIDEWATCH_HOSTS = [{ host: 'DISPATCH-01', ip: '10.77.3.20' }, { host: 'KIOSK-01', ip: '10.77.3.31' }, { host: 'KIOSK-02', ip: '10.77.3.32' }];
+const FS3 = { host: 'FS-GULL', ip: '10.77.3.50' };
+const ferryDomains = ['schedules.harbourtransit.example', 'tides.coastwatch.example', 'pay.ferryfare.example', 'mail.saltmarshferries.example', 'weather.harborcast.example', 'updates.tidewatch-marine.example', 'cdn.publicradio.example'];
+const ferryIps = { 'schedules.harbourtransit.example': '192.0.2.130', 'tides.coastwatch.example': '192.0.2.44', 'pay.ferryfare.example': '192.0.2.201', 'mail.saltmarshferries.example': '192.0.2.33', 'weather.harborcast.example': '192.0.2.77', 'updates.tidewatch-marine.example': '192.0.2.150', 'cdn.publicradio.example': '192.0.2.80' };
+const ferryProcs = [
+  ['C:\\Program Files\\Browser\\browser.exe', 'browser.exe --profile-directory=Default'],
+  ['C:\\Program Files\\Office\\outlook.exe', 'outlook.exe'],
+  ['C:\\Program Files\\Office\\excel.exe', 'excel.exe \\\\FS-GULL\\Manifests\\sailings-today.xlsx'],
+  ['C:\\Program Files\\TideWatch\\TideWatch.exe', 'TideWatch.exe --dispatch'],
+  ['C:\\Windows\\System32\\svchost.exe', 'svchost.exe -k netsvcs'],
+  ['C:\\Windows\\explorer.exe', 'explorer.exe'],
+];
+const VENDOR_UPDATES = 'updates.tidewatch-marine.example', VENDOR_IP = '192.0.2.150';
+const TELEMETRY = 'metrics.tw-telemetry.example', TELEMETRY_IP = '198.51.100.210';
+const PLUGIN = 'C:\\Program Files\\TideWatch\\plugins\\tw-telemetry.exe';
+const SVC3 = 'svc-tidewatch';
+const crewMail = id => id + '@saltmarshferries.example';
+
+// ---- A normal working day on the pier -------------------------------------------------------------
+for (const p of crew) {
+  const sessions = p.id === 'rafael.quinn' ? 1 : between(2, 3);
+  for (let s = 0; s < sessions; s++) {
+    // Rafael's one session is the early shift at the dispatch desk, fixed below; everyone else starts after 06:05.
+    const t = p.id === 'rafael.quinn' ? at3(6, 10, 22) : between(T4 + 300, T5 - 2400);
+    login(t, p, { host: p.host, ip: p.ip, targetHost: 'DC-GULL' });
+    if (p.id !== 'rafael.quinn' && rnd() < 0.2) login(t - between(20, 90), p, { host: p.host, ip: p.ip, targetHost: 'DC-GULL', action: 'FAIL', summary: 'Bad password' });
+    for (let k = 0; k < between(6, 10); k++) { const [f, c] = pick(ferryProcs); proc(t + between(5, 2000), p, p.host, p.ip, 'C:\\Windows\\explorer.exe', f, c); }
+    for (let k = 0; k < between(5, 9); k++) { const d = pick(ferryDomains); const tt = t + between(5, 2000); dns(tt, p, p.host, p.ip, d); conn(tt + 1, p, p.host, p.ip, ferryIps[d], pick([443, 443, 443, 80]), between(300, 40000), between(1000, 600000)); }
+    if (rnd() < 0.35) file(t + between(60, 1800), p, p.host, p.ip, pick(['C:\\Users\\Public\\sailings-today.xlsx', 'C:\\Users\\Public\\crew-rota.docx', 'C:\\Users\\Public\\fuel-log.txt']));
+  }
+}
+// Rafael's shift ends at 08:40; he opens the manifest once, as the morning dispatcher does, and signs out.
+proc(at3(6, 14, 5), crew[6], 'DISPATCH-01', '10.77.3.20', 'C:\\Windows\\explorer.exe', 'C:\\Program Files\\Office\\excel.exe', 'excel.exe \\\\FS-GULL\\Manifests\\manifest-0407.csv');
+conn(at3(6, 14, 6), crew[6], 'DISPATCH-01', '10.77.3.20', FS3.ip, 445, 4200, 98000);
+login(at3(8, 40, 11), crew[6], { host: 'DISPATCH-01', ip: '10.77.3.20', targetHost: 'DC-GULL', summary: 'Logoff' });
+// The dispatcher takes over the desk at 08:45 and works it all day.
+login(at3(8, 45, 30), crew[1], { host: 'DISPATCH-01', ip: '10.77.3.20', targetHost: 'DC-GULL' });
+// TideWatch itself: the dispatch client and the two kiosks talk to the vendor's update server every hour (a version check),
+// and the kiosks sell tickets through the fare processor.
+for (const h of TIDEWATCH_HOSTS) for (let t = T4 + between(60, 600); t < T5; t += 3600) { dns(t, SVC3, h.host, h.ip, VENDOR_UPDATES); conn(t + 1, SVC3, h.host, h.ip, VENDOR_IP, 443, between(400, 900), between(900, 2400)); }
+for (const h of TIDEWATCH_HOSTS.slice(1)) for (let t = T4 + 1800; t < T5; t += between(600, 1500)) { if (rnd() < 0.7) { dns(t, 'kiosk', h.host, h.ip, 'pay.ferryfare.example'); conn(t + 1, 'kiosk', h.host, h.ip, ferryIps['pay.ferryfare.example'], 443, between(900, 2600), between(1200, 5200)); } }
+// Benign mail
+mail(at3(6, 30, 0), crewMail('marguerite.doyle'), crewMail('ines.varga'), 'Sailings today: 07:15 cancelled for fog');
+mail(at3(7, 5, 0), 'noreply@harbourtransit.example', crewMail('marguerite.doyle'), 'Harbour notice: dredging at Gull Pier berth 2');
+mail(at3(9, 0, 0), crewMail('bea.okonkwo'), crewMail('marguerite.doyle'), 'Ticket office float');
+mail(at3(11, 20, 0), 'offers@discount-mailer.example', crewMail('sam.achterberg'), 'Rain jackets, half price this weekend', 'http://discount-mailer.example/c/4410', 'QUARANTINE');
+mail(at3(12, 0, 0), crewMail('nadia.ferreira'), crewMail('marguerite.doyle'), 'Fuel log for the Marsh Wren');
+for (let k = 0; k < 9; k++) mail(between(T4, T5), crewMail(pick(crew).id), crewMail(pick(crew).id), pick(['Re: sailings today', 'Crew rota next week', 'Berth 2 fenders', 'Lost property', 'Re: ticket office float']));
+
+// ---- The update -----------------------------------------------------------------------------------
+// 1. At 09:30 the vendor's updater on each TideWatch host fetches build 4.7.2 from the vendor's own server and installs it.
+TIDEWATCH_HOSTS.forEach((h, i) => {
+  const t = at3(9, 30, 4 + i * 11);
+  dns(t, SVC3, h.host, h.ip, VENDOR_UPDATES);
+  conn(t + 1, SVC3, h.host, h.ip, VENDOR_IP, 443, 1900, 48_200_000);
+  file(t + 20, SVC3, h.host, h.ip, 'C:\\ProgramData\\TideWatch\\updates\\TideWatch-4.7.2.msi');
+  proc(t + 35, SVC3, h.host, h.ip, 'C:\\Program Files\\TideWatch\\tw-updater.exe', 'C:\\Windows\\System32\\msiexec.exe', 'msiexec.exe /i C:\\ProgramData\\TideWatch\\updates\\TideWatch-4.7.2.msi /qn /norestart');
+  // 2. The installer writes a plugin the vendor never shipped, and the restarted client loads it.
+  file(t + 58, SVC3, h.host, h.ip, PLUGIN);
+  proc(t + 90, SVC3, h.host, h.ip, 'C:\\Program Files\\TideWatch\\TideWatch.exe', PLUGIN, 'tw-telemetry.exe --service --endpoint ' + TELEMETRY + ':8443');
+  // 3. The plugin registers a scheduled task so it survives a restart.
+  proc(t + 101, SVC3, h.host, h.ip, PLUGIN, 'C:\\Windows\\System32\\schtasks.exe', 'schtasks.exe /create /tn TideWatchTelemetry /tr "' + PLUGIN + ' --service" /sc onstart /ru ' + SVC3);
+  add(t + 102, 'SCHEDULED_TASK_CREATION', { 'metadata.product_name': 'Windows Security', 'principal.user.userid': SVC3, 'principal.hostname': h.host, 'principal.ip': h.ip, 'target.file.full_path': PLUGIN, 'security_result.summary': 'Task TideWatchTelemetry created', 'security_result.action': 'ALLOW' });
+  // 4. A beacon every twenty minutes to a server the vendor does not own, on a port nothing else on the pier uses.
+  for (let b = t + 140; b < T5; b += 1200) { const j = between(0, 9); dns(b + j, SVC3, h.host, h.ip, TELEMETRY); conn(b + j + 1, SVC3, h.host, h.ip, TELEMETRY_IP, 8443, between(700, 900), between(300, 420)); }
+});
+// 5. On the dispatch host, which holds the passenger manifests, the plugin stages an archive at 13:05 and sends it at 13:20.
+proc(at3(13, 5, 2), SVC3, 'DISPATCH-01', '10.77.3.20', PLUGIN, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', 'powershell.exe -nop -w hidden Compress-Archive -Path \\\\FS-GULL\\Manifests\\*.csv -DestinationPath C:\\ProgramData\\TideWatch\\cache\\m.zip');
+conn(at3(13, 5, 9), SVC3, 'DISPATCH-01', '10.77.3.20', FS3.ip, 445, 6100, 2_950_000);
+file(at3(13, 6, 40), SVC3, 'DISPATCH-01', '10.77.3.20', 'C:\\ProgramData\\TideWatch\\cache\\m.zip');
+conn(at3(13, 20, 15), SVC3, 'DISPATCH-01', '10.77.3.20', TELEMETRY_IP, 8443, 2_814_400, 1040);
+// 6. The vendor's advisory arrives at 14:10: build 4.7.2 was signed on a compromised build server; remove the plugin.
+mail(at3(14, 10, 30), 'security@tidewatch-marine.example', crewMail('theo.lindqvist'), 'Security advisory TW-2026-04: TideWatch 4.7.2 build server compromise', 'https://updates.tidewatch-marine.example/advisories/TW-2026-04');
+mail(at3(14, 10, 33), 'security@tidewatch-marine.example', crewMail('marguerite.doyle'), 'Security advisory TW-2026-04: TideWatch 4.7.2 build server compromise', 'https://updates.tidewatch-marine.example/advisories/TW-2026-04');
+// 7. Theo reads it and looks at the dispatch host from the bench.
+login(at3(14, 25, 12), crew[2], { host: 'DISPATCH-01', ip: '10.77.3.20', targetHost: 'DISPATCH-01', summary: 'Remote interactive logon' });
+proc(at3(14, 26, 40), crew[2], 'DISPATCH-01', '10.77.3.20', 'C:\\Windows\\System32\\cmd.exe', 'C:\\Windows\\System32\\schtasks.exe', 'schtasks.exe /query /tn TideWatchTelemetry /v');
+
+// ---- Finish case 3 --------------------------------------------------------------------------------
+events3.sort((a, b) => a['metadata.event_timestamp.seconds'] - b['metadata.event_timestamp.seconds']);
+events3.forEach((e, i) => { e['metadata.id'] = 'evt-' + String(30000 + i + 1).padStart(5, '0'); });
+const out3 = { case: 'A different pier', window: { start: T4, end: T5 }, generatedBy: 'tools/gen-data.mjs', events: events3 };
+fs.writeFileSync(path.join(root, 'data', 'events-saltmarsh.json'), JSON.stringify(out3));
+console.log('events (saltmarsh):', events3.length, 'bytes:', fs.statSync(path.join(root, 'data', 'events-saltmarsh.json')).size);

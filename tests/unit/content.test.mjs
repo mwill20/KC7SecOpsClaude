@@ -63,7 +63,7 @@ test('C4 every diagnostic code the engine can raise has a plain-language message
 test('C5 the dataset is fictional by construction: documentation IP ranges and .example domains only', () => {
   const text = JSON.stringify(data.events);
   const ips = new Set(text.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g));
-  for (const ip of ips) assert.ok(/^(10\.9\.4\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)/.test(ip), 'unexpected ip ' + ip);
+  for (const ip of ips) assert.ok(/^(10\.9\.4\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)/.test(ip), 'unexpected ip ' + ip); // the station's own LAN and the documentation ranges only
   const domains = new Set(text.match(/[a-z0-9.-]+\.(?:com|org|net|io|example)\b/g));
   for (const d of domains) assert.ok(d.endsWith('.example'), 'unexpected domain ' + d);
   assert.equal(data.events.length, 1010);
@@ -121,8 +121,8 @@ test('C8 every chapter carries a recap for its chapter-end card, and the validat
 
 test('C9 every mission but the notes mission carries a Log it block the validator accepts; the validator refuses a bad one', () => {
   const withLogIt = missions.filter(m => m.logIt);
-  assert.equal(withLogIt.length, 90);
-  assert.equal(missions.length, 91);
+  assert.equal(withLogIt.length, 100);
+  assert.equal(missions.length, 101);
   assert.equal(missions.find(m => m.id === 'C01-M00').logIt, undefined);
   assert.equal(missions[0].id, 'C01-M00');
   const kinds = new Set(withLogIt.map(m => m.logIt.kind));
@@ -155,7 +155,7 @@ test('C10 chapter density: 7 to 8 desk missions per chapter and two Your-turn mi
     assert.ok(ch.missions.filter(m => m.kind !== 'read').length <= 8, `${ch.id} desk missions`);
     assert.ok(ch.missions.filter(m => m.kind === 'solo').length >= (i === 0 ? 1 : 2), `${ch.id} Your-turn missions`);
   }
-  assert.equal(missions.length, 91);
+  assert.equal(missions.length, 101);
   // every mission the density pass added carries the full schema
   const NEW = missions.filter(m => Number(m.id.slice(1, 3)) <= 6 && Number(m.id.slice(-2)) >= (m.id.startsWith('C01') ? 7 : m.id.startsWith('C06') ? 5 : m.id.startsWith('C05') ? 4 : 5));
   assert.equal(NEW.length, 23);
@@ -202,8 +202,8 @@ test('C11 the bundled reference lists validate and resolve from a query; should-
 });
 
 test('C12 two cases: case 1 events are byte-identical to the density branch (digest proven by the validator), case 2 is fictional and inside its window, chapters 7 and 8 validate against it, and every case fills a casebook from Scope to Handoff', () => {
-  assert.deepEqual(content.cases.map(c => c.id), ['pier-nine', 'week-after']);
-  assert.deepEqual(content.cases.map(c => c.chapters), [['C01', 'C02', 'C03', 'C04', 'C05', 'C06'], ['C07', 'C08', 'C09', 'C10', 'C11']]);
+  assert.deepEqual(content.cases.map(c => c.id), ['pier-nine', 'week-after', 'saltmarsh']);
+  assert.deepEqual(content.cases.map(c => c.chapters), [['C01', 'C02', 'C03', 'C04', 'C05', 'C06'], ['C07', 'C08', 'C09', 'C10', 'C11'], ['C12']]);
   // the first case's events: the digest recorded on the density branch, so a regenerated dataset is caught even if case.json is edited
   assert.equal(digestOf(data.events), 'a2ddb67f4a6b39a48a4023871eeb3096c70178009ce1986109444682dc9a09fd');
   assert.equal(data.events.length, 1010); assert.equal(content.cases[0].digest, digestOf(data.events));
@@ -272,6 +272,57 @@ test('C12 two cases: case 1 events are byte-identical to the density branch (dig
   assert.ok(validate(lateScope, datasets).some(p => p.includes('Scope')));
   // the single-dataset shape earlier branches passed still validates the first case and names the missing second
   assert.ok(validate(content, data).some(p => p.includes('case week-after') && p.includes('no dataset')));
+});
+
+test('C14 the third case: its own dataset (fictional, on its own LAN, inside its window, own id range, digest proven), its own directory, chapter 12 as the capstone (eight desk missions with no explain blocks, mostly Your turn, one in rule mode, a Determination and a Handoff brief last), the engineering bridge; should-fail: a bad bridge, a directory asset off its LAN, a moved event', () => {
+  const c3 = content.cases[2]; const d3 = datasets.saltmarsh;
+  assert.equal(c3.id, 'saltmarsh'); assert.equal(c3.entities, 'entities-saltmarsh.json'); assert.equal(c3.digest, digestOf(d3.events));
+  assert.ok(d3.events.length >= 600 && d3.events.length <= 900, 'a smaller case: ' + d3.events.length);
+  assert.equal(d3.window.end - d3.window.start, 10 * 3600);
+  assert.ok(d3.events.every(e => e['metadata.event_timestamp.seconds'] >= d3.window.start && e['metadata.event_timestamp.seconds'] <= d3.window.end));
+  assert.ok(d3.events.every(e => /^evt-3\d{4}$/.test(e['metadata.id'])));
+  const text = JSON.stringify(d3.events);
+  for (const ip of new Set(text.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g))) assert.ok(/^(10\.77\.3\.|192\.0\.2\.|198\.51\.100\.)/.test(ip), 'unexpected ip ' + ip);
+  assert.ok(!text.includes('10.9.4.'), 'no station address in the co-operative\'s logs');
+  for (const dm of new Set(text.match(/[a-z0-9.-]+\.(?:com|org|net|io|example)\b/g))) assert.ok(dm.endsWith('.example'), 'unexpected domain ' + dm);
+  // a different shape: no phish, no credential reuse, a trojanised update, a task, a beacon, an archive, an upload
+  const ctx3 = { ...ctxFor(content, 'saltmarsh'), window: d3.window };
+  assert.equal(runQuery('metadata.event_type = "EMAIL_TRANSACTION"\ntarget.url != ""\nsecurity_result.action = "ALLOW"\nnetwork.email.from = /tidewatch/', d3.events, null, ctx3).result.count, 2, 'only the vendor advisory carries a link');
+  assert.equal(runQuery('metadata.event_type = "USER_LOGIN"\nsecurity_result.action = "ALLOW"\nprincipal.user.userid = "svc-tidewatch"', d3.events, null, ctx3).result.count, 0, 'the service account never logs in');
+  assert.equal(runQuery('metadata.event_type = "SCHEDULED_TASK_CREATION"', d3.events, null, ctx3).result.count, 3);
+  assert.equal(runQuery('target.port = 8443\nmetadata.event_type = "NETWORK_CONNECTION"\nmatch:\n  principal.hostname\noutcome:\n  $n = count(metadata.id)', d3.events, null, ctx3).result.rows.length, 3);
+  assert.equal(runQuery('network.sent_bytes > 1000000', d3.events, null, ctx3).result.rows[0]['target.ip'], '198.51.100.210');
+  assert.equal(runQuery('principal.user.userid = "rafael.quinn"\ntimestamp.get_hour(metadata.event_timestamp, "UTC") >= 9', d3.events, null, ctx3).result.count, 0, 'the suspect is off the system before the update');
+  // the directory is the co-operative\'s, on its LAN, and every account and host in the logs is in it
+  const recs = ctx3.entities; assert.ok(recs.length > 0); assert.ok(recs.every(r => !r['graph.entity.asset.ip'] || r['graph.entity.asset.ip'].startsWith('10.77.3.')));
+  assert.ok(!recs.some(r => r['graph.entity.user.userid'] === 'lena.ostrowski'));
+  const dir = content.entitiesByCase.saltmarsh;
+  for (const a of new Set(d3.events.map(e => e['principal.user.userid']).filter(Boolean))) assert.ok(dir.users.some(u => u.userid === a), 'user ' + a);
+  for (const h of new Set(d3.events.map(e => e['principal.hostname']).filter(Boolean))) assert.ok(dir.assets.some(x => x.hostname === h), 'asset ' + h);
+  assert.equal(ctxFor(content, 'week-after').entities.some(r => r['graph.entity.asset.hostname'] === 'DISPATCH-01'), false, 'the station does not see the co-operative\'s hosts');
+  // chapter 12: ten missions, eight with a desk and none of them explained, six Your turn, one rule mission, then the Determination and the Handoff brief
+  const c12 = missions.filter(m => m.id.startsWith('C12'));
+  assert.equal(c12.length, 10);
+  assert.deepEqual(c12.map(m => m.kind), ['solo', 'solo', 'solo', 'solo', 'build', 'solo', 'build', 'solo', 'read', 'read']);
+  for (const m of c12.filter(m => m.kind !== 'read')) { assert.deepEqual(m.explain, [], m.id + ' has explain blocks'); assert.equal(m.hints.length, 3, m.id); }
+  assert.equal(c12.filter(m => m.mode === 'rule').map(m => m.id).join(), 'C12-M08');
+  assert.equal(c12[0].logIt.kind, 'scope'); assert.equal(c12[8].logIt.kind, 'determination'); assert.equal(c12[9].logIt.kind, 'handoff'); assert.equal(c12[9].brief, 'casebook');
+  assert.equal(deriveAnswer(c12[7], d3.events, ctx3), '18');
+  assert.equal(deriveAnswer(c12[4], d3.events, ctx3), '08:40');
+  // the bridge
+  assert.equal(c3.bridge.items.length, 4); assert.ok(c3.bridge.items.some(x => /acceptance/i.test(x.heading)));
+  assert.equal(content.cases[0].bridge, undefined);
+  // should-fail
+  const badBridge = JSON.parse(JSON.stringify(content)); badBridge.cases[2].bridge.items = badBridge.cases[2].bridge.items.slice(0, 2);
+  assert.ok(validate(badBridge, datasets).some(p => p.includes('case saltmarsh') && p.includes('bridge')));
+  const offLan = JSON.parse(JSON.stringify(content)); offLan.entityFiles['entities-saltmarsh.json'].assets[0].ip = '10.9.4.20';
+  assert.ok(validate(offLan, datasets).some(p => p.startsWith('entities-saltmarsh.json') && p.includes('LAN')));
+  const badLan = JSON.parse(JSON.stringify(content)); badLan.entityFiles['entities-saltmarsh.json'].lan = '10.0.0.';
+  assert.ok(validate(badLan, datasets).some(p => p.includes('lan must be')));
+  const moved = JSON.parse(JSON.stringify(datasets)); moved.saltmarsh.events[3]['network.sent_bytes'] = 1;
+  assert.ok(validate(content, moved).some(p => p.includes('case saltmarsh') && p.includes('events changed')));
+  const noScope = JSON.parse(JSON.stringify(content)); noScope.chapters[11].missions[0].logIt.kind = 'evidence'; noScope.chapters[11].missions[0].logIt.mustInclude = ['evt-30157'];
+  assert.ok(validate(noScope, datasets).some(p => p.includes('case saltmarsh') && p.includes('scope')));
 });
 
 test('C13 the bundled data tables and the station directory validate; should-fail: a bad column type, a short row, a CIDR cell that does not parse, a regex cell that fails the guard, a table named like a list, an unknown asset owner, overlapping versions, a real-looking address', () => {
