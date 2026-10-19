@@ -178,7 +178,7 @@
         "why": "The nightly backup is scheduled by the playout software every night. PledgeSync is new, named to look routine, and created in the middle of the suspicious sequence."
       },
       "clue": "PledgeSync. Created 19:35:22 by pledge-desk, runs C:\\ProgramData\\PledgeSync\\sync.ps1 every ten minutes as pledge-desk. The schtasks.exe launch one second earlier shows the exact command. Everything that happens on AUTOMATION-01 for the rest of the night traces back to this.",
-      "logIt": {"kind":"remediation","list":"eradicate","prompt":"Write the first Remediation item, in the Eradicate list: disable and remove the PledgeSync scheduled task, and the sync.ps1 it runs every ten minutes, on AUTOMATION-01. Answers: your evidence entry for the encoded command; name the task event evt-00141 in the action text. Owner role: volunteer engineer. Urgency: now.","mustInclude":["PledgeSync","evt-00141|evt-00140"]},
+      "logIt": {"kind":"remediation","list":"eradicate","prompt":"Write the first Remediation item, in the Eradicate list: disable and remove the PledgeSync scheduled task, and the sync.ps1 it runs every ten minutes, on AUTOMATION-01. Answers: your evidence entry for the encoded command; name the task event evt-00141 in the action text. Owner role: volunteer engineer. Urgency: now.","mustInclude":["PledgeSync","evt-00141"]},
       "caveat": "Not every endpoint product emits SCHEDULED_TASK_CREATION. If yours does not, the schtasks.exe process launch is the fallback: search PROCESS_LAUNCH for schtasks on AUTOMATION-01 and you will find it one second before the task event."
     },
     {

@@ -144,6 +144,16 @@ test('C9 every mission but the notes mission carries a Log it block the validato
   assert.deepEqual(validateLogIt({ kind: 'remediation', prompt: 'write something useful here', mustInclude: ['evt-00001'], list: 'harden' }, 'T', eventIds), []);
   const bad = JSON.parse(JSON.stringify(content)); bad.chapters[0].missions[1].logIt.mustInclude = ['evt-99999'];
   assert.ok(validate(bad, datasets).some(p => p.includes('C01-M01') && p.includes('evt-99999')));
+  // should-fail (session 5): a record that exists but is not among the mission's reference rows is a drifted id. C01-M01
+  // asks for USER_LOGIN events; evt-00140 is a process launch. On a read mission existence is still enough.
+  const drift = JSON.parse(JSON.stringify(content)); drift.chapters[0].missions[1].logIt.mustInclude = ['evt-00140'];
+  assert.ok(validate(drift, datasets).some(p => p.includes('C01-M01') && p.includes('evt-00140') && p.includes('does not return')));
+  const readOk = JSON.parse(JSON.stringify(content)); const rd = readOk.chapters[5].missions.find(m => m.id === 'C06-M07'); rd.logIt.mustInclude = ['evt-00140'];
+  assert.ok(!validate(readOk, datasets).some(p => p.includes('C06-M07')));
+  // and the two ids session 5 corrected are now among their reference rows
+  assert.deepEqual(by('C03-M03').mustInclude, ['PledgeSync', 'evt-00141']);
+  assert.deepEqual(by('C08-M01').mustInclude, ['harborlight-sponsors.example', 'evt-20135']);
+  assert.equal(data2.events.find(e => e['metadata.id'] === 'evt-20135')['metadata.event_type'], 'NETWORK_DNS');
   const noBrief = JSON.parse(JSON.stringify(content)); const hand = noBrief.chapters[5].missions.find(m => m.id === 'C06-M04'); hand.explain = hand.explain.filter(e => e.part !== 'Handoff');
   assert.ok(validate(noBrief, datasets).some(p => p.includes('C06-M04') && p.includes('brief')));
 });

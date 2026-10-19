@@ -143,10 +143,10 @@
       "clue": "Two names, both built from the real sponsor with a hyphen: harborlight-sponsors.example, resolved once from PLEDGE-DESK-01 at 19:12, and files.harborlight-sponsors.example, resolved every fifteen minutes from the remote session. The allowlist did not hide them. It would have hidden something else.",
       "logIt": {
         "kind": "evidence",
-        "prompt": "Write an Evidence entry: 19:12 UTC, PLEDGE-DESK-01 resolves harborlight-sponsors.example, a lookalike of harborlightsponsors.example with a hyphen, record evt-20136; from 20:04 the remote session resolves files.harborlight-sponsors.example every fifteen minutes. Source: this query, whole night. Confidence high.",
+        "prompt": "Write an Evidence entry: 19:12 UTC, PLEDGE-DESK-01 resolves harborlight-sponsors.example, a lookalike of harborlightsponsors.example with a hyphen, record evt-20135; from 20:04 the remote session resolves files.harborlight-sponsors.example every fifteen minutes. Source: this query, whole night. Confidence high.",
         "mustInclude": [
           "harborlight-sponsors.example",
-          "evt-20136"
+          "evt-20135"
         ]
       },
       "caveat": "In a tenant, a list is only as good as its last edit. Reference lists and data tables have owners, change history and limits; a query that names one should say in the brief which version of the object it ran against. The legacy %list form retires in July 2027."

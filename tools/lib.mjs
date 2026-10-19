@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseSearch } from '../site/engine/parser.js';
-import { execute } from '../site/engine/executor.js';
+import { execute, MEMBERS } from '../site/engine/executor.js';
 import { runQuery, compareResults, normalizeAnswer, runFor, gradeQuery } from '../site/engine/grader.js';
 import { gradeRuleCases } from '../site/engine/rules.js';
 import { LIST_TYPES, ENTITY_TYPES, EMPLOYMENT_STATUSES, ACCOUNT_TYPES, ENTITY_ID_PREFIX } from '../site/engine/catalog.js';
@@ -90,14 +90,21 @@ export const LOGIT_KINDS = ['scope', 'evidence', 'timeline', 'hypothesis', 'pivo
 const LOGIT_LISTS = ['contain', 'eradicate', 'recover', 'harden'];
 
 // logIt: { kind, prompt, mustInclude: [token|alternative, ...], list? }. Every token that looks like a record ID must
-// exist in the dataset, so a mission can never ask for a record the learner cannot find.
-export function validateLogIt(li, where, eventIds) {
+// exist in the dataset, so a mission can never ask for a record the learner cannot find; on a desk mission it must also
+// be one of the records the mission's reference query returns (refIds: the rows' ids and the records behind each
+// aggregated row), so an authored id cannot drift to a neighbouring event the learner's results never show.
+const RECORD_ID = /^(?:evt|ent)-\d{5}$/;
+export function validateLogIt(li, where, eventIds, refIds = null) {
   const problems = [];
   if (!li || typeof li !== 'object' || Array.isArray(li)) return [`${where}: logIt shape`];
   if (!LOGIT_KINDS.includes(li.kind)) problems.push(`${where}: logIt.kind "${li.kind}" not in ${LOGIT_KINDS.join('/')}`);
   if (typeof li.prompt !== 'string' || li.prompt.trim().length < 20) problems.push(`${where}: logIt.prompt missing or too short`);
   if (!Array.isArray(li.mustInclude) || !li.mustInclude.length || li.mustInclude.some(t => typeof t !== 'string' || !t.trim())) problems.push(`${where}: logIt.mustInclude must be a non-empty list of strings`);
-  else for (const token of li.mustInclude) for (const alt of token.split('|')) if (/^evt-\d{5}$/.test(alt.trim()) && !eventIds.has(alt.trim())) problems.push(`${where}: logIt.mustInclude names ${alt.trim()}, which is not in the dataset`);
+  else for (const token of li.mustInclude) for (const alt of token.split('|')) {
+    const id = alt.trim(); if (!RECORD_ID.test(id)) continue;
+    if (!eventIds.has(id)) problems.push(`${where}: logIt.mustInclude names ${id}, which is not in the dataset`);
+    else if (refIds && !refIds.has(id)) problems.push(`${where}: logIt.mustInclude names ${id}, which the reference query does not return`);
+  }
   if (li.list !== undefined && (li.kind !== 'remediation' || !LOGIT_LISTS.includes(li.list))) problems.push(`${where}: logIt.list "${li.list}" only applies to remediation and must be one of ${LOGIT_LISTS.join('/')}`);
   if (Object.keys(li).some(k => !['kind', 'prompt', 'mustInclude', 'list'].includes(k))) problems.push(`${where}: logIt has unknown keys`);
   return problems;
@@ -111,6 +118,9 @@ export const DENSITY = Object.freeze({ min: 7, maxDesk: 8, solo: 2, soloFirst: 1
 // A rule mission (mode "rule") carries its two test cases: rule.mustFire = { key: [one value per match key], at: "HH:MM" }
 // and rule.mustNotFire = { key: [...] }. The reference rule must fire on the first and stay quiet on the second; the
 // learner's rule is graded the same way. ctx.window is the case window the clock time is read in.
+// The record ids a result stands on: event and entity rows by id, aggregated rows and detections by the records behind them.
+export const referenceIds = result => new Set(result.rows.flatMap(row => [row['metadata.id'], ...(row[MEMBERS] ?? [])].filter(Boolean)));
+
 export function validateRuleMission(m, where, events, ctx) {
   const problems = [];
   const r = m.rule;
@@ -311,7 +321,9 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
       if (ids.has(m.id)) problems.push(`${where}: duplicate id`); ids.add(m.id);
       if (!['watch', 'build', 'solo', 'read'].includes(m.kind)) problems.push(`${where}: kind`);
       if (!m.call || !m.call.options?.some(o => o.id === m.call.correct)) problems.push(`${where}: call.correct not among options`);
-      if (m.logIt !== undefined) problems.push(...validateLogIt(m.logIt, where, eventIds));
+      // Read missions have no query: their record ids are checked for existence. Desk missions are checked against the
+      // reference's rows once the reference has run, below.
+      if (m.logIt !== undefined && m.kind === 'read') problems.push(...validateLogIt(m.logIt, where, eventIds));
       if (m.brief !== undefined && (m.brief !== 'casebook' || m.kind !== 'read' || !['Facts', 'Hypotheses', 'Gaps', 'Determination', 'Remediation', 'Handoff'].every(part => m.explain?.some(e => e.part === part)))) problems.push(`${where}: brief must be "casebook" on a read mission whose explain carries all six brief sections`);
       if (m.logIt?.kind === 'scope' && ch.missions.indexOf(m) > 1) problems.push(`${where}: a Scope Log it belongs to the first or second mission of a case's first chapter`);
       if (m.kind === 'read') { if (m.reference) problems.push(`${where}: read mission has a reference`); continue; }
@@ -322,6 +334,7 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
       else if (m.rule !== undefined) problems.push(`${where}: rule test cases belong to a mission in rule mode`);
       const ref = runFor(m, m.reference, data.events, null, ctx);
       if (!ref.ok) { problems.push(`${where}: reference does not run (${ref.code})`); continue; }
+      if (m.logIt !== undefined) problems.push(...validateLogIt(m.logIt, where, eventIds, referenceIds(ref.result)));
       // A text passes when it grades correct in the mission's mode: the same evidence as the reference for a Search
       // mission, the must-fire and must-not-fire cases for a rule mission.
       const passes = text => gradeQuery(text, m, data.events, null, ctx).status === 'correct';
@@ -342,8 +355,8 @@ export function validate({ cases, chapters, chapterCase, casebook, lists, tables
   }
   const named = (cases ?? []).flatMap(c => c.chapters ?? []);
   if (new Set(named).size !== chapters.length || named.length !== chapters.length) problems.push('case.chapters mismatch');
-  // Every case ends with exactly one brief mission (the handoff beside the model) in its last chapter, and each case's
-  // missions ask for every casebook entry kind, so a fresh casebook fills from Scope to Handoff.
+  // Every case ends with a brief mission (the handoff beside the model) in its last chapter (a case may show an earlier
+  // brief too), and each case's missions ask for every casebook entry kind, so a fresh casebook fills from Scope to Handoff.
   for (const c of cases ?? []) {
     const ms = chapters.filter(ch => (c.chapters ?? []).includes(ch.id)).flatMap(ch => ch.missions);
     if (ms.at(-1)?.brief !== 'casebook') problems.push(`case ${c.id}: the last mission must be a brief mission`);
